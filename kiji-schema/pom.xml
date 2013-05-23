@@ -37,6 +37,8 @@
 
   <properties>
     <kiji-checkin-version>1.0.0</kiji-checkin-version>
+    <aspectj-maven-plugin-version>1.4</aspectj-maven-plugin-version>
+    <org.aspectj-version>1.7.2</org.aspectj-version>
   </properties>
 
   <build>
@@ -118,6 +120,9 @@
       <plugin>
         <groupId>org.codehaus.mojo</groupId>
         <artifactId>findbugs-maven-plugin</artifactId>
+        <configuration>
+            <skip>true</skip>
+        </configuration>
       </plugin>
 
       <plugin>
@@ -145,6 +150,24 @@
             </configuration>
           </execution>
         </executions>
+      </plugin>
+
+      <plugin>
+          <groupId>org.codehaus.mojo</groupId>
+          <artifactId>aspectj-maven-plugin</artifactId>
+          <version>${aspectj-maven-plugin-version}</version>
+          <executions>
+              <execution>
+                  <goals>
+                      <goal>compile</goal>
+                      <goal>test-compile</goal>
+                  </goals>
+                  <configuration>
+                      <source>${maven.compiler.source}</source>
+                      <target>${maven.compiler.target}</target>
+                  </configuration>
+              </execution>
+          </executions>
       </plugin>
     </plugins>
   </build>
@@ -227,6 +250,11 @@
       <artifactId>slf4j-log4j12</artifactId>
       <scope>compile</scope>
     </dependency>
+    <dependency>
+      <groupId>org.aspectj</groupId>
+      <artifactId>aspectjrt</artifactId>
+      <version>${org.aspectj-version}</version>
+    </dependency>
 
     <dependency>
       <groupId>org.kiji.testing</groupId>
@@ -260,7 +288,6 @@
       <version>${project.version}</version>
       <scope>runtime</scope>
     </dependency>
-
   </dependencies>
 
   <profiles>
