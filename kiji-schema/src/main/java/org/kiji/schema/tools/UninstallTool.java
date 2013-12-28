@@ -32,6 +32,7 @@ import org.kiji.schema.KijiInstaller;
 import org.kiji.schema.KijiInvalidNameException;
 import org.kiji.schema.KijiNotInstalledException;
 import org.kiji.schema.KijiURI;
+import org.kiji.schema.cassandra.CassandraKijiInstaller;
 
 /**
  * A command-line tool for uninstalling kiji instances from an hbase cluster.
@@ -89,15 +90,21 @@ public final class UninstallTool extends BaseTool {
         kiji.release();
       }
 
+      String backingDatabase = mKijiURI.isCassandra() ? "Cassandra" : "HBase";
+
       getPrintStream().println();
       if (!inputConfirmation("Are you sure? This action will delete all meta and user data "
-          + "from hbase and cannot be undone!", mKijiURI.getInstance())) {
+          + "from " + backingDatabase + " and cannot be undone!", mKijiURI.getInstance())) {
         getPrintStream().println("Delete aborted.");
         return FAILURE;
       }
     }
     try {
-      KijiInstaller.get().uninstall(mKijiURI, getConf());
+      if (!mKijiURI.isCassandra()) {
+        KijiInstaller.get().uninstall(mKijiURI, getConf());
+      } else {
+        CassandraKijiInstaller.get().uninstall(mKijiURI, getConf());
+      }
       getPrintStream().println("Deleted kiji instance: " + mKijiURI.toString());
       return SUCCESS;
     } catch (IOException ioe) {

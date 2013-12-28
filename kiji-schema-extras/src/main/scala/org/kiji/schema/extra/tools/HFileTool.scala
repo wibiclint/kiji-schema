@@ -41,6 +41,7 @@ import org.kiji.common.flags.FlagParser
 import org.kiji.schema.Kiji
 import org.kiji.schema.KijiURI
 import org.kiji.schema.hbase.HBaseFactory
+import org.kiji.schema.impl.hbase.HBaseKijiTable
 import org.kiji.schema.platform.SchemaPlatformBridge
 import org.kiji.schema.tools.BaseTool
 import org.slf4j.LoggerFactory

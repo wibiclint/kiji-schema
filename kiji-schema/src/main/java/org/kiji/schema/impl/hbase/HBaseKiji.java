@@ -36,6 +36,7 @@ import org.apache.hadoop.hbase.TableNotFoundException;
 import org.apache.hadoop.hbase.client.HBaseAdmin;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.zookeeper.KeeperException;
+import org.kiji.schema.impl.HTableInterfaceFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -71,6 +72,7 @@ import org.kiji.schema.util.LockFactory;
 import org.kiji.schema.util.ProtocolVersion;
 import org.kiji.schema.util.ResourceUtils;
 import org.kiji.schema.util.VersionInfo;
+import org.kiji.schema.impl.Versions;
 
 /**
  * Kiji instance class that contains configuration and table information.

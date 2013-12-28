@@ -53,12 +53,14 @@ import org.kiji.schema.KijiRowData;
 import org.kiji.schema.KijiTableReaderBuilder;
 import org.kiji.schema.NoSuchColumnException;
 import org.kiji.schema.hbase.HBaseColumnName;
+import org.kiji.schema.impl.LayoutCapsule;
 import org.kiji.schema.impl.BoundColumnReaderSpec;
 import org.kiji.schema.layout.ColumnReaderSpec;
 import org.kiji.schema.layout.KijiColumnNameTranslator;
 import org.kiji.schema.layout.KijiTableLayout;
 import org.kiji.schema.layout.impl.CellDecoderProvider;
 import org.kiji.schema.util.TimestampComparator;
+import org.kiji.schema.impl.BoundColumnReaderSpec;
 
 /**
  * An implementation of KijiRowData that wraps an HBase Result object.
@@ -98,7 +100,7 @@ public final class HBaseKijiRowData implements KijiRowData {
    * @throws IOException on I/O error.
    */
   private static CellDecoderProvider createCellProvider(HBaseKijiTable table) throws IOException {
-    final HBaseKijiTable.LayoutCapsule capsule = table.getLayoutCapsule();
+    final LayoutCapsule capsule = table.getLayoutCapsule();
     return new CellDecoderProvider(
         capsule.getLayout(),
         Maps.<KijiColumnName, BoundColumnReaderSpec>newHashMap(),

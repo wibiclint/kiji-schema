@@ -65,6 +65,9 @@ import org.kiji.schema.layout.SchemaTableAvroResolver;
 import org.kiji.schema.layout.TableLayoutBuilder;
 import org.kiji.schema.util.ByteStreamArray;
 import org.kiji.schema.util.BytesKey;
+import org.kiji.schema.impl.hbase.HBaseKiji;
+import org.kiji.schema.impl.hbase.HBaseTableLayoutUpdater;
+
 
 /**
  * Serializes Avro cells to bytes for persistence in HBase.

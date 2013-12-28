@@ -46,17 +46,17 @@ import org.kiji.schema.layout.KijiTableLayout.LocalityGroupLayout.FamilyLayout.C
  * individual column.</p>
  */
 @ApiAudience.Private
-public final class ShortColumnNameTranslator extends KijiColumnNameTranslator {
+public class ShortColumnNameTranslator extends KijiColumnNameTranslator {
   private static final Logger LOG = LoggerFactory.getLogger(ShortColumnNameTranslator.class);
 
   /** Used to separate the Kiji family from the Kiji qualifier in an HBase qualifier. */
   public static final String SEPARATOR = ":";
 
   /** The table to translate names for. */
-  private final KijiTableLayout mTableLayout;
+  final KijiTableLayout mTableLayout;
 
   /** A map from ColumnId to its locality group. */
-  private final Map<ColumnId, LocalityGroupLayout> mLocalityGroups;
+  final Map<ColumnId, LocalityGroupLayout> mLocalityGroups;
 
   /**
    * Creates a new <code>ShortColumnNameTranslator</code> instance.
@@ -175,7 +175,7 @@ public final class ShortColumnNameTranslator extends KijiColumnNameTranslator {
    * @param familyId The ColumnId of the family to look for.
    * @return The family, or null if no family with the ID can be found within the locality group.
    */
-  private FamilyLayout getKijiFamilyById(LocalityGroupLayout localityGroup, ColumnId familyId) {
+  FamilyLayout getKijiFamilyById(LocalityGroupLayout localityGroup, ColumnId familyId) {
     final String familyName = localityGroup.getFamilyIdNameMap().get(familyId);
     return localityGroup.getFamilyMap().get(familyName);
   }
@@ -187,7 +187,7 @@ public final class ShortColumnNameTranslator extends KijiColumnNameTranslator {
    * @param columnId The ColumnId of the column to look for.
    * @return The column, or null if no column with the ID can be found within the family.
    */
-  private ColumnLayout getKijiColumnById(FamilyLayout family, ColumnId columnId) {
+  ColumnLayout getKijiColumnById(FamilyLayout family, ColumnId columnId) {
     final String columnName = family.getColumnIdNameMap().get(columnId);
     return family.getColumnMap().get(columnName);
   }

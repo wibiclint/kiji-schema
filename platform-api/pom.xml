@@ -25,7 +25,11 @@
   <parent>
     <groupId>org.kiji.schema</groupId>
     <artifactId>kiji-schema-root</artifactId>
+<<<<<<< HEAD
     <version>1.4.1-SNAPSHOT</version>
+=======
+    <version>1.3.4-Cassandra-SNAPSHOT</version>
+>>>>>>> 34d8b21... drawing some lines between implementations
     <relativePath>..</relativePath>
   </parent>
 

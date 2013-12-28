@@ -1,0 +1,21 @@
+Daniel notes
+
+- Good social skills
+- Had been to the website
+- Seemed pretty interested in Spark
+
+Sudoku question
+- He knew the rules for Sudoku
+- He described the brute force algorithm pretty well
+- Asked if he could assume that the board was the correct size, etc.
+- He figured out that he needed to use a Set of numbers, good.
+  - Actually used a HashSet, thank you!
+  - He added checks that the numbers are between 1 and 9, good
+
+- Finally, someone who just checks every row without getting fancy, ha ha.
+- He mentions that he would like to figure out how to optimize the code to not
+  check everything so many times and that not doing so "bothers" him, but he
+  just went ahead with the brute force (without me having to prompt him too
+  much)
+
+- He refactored out some of the common code into a separate function, awesome.

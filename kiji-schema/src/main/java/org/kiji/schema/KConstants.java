@@ -32,6 +32,9 @@ public final class KConstants {
   /** Default Kiji URI, pointing to the default HBase cluster. */
   public static final String DEFAULT_HBASE_URI = "kiji://.env";
 
+  /** Default Cassandra URI. */
+  public static final String DEFAULT_CASSANDRA_URI = "kiji-cassandra://.env/localhost/9160";
+
   /** Default Kiji URI with instance specified as 'default'. */
   public static final String DEFAULT_INSTANCE_URI =
       String.format("%s/%s", DEFAULT_HBASE_URI, DEFAULT_INSTANCE_NAME);
@@ -41,6 +44,10 @@ public final class KConstants {
 
   public static final long END_OF_TIME = Long.MAX_VALUE;
   public static final long BEGINNING_OF_TIME = 0;
+
+  // Need to be less than Long.MAX_VALUE because the default timestamp range for a Kiji get
+  // excludes Long.MAX_VALUE.
+  public static final long CASSANDRA_COUNTER_TIMESTAMP = Long.MAX_VALUE-1;
 
   /** Utility classes cannot be instantiated. */
   private KConstants() {

@@ -59,6 +59,7 @@ import org.apache.hadoop.hbase.client.Result;
 import org.apache.hadoop.hbase.client.ResultScanner;
 import org.apache.hadoop.hbase.client.Scan;
 import org.apache.hadoop.hbase.util.Bytes;
+import org.kiji.schema.impl.HTableInterfaceFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -275,6 +276,7 @@ public final class HBaseSchemaTable implements KijiSchemaTable {
    * @param uri URI of the Kiji instance this schema table belongs to.
    * @throws IOException on I/O error.
    */
+  // TODO: Possibly make this constructor private
   public HBaseSchemaTable(
       HTableInterface hashTable,
       HTableInterface idTable,

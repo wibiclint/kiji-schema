@@ -311,6 +311,9 @@ public abstract class AvroCellDecoder<T> implements KijiCellDecoder<T> {
   /** {@inheritDoc} */
   @Override
   public T decodeValue(byte[] bytes) throws IOException {
+    if (null == bytes) {
+      return null;
+    }
     return decodeCell(bytes).getData();
   }
 

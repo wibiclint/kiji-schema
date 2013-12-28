@@ -126,6 +126,7 @@ public final class KijiInstaller {
       HBaseSchemaTable.install(hbaseAdmin, uri, conf, tableFactory, lockFactory);
       // Grant the current user all privileges on the instance just created, if security is enabled.
       final Kiji kiji = Kiji.Factory.open(uri, conf);
+      assert(null != kiji);
       try {
         if (kiji.isSecurityEnabled()) {
           KijiSecurityManager.Installer.installInstanceCreator(uri, conf, tableFactory);

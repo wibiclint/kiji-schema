@@ -27,6 +27,7 @@ import java.util.Set;
 
 import org.junit.Before;
 import org.junit.Test;
+import org.kiji.schema.impl.LayoutConsumer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

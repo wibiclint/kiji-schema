@@ -23,6 +23,7 @@ import java.util.Arrays;
 import java.util.List;
 
 import com.google.common.base.Preconditions;
+import com.google.common.primitives.UnsignedBytes;
 
 import org.kiji.annotations.ApiAudience;
 import org.kiji.annotations.ApiStability;
@@ -54,8 +55,8 @@ import org.kiji.annotations.ApiStability;
  * </p>
  */
 @ApiAudience.Public
-@ApiStability.Evolving
-public final class KijiRowKeyComponents {
+@ApiStability.Experimental
+public final class KijiRowKeyComponents implements Comparable<KijiRowKeyComponents> {
   /** The backing array of components. */
   private Object[] mComponents;
 
@@ -161,5 +162,66 @@ public final class KijiRowKeyComponents {
     final KijiRowKeyComponents krkc = (KijiRowKeyComponents)obj;
 
     return Arrays.deepEquals(mComponents, krkc.mComponents);
+  }
+
+  /**
+   * {@inheritDoc}
+   * @throws ClassCastException on type mismatch between components.
+   * @throws IllegalArgumentException if an EntityId contains an illegal component type.
+   */
+  @Override
+  public int compareTo(KijiRowKeyComponents other) {
+    Object[] components1 = this.getComponents();
+    Object[] components2 = other.getComponents();
+
+    int size1 = components1.length;
+    int size2 = components2.length;
+
+    // Compare components
+    for (int i = 0; i < Math.min(size1, size2); i++) {
+      int componentComparison = compareComponents(components1[i], components2[i]);
+      if (componentComparison != 0) {
+        return componentComparison;
+      }
+    }
+
+    // If all components are the same, the shorter should compare first
+    return size1 - size2;
+  }
+
+  /**
+   * Compares individual components. Null values compare less-than non-null values.
+   *
+   * @param a first component.
+   * @param b second component.
+   * @return <0 if a < b; 0 if a = b; >0 if a > b.
+   * @throws ClassCastException on type mismatch between components.
+   * @throws IllegalArgumentException on illegal component type.
+   */
+  private static int compareComponents(Object a, Object b) {
+    // null values sort first
+    if (a == null && b == null) {
+      return 0;
+    }
+    if (a == null) {
+      return -1;
+    }
+    if (b == null) {
+      return 1;
+    }
+
+    // If both components are non-null, then use natural comparison
+    if (a instanceof String) {
+      return ((String) a).compareTo((String) b);
+    } else if (a instanceof Integer) {
+      return ((Integer) a).compareTo((Integer) b);
+    } else if (a instanceof Long) {
+      return ((Long) a).compareTo((Long) b);
+    } else if (a instanceof byte[]){
+      return UnsignedBytes.lexicographicalComparator().compare((byte[]) a, (byte[]) b);
+    } else {
+      throw new IllegalArgumentException(
+          String.format("Unknown Entity Id component type %s.", a.getClass()));
+    }
   }
 }

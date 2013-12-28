@@ -55,7 +55,7 @@ import org.kiji.schema.hbase.HBaseColumnName;
 import org.kiji.schema.impl.AvroCellEncoder;
 import org.kiji.schema.impl.hbase.HBaseKijiRowData;
 import org.kiji.schema.impl.hbase.HBaseKijiTable;
-import org.kiji.schema.impl.hbase.HBaseKijiTable.LayoutCapsule;
+import org.kiji.schema.impl.LayoutCapsule;
 import org.kiji.schema.layout.CellSpec;
 import org.kiji.schema.layout.KijiColumnNameTranslator;
 import org.kiji.schema.layout.KijiTableLayouts;

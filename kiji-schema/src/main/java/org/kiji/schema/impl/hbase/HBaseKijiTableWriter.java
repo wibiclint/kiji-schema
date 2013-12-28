@@ -37,22 +37,16 @@ import org.apache.hadoop.hbase.filter.ColumnPrefixFilter;
 import org.apache.hadoop.hbase.filter.FilterList;
 import org.apache.hadoop.hbase.filter.KeyOnlyFilter;
 import org.apache.hadoop.hbase.util.Bytes;
+import org.kiji.schema.*;
+import org.kiji.schema.impl.LayoutCapsule;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import org.kiji.annotations.ApiAudience;
-import org.kiji.schema.DecodedCell;
-import org.kiji.schema.EntityId;
-import org.kiji.schema.KijiCell;
-import org.kiji.schema.KijiCellEncoder;
-import org.kiji.schema.KijiColumnName;
-import org.kiji.schema.KijiTableWriter;
-import org.kiji.schema.NoSuchColumnException;
 import org.kiji.schema.avro.SchemaType;
 import org.kiji.schema.hbase.HBaseColumnName;
 import org.kiji.schema.impl.DefaultKijiCellEncoderFactory;
 import org.kiji.schema.impl.LayoutConsumer;
-import org.kiji.schema.impl.hbase.HBaseKijiTable.LayoutCapsule;
 import org.kiji.schema.layout.KijiColumnNameTranslator;
 import org.kiji.schema.layout.KijiTableLayout;
 import org.kiji.schema.layout.KijiTableLayout.LocalityGroupLayout.FamilyLayout;
@@ -102,7 +96,7 @@ public final class HBaseKijiTableWriter implements KijiTableWriter {
    * A container for all writer state which should be modified atomically to reflect an update to
    * the underlying table's layout.
    */
-  public static final class WriterLayoutCapsule {
+  public static final class WriterLayoutCapsule implements LayoutCapsule {
     private final CellEncoderProvider mCellEncoderProvider;
     private final KijiTableLayout mLayout;
     private final KijiColumnNameTranslator mTranslator;
@@ -128,7 +122,7 @@ public final class HBaseKijiTableWriter implements KijiTableWriter {
      *
      * @return the column name translator from this container.
      */
-    public KijiColumnNameTranslator getColumnNameTranslator() {
+    public KijiColumnNameTranslator getKijiColumnNameTranslator() {
       return mTranslator;
     }
 
@@ -229,7 +223,7 @@ public final class HBaseKijiTableWriter implements KijiTableWriter {
     final KijiColumnName columnName = new KijiColumnName(family, qualifier);
     final WriterLayoutCapsule capsule = mWriterLayoutCapsule;
     final HBaseColumnName hbaseColumnName =
-        capsule.getColumnNameTranslator().toHBaseColumnName(columnName);
+        capsule.getKijiColumnNameTranslator().toHBaseColumnName(columnName);
 
     final KijiCellEncoder cellEncoder =
         capsule.getCellEncoderProvider().getEncoder(family, qualifier);
@@ -254,7 +248,7 @@ public final class HBaseKijiTableWriter implements KijiTableWriter {
     verifyIsCounter(family, qualifier);
 
     // Translate the Kiji column name to an HBase column name.
-    final HBaseColumnName hbaseColumnName = mWriterLayoutCapsule.getColumnNameTranslator().
+    final HBaseColumnName hbaseColumnName = mWriterLayoutCapsule.getKijiColumnNameTranslator().
         toHBaseColumnName(new KijiColumnName(family, qualifier));
 
     // Send the increment to the HBase HTable.
@@ -344,7 +338,7 @@ public final class HBaseKijiTableWriter implements KijiTableWriter {
     }
 
     // The only data in this HBase family is the one Kiji family, so we can delete everything.
-    final HBaseColumnName hbaseColumnName = capsule.getColumnNameTranslator()
+    final HBaseColumnName hbaseColumnName = capsule.getKijiColumnNameTranslator()
         .toHBaseColumnName(new KijiColumnName(family));
     final Delete delete = new Delete(entityId.getHBaseRowKey());
     delete.deleteFamily(hbaseColumnName.getFamily(), upToTimestamp);
@@ -377,7 +371,7 @@ public final class HBaseKijiTableWriter implements KijiTableWriter {
       final String qualifier = columnLayout.getName();
       final KijiColumnName column = new KijiColumnName(familyName, qualifier);
       final HBaseColumnName hbaseColumnName =
-          mWriterLayoutCapsule.getColumnNameTranslator().toHBaseColumnName(column);
+          mWriterLayoutCapsule.getKijiColumnNameTranslator().toHBaseColumnName(column);
       delete.deleteColumns(
           hbaseColumnName.getFamily(), hbaseColumnName.getQualifier(), upToTimestamp);
     }
@@ -410,7 +404,7 @@ public final class HBaseKijiTableWriter implements KijiTableWriter {
     Preconditions.checkState(state == State.OPEN,
         "Cannot delete map family while KijiTableWriter %s is in state %s.", this, state);
     final String familyName = familyLayout.getName();
-    final HBaseColumnName hbaseColumnName = mWriterLayoutCapsule.getColumnNameTranslator()
+    final HBaseColumnName hbaseColumnName = mWriterLayoutCapsule.getKijiColumnNameTranslator()
         .toHBaseColumnName(new KijiColumnName(familyName));
     final byte[] hbaseRow = entityId.getHBaseRowKey();
 
@@ -455,7 +449,7 @@ public final class HBaseKijiTableWriter implements KijiTableWriter {
     Preconditions.checkState(state == State.OPEN,
         "Cannot delete column while KijiTableWriter %s is in state %s.", this, state);
 
-    final HBaseColumnName hbaseColumnName = mWriterLayoutCapsule.getColumnNameTranslator()
+    final HBaseColumnName hbaseColumnName = mWriterLayoutCapsule.getKijiColumnNameTranslator()
         .toHBaseColumnName(new KijiColumnName(family, qualifier));
     final Delete delete = new Delete(entityId.getHBaseRowKey())
         .deleteColumns(hbaseColumnName.getFamily(), hbaseColumnName.getQualifier(), upToTimestamp);
@@ -476,7 +470,7 @@ public final class HBaseKijiTableWriter implements KijiTableWriter {
     Preconditions.checkState(state == State.OPEN,
         "Cannot delete cell while KijiTableWriter %s is in state %s.", this, state);
 
-    final HBaseColumnName hbaseColumnName = mWriterLayoutCapsule.getColumnNameTranslator()
+    final HBaseColumnName hbaseColumnName = mWriterLayoutCapsule.getKijiColumnNameTranslator()
         .toHBaseColumnName(new KijiColumnName(family, qualifier));
     final Delete delete = new Delete(entityId.getHBaseRowKey())
         .deleteColumn(hbaseColumnName.getFamily(), hbaseColumnName.getQualifier(), timestamp);
