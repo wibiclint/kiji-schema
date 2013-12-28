@@ -17,7 +17,7 @@
  * limitations under the License.
  */
 
-package org.kiji.schema.impl;
+package org.kiji.schema.impl.hbase;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -56,14 +56,15 @@ import org.kiji.schema.SpecificCellDecoderFactory;
 import org.kiji.schema.filter.KijiRowFilter;
 import org.kiji.schema.filter.KijiRowFilterApplicator;
 import org.kiji.schema.hbase.HBaseScanOptions;
-import org.kiji.schema.impl.HBaseKijiTable.LayoutCapsule;
+import org.kiji.schema.impl.hbase.HBaseKijiTable.LayoutCapsule;
 import org.kiji.schema.layout.CellSpec;
 import org.kiji.schema.layout.ColumnReaderSpec;
 import org.kiji.schema.layout.InvalidLayoutException;
 import org.kiji.schema.layout.KijiTableLayout;
 import org.kiji.schema.layout.impl.CellDecoderProvider;
 import org.kiji.schema.layout.impl.ColumnNameTranslator;
-
+import org.kiji.schema.impl.BoundColumnReaderSpec;
+import org.kiji.schema.impl.LayoutConsumer;
 /**
  * Reads from a kiji table by sending the requests directly to the HBase tables.
  */

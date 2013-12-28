@@ -44,6 +44,7 @@ import org.kiji.schema.avro.TableBackup;
 import org.kiji.schema.avro.TableLayoutBackupEntry;
 import org.kiji.schema.hbase.HBaseFactory;
 import org.kiji.schema.util.ResourceUtils;
+import org.kiji.schema.impl.hbase.HBaseMetaTable;
 
 /**
  * The MetadataRestorer is responsible for backing up and restoring the metadata stored in Kiji's

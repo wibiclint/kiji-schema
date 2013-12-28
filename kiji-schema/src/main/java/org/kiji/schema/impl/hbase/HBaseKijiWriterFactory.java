@@ -17,55 +17,47 @@
  * limitations under the License.
  */
 
-package org.kiji.schema.impl;
+package org.kiji.schema.impl.hbase;
 
 import java.io.IOException;
-import java.util.Map;
 
 import org.kiji.annotations.ApiAudience;
-import org.kiji.schema.KijiColumnName;
-import org.kiji.schema.KijiReaderFactory;
-import org.kiji.schema.layout.CellSpec;
+import org.kiji.schema.AtomicKijiPutter;
+import org.kiji.schema.KijiBufferedWriter;
+import org.kiji.schema.KijiTableWriter;
+import org.kiji.schema.KijiWriterFactory;
 
 /** Factory for Table Writers. */
 @ApiAudience.Private
-public final class HBaseKijiReaderFactory implements KijiReaderFactory {
+public final class HBaseKijiWriterFactory implements KijiWriterFactory {
 
   /** HBaseKijiTable for this writer factory. */
   private final HBaseKijiTable mTable;
 
   /**
-   * Initializes a factory for HBaseKijiTable readers.
+   * Constructor for this writer factory.
    *
-   * @param table HBaseKijiTable for which to construct readers.
+   * @param table The HBaseKijiTable to which this writer factory's writers write.
    */
-  public HBaseKijiReaderFactory(HBaseKijiTable table) {
+  public HBaseKijiWriterFactory(HBaseKijiTable table) {
     mTable = table;
   }
 
   /** {@inheritDoc} */
   @Override
-  public HBaseKijiTable getTable() {
-    return mTable;
+  public KijiTableWriter openTableWriter() throws IOException {
+    return new HBaseKijiTableWriter(mTable);
   }
 
   /** {@inheritDoc} */
   @Override
-  public HBaseKijiTableReader openTableReader() throws IOException {
-    return HBaseKijiTableReader.create(mTable);
+  public AtomicKijiPutter openAtomicPutter() throws IOException {
+    return new HBaseAtomicKijiPutter(mTable);
   }
 
   /** {@inheritDoc} */
   @Override
-  public HBaseKijiTableReader openTableReader(Map<KijiColumnName, CellSpec> overrides)
-      throws IOException {
-    return HBaseKijiTableReader.createWithCellSpecOverrides(mTable, overrides);
+  public KijiBufferedWriter openBufferedWriter() throws IOException {
+    return new HBaseKijiBufferedWriter(mTable);
   }
-
-  /** {@inheritDoc} */
-  @Override
-  public HBaseKijiTableReaderBuilder readerBuilder() {
-    return HBaseKijiTableReaderBuilder.create(mTable);
-  }
-
 }

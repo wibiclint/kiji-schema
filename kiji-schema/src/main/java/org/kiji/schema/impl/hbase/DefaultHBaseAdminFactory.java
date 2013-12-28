@@ -17,7 +17,7 @@
  * limitations under the License.
  */
 
-package org.kiji.schema.impl;
+package org.kiji.schema.impl.hbase;
 
 import java.io.IOException;
 
@@ -26,19 +26,24 @@ import org.apache.hadoop.hbase.client.HBaseAdmin;
 
 import org.kiji.annotations.ApiAudience;
 
-/**
- * Factory for HBaseAdmin.
- *
- * Note: there is no interface for HBaseAdmin :(
- */
+/** Factory for HBaseAdmin that creates concrete HBaseAdmin instances. */
 @ApiAudience.Private
-public interface HBaseAdminFactory {
-  /**
-   * Creates a new HBaseAdmin instance.
-   *
-   * @param conf Configuration.
-   * @return a new HBaseAdmin.
-   * @throws IOException on I/O error.
-   */
-  HBaseAdmin create(Configuration conf) throws IOException;
+public final class DefaultHBaseAdminFactory implements HBaseAdminFactory {
+  /** Singleton. */
+  private static final HBaseAdminFactory DEFAULT = new DefaultHBaseAdminFactory();
+
+  /** @return an instance of the default factory. */
+  public static HBaseAdminFactory get() {
+    return DEFAULT;
+  }
+
+  /** Disallow new instances, enforce singleton. */
+  private DefaultHBaseAdminFactory() {
+  }
+
+  /** {@inheritDoc} */
+  @Override
+  public HBaseAdmin create(Configuration conf) throws IOException {
+    return new HBaseAdmin(conf);
+  }
 }
