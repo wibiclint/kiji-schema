@@ -29,6 +29,7 @@ import org.apache.hadoop.hbase.KeyValue;
 import org.apache.hadoop.hbase.client.Get;
 import org.apache.hadoop.hbase.client.HTableInterface;
 import org.apache.hadoop.hbase.client.Result;
+import org.kiji.schema.impl.KijiPaginationFilter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

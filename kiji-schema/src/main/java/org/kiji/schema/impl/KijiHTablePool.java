@@ -50,7 +50,10 @@ import org.slf4j.LoggerFactory;
 import org.kiji.annotations.ApiAudience;
 import org.kiji.schema.KijiIOException;
 import org.kiji.schema.hbase.KijiManagedHBaseTableName;
+import org.kiji.schema.impl.hbase.HTableInterfaceFactory;
+import org.kiji.schema.impl.hbase.HBaseKiji;
 import org.kiji.schema.util.Debug;
+
 
 /**
  * This private class is designed to serve as a replacement for HTablePool, to get around the

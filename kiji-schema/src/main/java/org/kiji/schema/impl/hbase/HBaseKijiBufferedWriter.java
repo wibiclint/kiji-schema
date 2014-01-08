@@ -40,6 +40,7 @@ import org.apache.hadoop.hbase.filter.KeyOnlyFilter;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.hadoop.hbase.util.ClassSize;
 import org.apache.hadoop.util.StringUtils;
+import org.kiji.schema.impl.DefaultKijiCellEncoderFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

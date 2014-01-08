@@ -27,6 +27,7 @@ import com.google.common.base.Preconditions;
 import org.apache.hadoop.hbase.client.Get;
 import org.apache.hadoop.hbase.client.HTableInterface;
 import org.apache.hadoop.hbase.client.Result;
+import org.kiji.schema.impl.KijiPaginationFilter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -43,7 +44,7 @@ import org.kiji.schema.filter.Filters;
 import org.kiji.schema.filter.KijiColumnFilter;
 import org.kiji.schema.filter.KijiColumnRangeFilter;
 import org.kiji.schema.filter.StripValueColumnFilter;
-import org.kiji.schema.impl.HBaseKijiTable.LayoutCapsule;
+import org.kiji.schema.impl.hbase.HBaseKijiTable.LayoutCapsule;
 import org.kiji.schema.util.Debug;
 
 /**

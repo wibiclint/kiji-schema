@@ -44,6 +44,7 @@ import org.apache.hadoop.hbase.client.HTableInterface;
 import org.apache.hadoop.hbase.mapreduce.LoadIncrementalHFiles;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.zookeeper.KeeperException;
+import org.kiji.schema.impl.Versions;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -76,6 +77,7 @@ import org.kiji.schema.util.Debug;
 import org.kiji.schema.util.JvmId;
 import org.kiji.schema.util.VersionInfo;
 import org.kiji.schema.impl.LayoutConsumer;
+import org.kiji.schema.impl.KijiHTablePool;
 
 /**
  * <p>A KijiTable that exposes the underlying HBase implementation.</p>

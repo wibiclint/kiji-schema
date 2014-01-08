@@ -38,6 +38,7 @@ import org.apache.hadoop.hbase.filter.ColumnPrefixFilter;
 import org.apache.hadoop.hbase.filter.FilterList;
 import org.apache.hadoop.hbase.filter.KeyOnlyFilter;
 import org.apache.hadoop.hbase.util.Bytes;
+import org.kiji.schema.impl.DefaultKijiCellEncoderFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
