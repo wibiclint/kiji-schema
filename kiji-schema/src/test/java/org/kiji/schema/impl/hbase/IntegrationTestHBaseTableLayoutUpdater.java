@@ -16,7 +16,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.kiji.schema.impl;
+package org.kiji.schema.impl.hbase;
 
 import java.util.List;
 

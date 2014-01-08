@@ -17,7 +17,7 @@
  * limitations under the License.
  */
 
-package org.kiji.schema.impl;
+package org.kiji.schema.impl.hbase;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -43,6 +43,7 @@ import org.kiji.schema.KijiTableWriter;
 import org.kiji.schema.avro.TableLayoutDesc;
 import org.kiji.schema.filter.KijiColumnFilter;
 import org.kiji.schema.filter.RegexQualifierColumnFilter;
+import org.kiji.schema.impl.KijiPaginationFilter;
 import org.kiji.schema.layout.KijiTableLayouts;
 import org.kiji.schema.util.ResourceUtils;
 
