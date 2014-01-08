@@ -68,6 +68,7 @@ import org.kiji.schema.util.LockFactory;
 import org.kiji.schema.util.ProtocolVersion;
 import org.kiji.schema.util.ResourceUtils;
 import org.kiji.schema.util.VersionInfo;
+import org.kiji.schema.impl.Versions;
 
 /**
  * Kiji instance class that contains configuration and table information.

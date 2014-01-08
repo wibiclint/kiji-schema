@@ -43,8 +43,9 @@ import org.kiji.schema.filter.Filters;
 import org.kiji.schema.filter.KijiColumnFilter;
 import org.kiji.schema.filter.KijiColumnRangeFilter;
 import org.kiji.schema.filter.StripValueColumnFilter;
-import org.kiji.schema.impl.HBaseKijiTable.LayoutCapsule;
+import org.kiji.schema.impl.hbase.HBaseKijiTable.LayoutCapsule;
 import org.kiji.schema.util.Debug;
+import org.kiji.schema.impl.KijiPaginationFilter;
 
 /**
  * HBase implementation of KijiPager for map-type families.

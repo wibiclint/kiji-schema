@@ -60,6 +60,7 @@ import org.kiji.schema.layout.KijiTableLayout.LocalityGroupLayout.FamilyLayout.C
 import org.kiji.schema.layout.impl.CellEncoderProvider;
 import org.kiji.schema.platform.SchemaPlatformBridge;
 import org.kiji.schema.impl.LayoutConsumer;
+import org.kiji.schema.impl.DefaultKijiCellEncoderFactory;
 
 /**
  * <p>

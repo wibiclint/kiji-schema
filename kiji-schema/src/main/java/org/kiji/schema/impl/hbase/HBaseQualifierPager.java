@@ -46,6 +46,7 @@ import org.kiji.schema.filter.StripValueColumnFilter;
 import org.kiji.schema.hbase.HBaseColumnName;
 import org.kiji.schema.impl.hbase.HBaseKijiTable.LayoutCapsule;
 import org.kiji.schema.util.Debug;
+import org.kiji.schema.impl.KijiPaginationFilter;
 
 /**
  * Pages through the many qualifiers of a map-type family.

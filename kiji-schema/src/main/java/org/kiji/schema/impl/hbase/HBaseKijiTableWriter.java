@@ -59,6 +59,7 @@ import org.kiji.schema.layout.impl.CellEncoderProvider;
 import org.kiji.schema.layout.impl.ColumnNameTranslator;
 import org.kiji.schema.platform.SchemaPlatformBridge;
 import org.kiji.schema.impl.LayoutConsumer;
+import org.kiji.schema.impl.DefaultKijiCellEncoderFactory;
 
 /**
  * Makes modifications to a Kiji table by sending requests directly to HBase from the local client.

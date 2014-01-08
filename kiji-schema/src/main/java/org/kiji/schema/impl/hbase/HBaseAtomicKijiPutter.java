@@ -37,10 +37,12 @@ import org.kiji.schema.EntityId;
 import org.kiji.schema.KijiCellEncoder;
 import org.kiji.schema.KijiColumnName;
 import org.kiji.schema.hbase.HBaseColumnName;
-import org.kiji.schema.impl.HBaseKijiTable.LayoutCapsule;
-import org.kiji.schema.impl.HBaseKijiTableWriter.WriterLayoutCapsule;
+import org.kiji.schema.impl.hbase.HBaseKijiTable.LayoutCapsule;
+import org.kiji.schema.impl.hbase.HBaseKijiTableWriter.WriterLayoutCapsule;
 import org.kiji.schema.layout.LayoutUpdatedException;
 import org.kiji.schema.layout.impl.CellEncoderProvider;
+import org.kiji.schema.impl.LayoutConsumer;
+import org.kiji.schema.impl.DefaultKijiCellEncoderFactory;
 
 /**
  * HBase implementation of AtomicKijiPutter.

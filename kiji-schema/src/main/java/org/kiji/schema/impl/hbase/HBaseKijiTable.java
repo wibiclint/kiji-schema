@@ -77,6 +77,7 @@ import org.kiji.schema.util.Debug;
 import org.kiji.schema.util.JvmId;
 import org.kiji.schema.util.VersionInfo;
 import org.kiji.schema.impl.LayoutConsumer;
+import org.kiji.schema.impl.Versions;
 
 /**
  * <p>A KijiTable that exposes the underlying HBase implementation.</p>
