@@ -17,28 +17,29 @@
  * limitations under the License.
  */
 
-package org.kiji.schema.impl.hbase;
+package org.kiji.schema.impl;
 
 import java.io.IOException;
 
 import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.hbase.client.HBaseAdmin;
+import org.apache.hadoop.hbase.client.HTableInterface;
 
 import org.kiji.annotations.ApiAudience;
 
 /**
- * Factory for HBaseAdmin.
+ * Factory for HTableInterface instances.
  *
- * Note: there is no interface for HBaseAdmin :(
+ * This interface exists because the HBase HTableInstanceFactory doesn't throw IOException.
  */
 @ApiAudience.Private
-public interface HBaseAdminFactory {
+public interface HTableInterfaceFactory {
   /**
-   * Creates a new HBaseAdmin instance.
+   * Creates a new HTableInterface instance.
    *
-   * @param conf Configuration.
-   * @return a new HBaseAdmin.
+   * @param conf The configuration for the HBase cluster.
+   * @param hbaseTableName The name of the HBase table to create a connection to.
+   * @return a new HTableInterface for the specified table.
    * @throws IOException on I/O error.
    */
-  HBaseAdmin create(Configuration conf) throws IOException;
+  HTableInterface create(Configuration conf, String hbaseTableName) throws IOException;
 }

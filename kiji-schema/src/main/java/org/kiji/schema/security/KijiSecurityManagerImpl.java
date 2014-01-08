@@ -46,7 +46,7 @@ import org.kiji.schema.KijiSystemTable;
 import org.kiji.schema.KijiURI;
 import org.kiji.schema.hbase.KijiManagedHBaseTableName;
 import org.kiji.schema.impl.hbase.HBaseKiji;
-import org.kiji.schema.impl.hbase.HTableInterfaceFactory;
+import org.kiji.schema.impl.HTableInterfaceFactory;
 import org.kiji.schema.impl.Versions;
 import org.kiji.schema.layout.impl.ZooKeeperMonitor;
 import org.kiji.schema.util.Lock;

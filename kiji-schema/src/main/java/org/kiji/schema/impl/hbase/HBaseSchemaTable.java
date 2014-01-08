@@ -61,6 +61,7 @@ import org.apache.hadoop.hbase.client.Scan;
 import org.apache.hadoop.hbase.io.hfile.Compression;
 import org.apache.hadoop.hbase.regionserver.StoreFile.BloomType;
 import org.apache.hadoop.hbase.util.Bytes;
+import org.kiji.schema.impl.HTableInterfaceFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

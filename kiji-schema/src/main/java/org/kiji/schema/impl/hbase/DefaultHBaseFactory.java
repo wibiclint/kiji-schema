@@ -31,6 +31,8 @@ import org.kiji.annotations.ApiAudience;
 import org.kiji.delegation.Priority;
 import org.kiji.schema.KijiURI;
 import org.kiji.schema.hbase.HBaseFactory;
+import org.kiji.schema.impl.HBaseAdminFactory;
+import org.kiji.schema.impl.HTableInterfaceFactory;
 import org.kiji.schema.layout.impl.ZooKeeperClient;
 import org.kiji.schema.util.LockFactory;
 import org.kiji.schema.util.ZooKeeperLockFactory;

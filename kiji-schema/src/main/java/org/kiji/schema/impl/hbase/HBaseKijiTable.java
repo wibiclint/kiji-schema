@@ -45,6 +45,7 @@ import org.apache.hadoop.hbase.client.HTablePool;
 import org.apache.hadoop.hbase.mapreduce.LoadIncrementalHFiles;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.zookeeper.KeeperException;
+import org.kiji.schema.impl.HTableInterfaceFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

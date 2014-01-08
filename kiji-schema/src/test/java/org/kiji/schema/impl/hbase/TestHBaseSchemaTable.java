@@ -17,7 +17,7 @@
  * limitations under the License.
  */
 
-package org.kiji.schema.impl;
+package org.kiji.schema.impl.hbase;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNull;
@@ -28,7 +28,7 @@ import org.junit.Test;
 import org.kiji.schema.Kiji;
 import org.kiji.schema.KijiClientTest;
 import org.kiji.schema.KijiSchemaTable;
-import org.kiji.schema.impl.HBaseSchemaTable.PreRegisteredSchema;
+import org.kiji.schema.impl.hbase.HBaseSchemaTable.PreRegisteredSchema;
 import org.kiji.schema.util.BytesKey;
 
 /** Tests for HBaseSchemaTable. */

@@ -26,6 +26,7 @@ import org.apache.hadoop.hbase.client.HTable;
 import org.apache.hadoop.hbase.client.HTableInterface;
 
 import org.kiji.annotations.ApiAudience;
+import org.kiji.schema.impl.HTableInterfaceFactory;
 
 /** Factory for HTableInterface that creates concrete HTable instances. */
 @ApiAudience.Private

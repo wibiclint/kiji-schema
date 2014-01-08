@@ -36,6 +36,7 @@ import org.apache.hadoop.hbase.TableNotFoundException;
 import org.apache.hadoop.hbase.client.HBaseAdmin;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.zookeeper.KeeperException;
+import org.kiji.schema.impl.HTableInterfaceFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

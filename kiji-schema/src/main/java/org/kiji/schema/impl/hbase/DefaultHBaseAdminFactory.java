@@ -25,6 +25,7 @@ import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hbase.client.HBaseAdmin;
 
 import org.kiji.annotations.ApiAudience;
+import org.kiji.schema.impl.HBaseAdminFactory;
 
 /** Factory for HBaseAdmin that creates concrete HBaseAdmin instances. */
 @ApiAudience.Private

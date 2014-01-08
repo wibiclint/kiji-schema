@@ -29,7 +29,7 @@ import org.kiji.annotations.ApiAudience;
 import org.kiji.annotations.ApiStability;
 import org.kiji.annotations.Inheritance;
 import org.kiji.schema.KijiURI;
-import org.kiji.schema.impl.hbase.HTableInterfaceFactory;
+import org.kiji.schema.impl.HTableInterfaceFactory;
 
 /**
  * KijiSecurityManager manages access control for a Kiji instance.
