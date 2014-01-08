@@ -17,33 +17,29 @@
  * limitations under the License.
  */
 
-package org.kiji.schema.impl;
+package org.kiji.schema.impl.hbase;
 
 import java.io.IOException;
 
 import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.hbase.client.HBaseAdmin;
+import org.apache.hadoop.hbase.client.HTableInterface;
 
 import org.kiji.annotations.ApiAudience;
 
-/** Factory for HBaseAdmin that creates concrete HBaseAdmin instances. */
+/**
+ * Factory for HTableInterface instances.
+ *
+ * This interface exists because the HBase HTableInstanceFactory doesn't throw IOException.
+ */
 @ApiAudience.Private
-public final class DefaultHBaseAdminFactory implements HBaseAdminFactory {
-  /** Singleton. */
-  private static final HBaseAdminFactory DEFAULT = new DefaultHBaseAdminFactory();
-
-  /** @return an instance of the default factory. */
-  public static HBaseAdminFactory get() {
-    return DEFAULT;
-  }
-
-  /** Disallow new instances, enforce singleton. */
-  private DefaultHBaseAdminFactory() {
-  }
-
-  /** {@inheritDoc} */
-  @Override
-  public HBaseAdmin create(Configuration conf) throws IOException {
-    return new HBaseAdmin(conf);
-  }
+public interface HTableInterfaceFactory {
+  /**
+   * Creates a new HTableInterface instance.
+   *
+   * @param conf The configuration for the HBase cluster.
+   * @param hbaseTableName The name of the HBase table to create a connection to.
+   * @return a new HTableInterface for the specified table.
+   * @throws IOException on I/O error.
+   */
+  HTableInterface create(Configuration conf, String hbaseTableName) throws IOException;
 }

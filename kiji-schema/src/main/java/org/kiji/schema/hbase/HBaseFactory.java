@@ -31,8 +31,8 @@ import org.kiji.annotations.Inheritance;
 import org.kiji.delegation.Lookups;
 import org.kiji.delegation.PriorityProvider;
 import org.kiji.schema.KijiURI;
-import org.kiji.schema.impl.HBaseAdminFactory;
-import org.kiji.schema.impl.HTableInterfaceFactory;
+import org.kiji.schema.impl.hbase.HBaseAdminFactory;
+import org.kiji.schema.impl.hbase.HTableInterfaceFactory;
 import org.kiji.schema.layout.impl.ZooKeeperClient;
 import org.kiji.schema.util.LockFactory;
 

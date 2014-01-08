@@ -17,7 +17,7 @@
  * limitations under the License.
  */
 
-package org.kiji.schema.impl;
+package org.kiji.schema.impl.hbase;
 
 import static org.kiji.schema.util.ByteStreamArray.longToVarInt64;
 
