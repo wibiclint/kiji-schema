@@ -17,36 +17,30 @@
  * limitations under the License.
  */
 
-package org.kiji.schema.hbase;
+package org.kiji.schema.cassandra;
 
 import java.util.regex.Pattern;
 
 import com.google.common.base.Joiner;
 import org.apache.commons.lang.StringUtils;
-import org.apache.hadoop.hbase.util.Bytes;
 
 import org.kiji.annotations.ApiAudience;
 import org.kiji.annotations.ApiStability;
 import org.kiji.schema.NotAKijiManagedTableException;
 
 /**
- * <p>Multiple instances of Kiji can be installed on a single HBase
- * cluster.  Within a Kiji instance, several HBase tables are created
- * to manage system, metadata, schemas, and user-space tables.  This
- * class represents the name of one of those HBase tables that are
- * created and managed by Kiji.  This class should only be used internally
- * in Kiji modules, or by framework application developers who need
- * direct access to HBase tables managed by Kiji.</p>
+ * <p>Multiple instances of Kiji can be installed on a single Cassandra cluster.  Within a Kiji
+ * instance, several Cassandra tables are created to manage system, metadata, schemas, and
+ * user-space tables.  This class represents the name of one of those Cassandra tables that are
+ * created and managed by Kiji.  This class should only be used internally in Kiji modules, or by
+ * framework application developers who need direct access to Cassandra tables managed by Kiji.</p>
  *
- * <p>
- * The names of tables in HBase created and managed by Kiji are
- * made of a list of delimited components.  There are at least 3
- * components of a name:
+ * <p> The names of tables in Cassandra created and managed by Kiji are made of a list of delimited
+ * components.  There are at least 3 components of a name:
  *
  * <ol>
  *   <li>
- *     Prefix: a literal string "kiji" used to mark that this table
- *     is managed by Kiji.
+ *     Prefix: a literal string "kiji" used to mark that this table is managed by Kiji.
  *   </li>
  *   <li>
  *     KijiInstance: the name of kiji instance managing this table.
@@ -56,51 +50,48 @@ import org.kiji.schema.NotAKijiManagedTableException;
  *   </li>
  * </ol>
  *
- * If the type of the table is "table", then it's name (the name users
- * of Kiji would use to refer to it) is the fourth and final component.
+ * If the type of the table is "table", then its name (the name users of Kiji would use to refer to
+ * it) is the fourth and final component.
  * </p>
  *
  * <p>
- * For example, an HBase cluster might have the following tables:
+ * For example, a Cassandra cluster might have the following tables:
  * <pre>
  * devices
- * kiji.default.meta
- * kiji.default.schema
- * kiji.default.schema_hash
- * kiji.default.schema_id
- * kiji.default.system
- * kiji.default.table.foo
- * kiji.default.table.bar
- * kiji.experimental.meta
- * kiji.experimental.schema
- * kiji.experimental.schema_hash
- * kiji.experimental.schema_id
- * kiji.experimental.system
- * kiji.experimental.table.baz
+ * kiji-default.meta
+ * kiji-default.schema
+ * kiji-default.schema_hash
+ * kiji-default.schema_id
+ * kiji-default.system
+ * kiji-default.table-foo
+ * kiji-default.table-bar
+ * kiji-experimental.meta
+ * kiji-experimental.schema
+ * kiji-experimental.schema_hash
+ * kiji-experimental.schema_id
+ * kiji-experimental.system
+ * kiji-experimental.table-baz
  * </pre>
  *
- * In this example, there is an HBase table completely unrelated to
- * kiji called "devices."  There are two kiji installations, one
- * called "default" and another called "experimental."  Within the
- * "default" installation, there are two Kiji tables, "foo" and
- * "bar."  Within the "experimental" installation, there is a single
- * Kiji table "baz."
+ * In this example, there is an Cassandra keyspace completely unrelated to Kiji called "devices."
+ * There are two Kiji installations, one called "default" and another called "experimental."  Within
+ * the "default" installation, there are two Kiji tables, "foo" and "bar."  Within the
+ * "experimental" installation, there is a single Kiji table "baz."
  * </p>
+ *
+ * Note that Cassandra will not allow us to put "." into our keyspace and table names, so we have to use another character as a delimter.  I chose  underscore here.
+ *
  */
 @ApiAudience.Framework
 @ApiStability.Evolving
 public final class KijiManagedCassandraTableName {
-  /** The delimited used to separate the components of an HBase table name. */
-  private static final char DELIMITER = '.';
 
-  private static final Joiner DELIMITER_JOINER = Joiner.on(DELIMITER);
-
-  /** The first component of all HBase table names managed by Kiji. */
+  /** The first component of all Cassandra table names managed by Kiji. */
   public static final String KIJI_COMPONENT = "kiji";
 
   /** Regexp matching Kiji system tables. */
   public static final Pattern KIJI_SYSTEM_TABLES_REGEX =
-      Pattern.compile("kiji[.](.*)[.](meta|system|schema_hash|schema_id)");
+      Pattern.compile("kiji[_](.*)[.](meta|system|schema_hash|schema_id)");
 
   /** The name component used for the Kiji meta table. */
   private static final String KIJI_META_COMPONENT = "meta";
@@ -117,8 +108,9 @@ public final class KijiManagedCassandraTableName {
   /** The name component used for all user-space Kiji tables. */
   private static final String KIJI_TABLE_COMPONENT = "table";
 
-  /** The HBase table name. */
+  /** The Cassandra table name. */
   private final String mCassandraTableName;
+
 
   /** The Kiji instance name. */
   private final String mKijiInstanceName;
@@ -127,42 +119,44 @@ public final class KijiManagedCassandraTableName {
   private final String mKijiTableName;
 
   /**
-   * Constructs a Kiji-managed HBase table name.
+   * Constructs a Kiji-managed Cassandra table name.
    *
    * @param kijiInstanceName The kiji instance name.
-   * @param type The type component of the HBase table name (meta, schema, system, table).
+   * @param type The type component of the Cassandra table name (meta, schema, system, table).
    */
   private KijiManagedCassandraTableName(String kijiInstanceName, String type) {
-    mCassandraTableName = DELIMITER_JOINER.join(KIJI_COMPONENT, kijiInstanceName, type);
+    mCassandraTableName = KIJI_COMPONENT + "_" + kijiInstanceName + "." + type;
     mKijiInstanceName = kijiInstanceName;
     mKijiTableName = null;
   }
 
   /**
-   * Constructs a Kiji-managed HBase table name.
+   * Constructs a Kiji-managed Cassandra table name.
    *
    * @param kijiInstanceName The kiji instance name.
-   * @param type The type component of the HBase table name.
+   * @param type The type component of the Cassandra table name.
    * @param kijiTableName The name of the user-space Kiji table.
    */
   private KijiManagedCassandraTableName(String kijiInstanceName, String type, String kijiTableName) {
-    mCassandraTableName = DELIMITER_JOINER.join(KIJI_COMPONENT, kijiInstanceName, type, kijiTableName);
+    mCassandraTableName = KIJI_COMPONENT + "_" + kijiInstanceName + "." + type + "_" + kijiTableName;
     mKijiInstanceName = kijiInstanceName;
     mKijiTableName = kijiTableName;
   }
 
   /**
-   * Constructs using an HBase HTable name.
+   * Constructs using a Cassandra table name.
    *
-   * @param hbaseTableName The HBase HTable name.
-   * @return A new kiji-managed HBase table name.
-   * @throws NotAKijiManagedTableException If the HBase table is not managed by kiji.
+   * @param cassandraTableName The Cassandra HTable name.
+   * @return A new kiji-managed Cassandra table name.
+   * @throws NotAKijiManagedTableException If the Cassandra table is not managed by kiji.
    */
-  public static KijiManagedCassandraTableName get(String hbaseTableName)
+  /*
+  // TODO: Rewrite this to split properly across _ and . using Java regular expressions.
+  public static KijiManagedCassandraTableName get(String cassandraTableName)
       throws NotAKijiManagedTableException {
     // Split it into components.
     String[] components = StringUtils.splitPreserveAllTokens(
-        hbaseTableName, Character.toString(DELIMITER), 4);
+        cassandraTableName, Character.toString(DELIMITER), 4);
 
     // Make sure the first component is 'kiji'.
     if (!components[0].equals(KIJI_COMPONENT)) {
@@ -181,54 +175,54 @@ public final class KijiManagedCassandraTableName {
       throw new NotAKijiManagedTableException(
           hbaseTableName, "Invalid number of name components.");
     }
-  }
+  }   */
 
   /**
-   * Gets a new instance of a Kiji-managed HBase table that holds the Kiji meta table.
+   * Gets a new instance of a Kiji-managed Cassandra table that holds the Kiji meta table.
    *
    * @param kijiInstanceName The name of the Kiji instance.
-   * @return The name of the HBase table used to store the Kiji meta table.
+   * @return The name of the Cassandra table used to store the Kiji meta table.
    */
   public static KijiManagedCassandraTableName getMetaTableName(String kijiInstanceName) {
     return new KijiManagedCassandraTableName(kijiInstanceName, KIJI_META_COMPONENT);
   }
 
   /**
-   * Gets a new instance of a Kiji-managed HBase table that holds the Kiji schema hash table.
+   * Gets a new instance of a Kiji-managed Cassandra table that holds the Kiji schema hash table.
    *
    * @param kijiInstanceName The name of the Kiji instance.
-   * @return The name of the HBase table used to store the Kiji schema hash table.
+   * @return The name of the Cassandra table used to store the Kiji schema hash table.
    */
   public static KijiManagedCassandraTableName getSchemaHashTableName(String kijiInstanceName) {
     return new KijiManagedCassandraTableName(kijiInstanceName, KIJI_SCHEMA_HASH_COMPONENT);
   }
 
   /**
-   * Gets a new instance of a Kiji-managed HBase table that holds the Kiji schema IDs table.
+   * Gets a new instance of a Kiji-managed Cassandra table that holds the Kiji schema IDs table.
    *
    * @param kijiInstanceName The name of the Kiji instance.
-   * @return The name of the HBase table used to store the Kiji schema IDs table.
+   * @return The name of the Cassandra table used to store the Kiji schema IDs table.
    */
   public static KijiManagedCassandraTableName getSchemaIdTableName(String kijiInstanceName) {
     return new KijiManagedCassandraTableName(kijiInstanceName, KIJI_SCHEMA_ID_COMPONENT);
   }
 
   /**
-   * Gets a new instance of a Kiji-managed HBase table that holds the Kiji system table.
+   * Gets a new instance of a Kiji-managed Cassandra table that holds the Kiji system table.
    *
    * @param kijiInstanceName The name of the Kiji instance.
-   * @return The name of the HBase table used to store the Kiji system table.
+   * @return The name of the Cassandra table used to store the Kiji system table.
    */
   public static KijiManagedCassandraTableName getSystemTableName(String kijiInstanceName) {
     return new KijiManagedCassandraTableName(kijiInstanceName, KIJI_SYSTEM_COMPONENT);
   }
 
   /**
-   * Gets a new instance of a Kiji-managed HBase table that holds a user-space Kiji table.
+   * Gets a new instance of a Kiji-managed Cassandra table that holds a user-space Kiji table.
    *
    * @param kijiInstanceName The name of the Kiji instance.
    * @param kijiTableName The name of the user-space Kiji table.
-   * @return The name of the HBase table used to store the user-space Kiji table.
+   * @return The name of the Cassandra table used to store the user-space Kiji table.
    */
   public static KijiManagedCassandraTableName getKijiTableName(
       String kijiInstanceName, String kijiTableName) {
@@ -246,7 +240,7 @@ public final class KijiManagedCassandraTableName {
 
   /**
    * Gets the name of the Kiji table.
-   * A user defined kiji table named "foo" in the default kiji instance will be stored in HBase
+   * A user defined kiji table named "foo" in the default kiji instance will be stored in Cassandra
    * with the KijiManaged name "kiji.default.table.foo".  This method will return only "foo".
    *
    * @return The name of the kiji table, or null if this is not a user-space Kiji table.
@@ -256,13 +250,14 @@ public final class KijiManagedCassandraTableName {
   }
 
   /**
-   * Gets the name of the HBase table that stores the data for this Kiji table.
+   * Gets the name of the Cassandra table that stores the data for this Kiji table.
    *
-   * @return The HBase table name as a UTF-8 encoded byte array.
+   * @return The Cassandra table name as a UTF-8 encoded byte array.
    */
+  /*
   public byte[] toBytes() {
     return Bytes.toBytes(mCassandraTableName);
-  }
+  } */
 
   @Override
   public String toString() {

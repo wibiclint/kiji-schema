@@ -104,7 +104,8 @@ public final class CassandraKijiInstaller {
       Session cassandraSession = cluster.connect();
 
       // TODO: Need a way for users to specify strategy, replication, etc.
-      String queryText = "CREATE KEYSPACE " + uri.getInstance() +
+      // TODO: This "kiji_" should really be added somewhere in KijiManagedCassandraTableName.
+      String queryText = "CREATE KEYSPACE kiji_" + uri.getInstance() +
           " WITH REPLICATION = {'class' : 'SimpleStrategy', 'replication_factor': 1}";
       ResultSet results = cassandraSession.execute(queryText);
 
@@ -112,7 +113,7 @@ public final class CassandraKijiInstaller {
       // TODO: May want to add prefix "kiji." to all Kiji keyspaces...
 
       // Install the system, meta, and schema tables.
-      //CassandraSystemTable.install(hbaseAdmin, uri, conf, properties, tableFactory);
+      CassandraSystemTable.install(hbaseAdmin, uri, conf, properties, tableFactory);
       //HBaseMetaTable.install(hbaseAdmin, uri);
       //HBaseSchemaTable.install(hbaseAdmin, uri, conf, tableFactory, lockFactory);
 
@@ -150,7 +151,8 @@ public final class CassandraKijiInstaller {
       Cluster cluster = Cluster.builder().addContactPoint("localhost").build();
       Session cassandraSession = cluster.connect();
 
-      String queryText = "DROP KEYSPACE " + uri.getInstance();
+      // TODO: This "kiji_" should really be added somewhere in KijiManagedCassandraTableName.
+      String queryText = "DROP KEYSPACE kiji_" + uri.getInstance();
       ResultSet results = cassandraSession.execute(queryText);
     } catch (QueryExecutionException qee) {
       // TODO: Handle this!
