@@ -58,19 +58,19 @@ import org.kiji.schema.NotAKijiManagedTableException;
  * For example, a Cassandra cluster might have the following tables:
  * <pre>
  * devices
- * kiji-default.meta
- * kiji-default.schema
- * kiji-default.schema_hash
- * kiji-default.schema_id
- * kiji-default.system
- * kiji-default.table-foo
- * kiji-default.table-bar
- * kiji-experimental.meta
- * kiji-experimental.schema
- * kiji-experimental.schema_hash
- * kiji-experimental.schema_id
- * kiji-experimental.system
- * kiji-experimental.table-baz
+ * kiji_default.meta
+ * kiji_default.schema
+ * kiji_default.schema_hash
+ * kiji_default.schema_id
+ * kiji_default.system
+ * kiji_default.table_foo
+ * kiji_default.table_bar
+ * kiji_experimental.meta
+ * kiji_experimental.schema
+ * kiji_experimental.schema_hash
+ * kiji_experimental.schema_id
+ * kiji_experimental.system
+ * kiji_experimental.table_baz
  * </pre>
  *
  * In this example, there is an Cassandra keyspace completely unrelated to Kiji called "devices."
@@ -241,7 +241,7 @@ public final class KijiManagedCassandraTableName {
   /**
    * Gets the name of the Kiji table.
    * A user defined kiji table named "foo" in the default kiji instance will be stored in Cassandra
-   * with the KijiManaged name "kiji.default.table.foo".  This method will return only "foo".
+   * with the KijiManaged name "kiji_default.table_foo".  This method will return only "foo".
    *
    * @return The name of the kiji table, or null if this is not a user-space Kiji table.
    */

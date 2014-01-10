@@ -25,6 +25,8 @@ import java.util.Map;
 
 import com.google.common.base.Joiner;
 import org.apache.hadoop.conf.Configuration;
+import org.kiji.schema.impl.cassandra.CassandraAdmin;
+import org.kiji.schema.impl.cassandra.CassandraSystemTable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import com.datastax.driver.core.exceptions.AlreadyExistsException;
@@ -109,11 +111,11 @@ public final class CassandraKijiInstaller {
           " WITH REPLICATION = {'class' : 'SimpleStrategy', 'replication_factor': 1}";
       ResultSet results = cassandraSession.execute(queryText);
 
-      // Create a session pointing to the keyspace for the kiji instance
-      // TODO: May want to add prefix "kiji." to all Kiji keyspaces...
+      // Create a CassandraAdmin wrapping around the session to pass to the installation code for system, meta, and schema tables.
+      CassandraAdmin cassandraAdmin = CassandraAdmin.makeFromOpenSession(cassandraSession, "kiji_" + uri.getInstance());
 
       // Install the system, meta, and schema tables.
-      CassandraSystemTable.install(hbaseAdmin, uri, conf, properties, tableFactory);
+      CassandraSystemTable.install(cassandraAdmin, uri, conf, properties);
       //HBaseMetaTable.install(hbaseAdmin, uri);
       //HBaseSchemaTable.install(hbaseAdmin, uri, conf, tableFactory, lockFactory);
 

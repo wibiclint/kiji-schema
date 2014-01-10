@@ -32,6 +32,9 @@ New files:
 - o.k.s.impl.cassandra.CassandraMetaTable
 - o.k.s.impl.cassandra.CassandraSchemaTable
 
+- New classes to provide similar functionality to HBaseAdmin and HTableInterface
+  - o.k.s.impl.cassandra.CassandraAdmin
+
 
 Interfacing with C* tables versus HBase tables
 ----------------------------------------------
@@ -46,6 +49,17 @@ implement more of the Kiji table layouts with C* primitives, but doing so will r
 changes.
 
 
+Code reuse
+----------
+
+For a lot of KijiSchema components, we have an interface and then an HBase class that implements
+that interface.  Many of the C* classes that we are implementing now will share a lot of code with
+the HBase classes.  Do we want to add another level of indirection to allow us to not copy/paste
+code between HBase and C*?  e.g., we could do
+
+    KijiFoo [interface] -> AbstractKijiFoo [abstract class] -> HBaseKijiFoo / CassandraKijiFoo
+
+
 What to do about URIs?
 ----------------------
 
@@ -53,6 +67,11 @@ For now, let's assume that the host is 127.0.0.1 and ignore the Zookeeper part o
 future, I *think* we could have URIs look the same, but have what is now the Zookeeper information
 become instead the information (host name, port) for a bunch of Cassandra nodes in the network in
 question.
+
+We could also temporarily make C* URIs look like: `kiji-cassandra/.env/default`.  By doing so, we
+could possibly add a lightweight way of implementing the C* / HBase bridge functionality internally
+(e.g., any time you are trying to get a `KijiTable` instance, you check the URI to see if it is a C*
+or HBase URI and then proceed appropriately).
 
 
 Testing
@@ -64,4 +83,43 @@ following:
 - Symlink the KijiSchema JAR in the BentoBox lib directory to point to my local kiji-schema build
 - I set my KIJI_CLASSPATH to be whatever Maven was using to build KijiSchema (yikes!) using `mvn
   dependency:build-classpath` to print out the classpath.
+
+
+Notes on updating system, schema, and meta tables
+-------------------------------------------------
+
+### The system table
+
+Updating the system table looks pretty straightforward.  We just need to create a table with keys
+and values as blobs and convert between blobs and byte arrays and we can reuse all of the rest of
+the code.
+
+
+### The schema tables
+
+The schema tables, one of which stores schemas by IDs, the other of which stores by hashes, are also
+pretty straightforward and we can reuse almost all of the code.  A few notes:
+
+- Because the usage of the schema tables is more well-defined (users can put whatever they want into
+  the system table), we can use a slightly more sane schema, i.e., everything does not have to be a
+  blob.
+- For now I'm going to punt on storing every version of every 
+- We have to implement counters in the C* style (putting them into a separate table)
+- We don't need ZooKeeper locks.  Instead, we can put all of the schema table operations into a
+  batch block.
+
+
+### The meta table
+
+The meta table stores `KijiTableLayout` information for each user table.
+
+There are two tables in here:
+
+1. `HBaseTableLayoutDatabase` contains the layouts for each table (stored in Avro `TableLayoutDesc`
+records)
+2. `HBaseTableKeyValueDatabase` contains per-table key-value pairs.  I'm not sure what these are
+used for beyond "column annotations."
+
+
+
 
