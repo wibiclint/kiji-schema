@@ -37,7 +37,6 @@ import org.kiji.schema.KijiURI;
 import org.kiji.schema.avro.SystemTableBackup;
 import org.kiji.schema.avro.SystemTableEntry;
 import org.kiji.schema.cassandra.KijiManagedCassandraTableName;
-import org.kiji.schema.hbase.KijiManagedHBaseTableName;
 import org.kiji.schema.impl.Versions;
 import org.kiji.schema.util.CloseableIterable;
 import org.kiji.schema.util.Debug;
@@ -66,13 +65,14 @@ public class CassandraSystemTable implements KijiSystemTable {
   private static final Logger CLEANUP_LOG =
       LoggerFactory.getLogger("cleanup." + CassandraSystemTable.class.getName());
 
-  /** The HBase column family that stores the value of the properties. */
-  public static final String VALUE_COLUMN_FAMILY = "value";
+  /** The Cassandra column family that stores the value of the properties. */
+  public static final String KEY_COLUMN = "key";
+  public static final String VALUE_COLUMN = "value";
 
-  /** The HBase row key that stores the installed Kiji data format version. */
+  /** The Cassandra row key that stores the installed Kiji data format version. */
   public static final String KEY_DATA_VERSION = "data-version";
 
-  /** The HBase row key that stores the Kiji security version. */
+  /** The Cassandra row key that stores the Kiji security version. */
   public static final String SECURITY_PROTOCOL_VERSION = "security-version";
 
   /**
@@ -85,7 +85,7 @@ public class CassandraSystemTable implements KijiSystemTable {
   /** URI of the Kiji instance this system table belongs to. */
   private final KijiURI mURI;
 
-  /** The HTable that stores the Kiji instance properties. */
+  /** The Cassandra table that stores the Kiji instance properties. */
   private final CassandraTableInterface mTable;
 
   /** States of a SystemTable instance. */
@@ -102,39 +102,11 @@ public class CassandraSystemTable implements KijiSystemTable {
   private String mConstructorStack = "";
 
   /**
-   * Creates a new HTableInterface for the Kiji system table.
-   *
-   * @param kijiURI The KijiURI.
-   * @param conf The Hadoop configuration.
-   * @param factory HTableInterface factory.
-   * @return a new HTableInterface for the Kiji system table.
-   * @throws java.io.IOException on I/O error.
-   * @throws org.kiji.schema.KijiNotInstalledException if the Kiji instance does not exist.
-   */
-  /*
-  public static HTableInterface newSystemTable(
-      KijiURI kijiURI,
-      Configuration conf,
-      HTableInterfaceFactory factory)
-      throws IOException {
-    final String tableName =
-        KijiManagedHBaseTableName.getSystemTableName(kijiURI.getInstance()).toString();
-    try {
-      return factory.create(conf, tableName);
-    } catch (TableNotFoundException tnfe) {
-      throw new KijiNotInstalledException(
-          String.format("Kiji instance %s is not installed.", kijiURI),
-          kijiURI);
-    }
-  }
-  */
-
-  /**
-   * Wrap an existing HTable connection that is assumed to be the table that stores the
+   * Wrap an existing Cassandra table that is assumed to be the table that stores the
    * Kiji instance properties.
    *
    * @param uri URI of the Kiji instance this table belongs to.
-   * @param htable An HTable to wrap.
+   * @param ctable A C* table to wrap.
    */
   public CassandraSystemTable(KijiURI uri, CassandraTableInterface ctable) {
     mURI = uri;
@@ -219,7 +191,9 @@ public class CassandraSystemTable implements KijiSystemTable {
     Preconditions.checkState(state == State.OPEN,
         "Cannot get value from SystemTable instance in state %s.", state);
 
-    String queryText = "SELECT value FROM " +  mTable.getTableName() + " WHERE key=?";
+    // TODO: Make this query a member of the class and prepare in the constructor
+    String queryText = "SELECT " + VALUE_COLUMN + " FROM " +  mTable.getTableName() +
+        " WHERE " + KEY_COLUMN + "=?";
     Session session = mTable.getSession();
     PreparedStatement preparedStatement = session.prepare(queryText);
     ResultSet resultSet = session.execute(preparedStatement.bind(key));
@@ -230,7 +204,7 @@ public class CassandraSystemTable implements KijiSystemTable {
     assert(rows.size() == 1);
     com.datastax.driver.core.Row row = rows.get(0);
 
-    return CassandraByteUtil.byteBuffertoBytes(row.getBytes("value"));
+    return CassandraByteUtil.byteBuffertoBytes(row.getBytes(VALUE_COLUMN));
   }
 
   /** {@inheritDoc} */
@@ -241,7 +215,8 @@ public class CassandraSystemTable implements KijiSystemTable {
         "Cannot put value into SystemTable instance in state %s.", state);
     ByteBuffer valAsByteBuffer = CassandraByteUtil.bytesToByteBuffer(value);
 
-    String queryText = "INSERT INTO " +  mTable.getTableName() + "(key, value) VALUES(?,?);";
+    // TODO: Make this query a member of the class and prepare in the constructor
+    String queryText = "INSERT INTO " +  mTable.getTableName() + "(" + KEY_COLUMN + "," + VALUE_COLUMN + ") VALUES(?,?);";
     Session session = mTable.getSession();
     PreparedStatement preparedStatement = session.prepare(queryText);
     // TODO: Check for success?
@@ -255,6 +230,7 @@ public class CassandraSystemTable implements KijiSystemTable {
     Preconditions.checkState(state == State.OPEN,
         "Cannot get all from SystemTable instance in state %s.", state);
 
+    // TODO: Make this query a member of the class and prepare in the constructor
     String queryText = "SELECT * FROM " +  mTable.getTableName() + ";";
     Session session = mTable.getSession();
     ResultSet resultSet = session.execute(queryText);
@@ -327,12 +303,14 @@ public class CassandraSystemTable implements KijiSystemTable {
       Configuration conf,
       Map<String, String> properties)
       throws IOException {
-    // Install the table.  Sadly, we have to just use blobs and byte arrays here, so that we are compliant with everything else in Kiji.  :(
-    String systemTableName = KijiManagedCassandraTableName.getSystemTableName(kijiURI.getInstance()).toString();
+    // Install the table.  Sadly, we have to just use blobs and byte arrays here, so that we are
+    // compliant with everything else in Kiji.  :(
+    String systemTableName =
+        KijiManagedCassandraTableName.getSystemTableName(kijiURI.getInstance()).toString();
 
     // The layout of this table is straightforward - just blob to blob!
     // TODO: Any check here first for whether the table exists?
-    String tableLayout = "( key text PRIMARY KEY, value blob)";
+    String tableLayout = "(key text PRIMARY KEY, value blob)";
 
     admin.createTable(systemTableName, tableLayout);
     CassandraTableInterface ctable = admin.getCassandraTableInterface(systemTableName);
@@ -458,8 +436,8 @@ public class CassandraSystemTable implements KijiSystemTable {
     @Override
     public SimpleEntry<String, byte[]> next() {
       Row next = mRowIterator.next();
-      String key = next.getString("key");
-      byte[] value = CassandraByteUtil.byteBuffertoBytes(next.getBytes("value"));
+      String key = next.getString(KEY_COLUMN);
+      byte[] value = CassandraByteUtil.byteBuffertoBytes(next.getBytes(VALUE_COLUMN));
       return new SimpleEntry<String, byte[]>(key, value);
     }
 

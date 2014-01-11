@@ -1,5 +1,5 @@
 /**
- * (c) Copyright 2012 WibiData, Inc.
+ * (c) Copyright 2014 WibiData, Inc.
  *
  * See the NOTICE file distributed with this work for additional
  * information regarding copyright ownership.
@@ -17,70 +17,50 @@
  * limitations under the License.
  */
 
-package org.kiji.schema.impl.hbase;
+package org.kiji.schema.impl.cassandra;
 
-import static org.kiji.schema.util.ByteStreamArray.longToVarInt64;
-
-import java.io.ByteArrayInputStream;
-import java.io.File;
-import java.io.IOException;
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.concurrent.atomic.AtomicReference;
-
+import com.datastax.driver.core.PreparedStatement;
+import com.datastax.driver.core.ResultSet;
+import com.datastax.driver.core.Row;
+import com.datastax.driver.core.Session;
+import com.datastax.driver.core.exceptions.InvalidTypeException;
 import com.google.common.base.Objects;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Lists;
 import org.apache.avro.AvroRuntimeException;
 import org.apache.avro.Schema;
-import org.apache.avro.io.DatumReader;
-import org.apache.avro.io.DatumWriter;
-import org.apache.avro.io.Decoder;
-import org.apache.avro.io.DecoderFactory;
-import org.apache.avro.io.Encoder;
-import org.apache.avro.io.EncoderFactory;
+import org.apache.avro.io.*;
 import org.apache.avro.specific.SpecificDatumReader;
 import org.apache.avro.specific.SpecificDatumWriter;
 import org.apache.commons.io.output.ByteArrayOutputStream;
 import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.hbase.HColumnDescriptor;
 import org.apache.hadoop.hbase.HConstants;
-import org.apache.hadoop.hbase.HTableDescriptor;
 import org.apache.hadoop.hbase.KeyValue;
-import org.apache.hadoop.hbase.client.Get;
-import org.apache.hadoop.hbase.client.HBaseAdmin;
-import org.apache.hadoop.hbase.client.HTableInterface;
-import org.apache.hadoop.hbase.client.Put;
-import org.apache.hadoop.hbase.client.Result;
-import org.apache.hadoop.hbase.client.ResultScanner;
-import org.apache.hadoop.hbase.client.Scan;
 import org.apache.hadoop.hbase.io.hfile.Compression;
-import org.apache.hadoop.hbase.regionserver.StoreFile.BloomType;
 import org.apache.hadoop.hbase.util.Bytes;
-import org.kiji.schema.impl.HTableInterfaceFactory;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import org.kiji.annotations.ApiAudience;
 import org.kiji.schema.KijiSchemaTable;
 import org.kiji.schema.KijiURI;
 import org.kiji.schema.avro.MD5Hash;
 import org.kiji.schema.avro.SchemaTableBackup;
 import org.kiji.schema.avro.SchemaTableEntry;
+import org.kiji.schema.cassandra.KijiManagedCassandraTableName;
 import org.kiji.schema.hbase.KijiManagedHBaseTableName;
+import org.kiji.schema.impl.HTableInterfaceFactory;
 import org.kiji.schema.platform.SchemaPlatformBridge;
-import org.kiji.schema.util.ByteStreamArray;
+import org.kiji.schema.util.*;
 import org.kiji.schema.util.ByteStreamArray.EncodingException;
-import org.kiji.schema.util.BytesKey;
-import org.kiji.schema.util.Debug;
-import org.kiji.schema.util.Hasher;
-import org.kiji.schema.util.Lock;
-import org.kiji.schema.util.LockFactory;
-import org.kiji.schema.util.ResourceUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.io.ByteArrayInputStream;
+import java.io.File;
+import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.util.*;
+import java.util.concurrent.atomic.AtomicReference;
+
+import static org.kiji.schema.util.ByteStreamArray.longToVarInt64;
 
 /**
  * <p>
@@ -92,40 +72,49 @@ import org.kiji.schema.util.ResourceUtils;
  * Schemas are stored in two tables with a single column family named "schema" and that contains
  * SchemaTableEntry records. One table is indexed by schema hashes (128-bit MD5 hashes of the
  * schema JSON representation). Other table is indexed by schema IDs (integers &gt;= 0).
+ * There is a third table with a counter for the Schema IDs.
  *
  * There may be multiple schema IDs for a single schema.
  * </p>
  */
 @ApiAudience.Private
-public class HBaseSchemaTable implements KijiSchemaTable {
-  private static final Logger LOG = LoggerFactory.getLogger(HBaseSchemaTable.class);
-  // private static final Logger CLEANUP_LOG =
-  //     LoggerFactory.getLogger(HBaseSchemaTable.class.getName() + ".Cleanup");
+public class CassandraSchemaTable implements KijiSchemaTable {
+  private static final Logger LOG = LoggerFactory.getLogger(CassandraSchemaTable.class);
   private static final Logger CLEANUP_LOG =
-      LoggerFactory.getLogger("cleanup." + HBaseSchemaTable.class.getName());
+      LoggerFactory.getLogger("cleanup." + CassandraSchemaTable.class.getName());
 
-  /** The column family in HBase used to store schema entries. */
-  public static final String SCHEMA_COLUMN_FAMILY = "schema";
-  private static final byte[] SCHEMA_COLUMN_FAMILY_BYTES = Bytes.toBytes(SCHEMA_COLUMN_FAMILY);
+  /** The column name in C* for the keys in the schema hash table. */
+  public static final String SCHEMA_COLUMN_HASH_KEY = "schema_hash";
 
-  /** The column qualifier in HBase used to store schema entries. */
-  public static final String SCHEMA_COLUMN_QUALIFIER = "";
-  private static final byte[] SCHEMA_COLUMN_QUALIFIER_BYTES =
-      Bytes.toBytes(SCHEMA_COLUMN_QUALIFIER);
+  /** The column name in C* for the keys in the schema ID table. */
+  public static final String SCHEMA_COLUMN_ID_KEY = "schema_id";
 
-  /** Schema IDs are generated using a counter. The counter is stored in the schema ID table. */
-  public static final String SCHEMA_COUNTER_ROW_NAME = "counter";
-  private static final byte[] SCHEMA_COUNTER_ROW_NAME_BYTES =
-      Bytes.toBytes(SCHEMA_COUNTER_ROW_NAME);
+  /** The column name in C* for the values in the schema hash and ID tables (same for both). */
+  public static final String SCHEMA_COLUMN_VALUE = "schema_blob";
 
-  /** HTable used to map schema hash to schema entries. */
-  private final HTableInterface mSchemaHashTable;
+  /** The column name for the timestamp value in the schema hash and ID tables (same for both). */
+  public static final String SCHEMA_COLUMN_TIME = "time";
 
-  /** HTable used to map schema IDs to schema entries. */
-  private final HTableInterface mSchemaIdTable;
+  /** We need some kind of PRIMARY KEY column for the counter table. */
+  public static final String SCHEMA_COUNTER_COLUMN_KEY = "counter_key";
+
+  /** We should have only one row ever in this table... */
+  public static final String SCHEMA_COUNTER_ONLY_KEY_VALUE = "THE_ONLY_COUNTER";
+
+  /** The column name of the C* counter used to store schema IDs.  In C*, counters go into their own tables. */
+  public static final String SCHEMA_COUNTER_COLUMN_VALUE = "counter";
+
+  /** C* table used to map schema hash to schema entries. */
+  private final CassandraTableInterface mSchemaHashTable;
+
+  /** C* table used to map schema IDs to schema entries. */
+  private final CassandraTableInterface mSchemaIdTable;
 
   /** Lock for the kiji instance schema table. */
   private final Lock mZKLock;
+
+  /** C* table used to increment schema IDs. */
+  private final CassandraTableInterface mCounterTable;
 
   /** Maps schema MD5 hashes to schema entries. */
   private final Map<BytesKey, SchemaEntry> mSchemaHashMap = new HashMap<BytesKey, SchemaEntry>();
@@ -134,7 +123,7 @@ public class HBaseSchemaTable implements KijiSchemaTable {
   private final Map<Long, SchemaEntry> mSchemaIdMap = new HashMap<Long, SchemaEntry>();
 
   /** Schema hash cache. */
-  private final SchemaHashCache mHashCache = new KijiSchemaTable.SchemaHashCache();
+  private final SchemaHashCache mHashCache = new SchemaHashCache();
 
   /** KijiURI of the Kiji instance this schema table belongs to. */
   private final KijiURI mURI;
@@ -151,42 +140,6 @@ public class HBaseSchemaTable implements KijiSchemaTable {
 
   /** Used for testing finalize() behavior. */
   private String mConstructorStack = "";
-
-  /**
-   * Creates an HTable handle to the schema hash table.
-   *
-   * @param kijiURI the KijiURI.
-   * @param conf the Hadoop configuration.
-   * @param factory HTableInterface factory.
-   * @return a new interface for the table storing the mapping from schema hash to schema entry.
-   * @throws IOException on I/O error.
-   */
-  public static HTableInterface newSchemaHashTable(
-      KijiURI kijiURI,
-      Configuration conf,
-      HTableInterfaceFactory factory)
-      throws IOException {
-    return factory.create(conf,
-        KijiManagedHBaseTableName.getSchemaHashTableName(kijiURI.getInstance()).toString());
-  }
-
-  /**
-   * Creates an HTable handle to the schema ID table.
-   *
-   * @param kijiURI the KijiURI.
-   * @param conf the Hadoop configuration.
-   * @param factory HTableInterface factory.
-   * @return a new interface for the table storing the mapping from schema ID to schema entry.
-   * @throws IOException on I/O error.
-   */
-  public static HTableInterface newSchemaIdTable(
-      KijiURI kijiURI,
-      Configuration conf,
-      HTableInterfaceFactory factory)
-      throws IOException {
-    return factory.create(conf,
-        KijiManagedHBaseTableName.getSchemaIdTableName(kijiURI.getInstance()).toString());
-  }
 
   /**
    * Creates a lock for a given Kiji instance.
@@ -226,7 +179,7 @@ public class HBaseSchemaTable implements KijiSchemaTable {
    *
    * @param bytes Binary-encoded Avro schema entry.
    * @return Decoded Avro schema entry.
-   * @throws IOException on I/O error.
+   * @throws java.io.IOException on I/O error.
    */
   public static SchemaTableEntry decodeSchemaEntry(final byte[] bytes) throws IOException {
     final SchemaTableEntry entry = new SchemaTableEntry();
@@ -240,7 +193,7 @@ public class HBaseSchemaTable implements KijiSchemaTable {
    *
    * @param avroEntry Avro schema entry to encode.
    * @return Binary-encoded Avro schema entry.
-   * @throws IOException on I/O error.
+   * @throws java.io.IOException on I/O error.
    */
   public static byte[] encodeSchemaEntry(final SchemaTableEntry avroEntry) throws IOException {
     final ByteArrayOutputStream bytes = new ByteArrayOutputStream(4096);
@@ -250,44 +203,24 @@ public class HBaseSchemaTable implements KijiSchemaTable {
   }
 
   /**
-   * Open a connection to the HBase schema table for a Kiji instance.
-   *
-   * @param kijiURI the KijiURI
-   * @param conf The Hadoop configuration.
-   * @param tableFactory HTableInterface factory.
-   * @param lockFactory Factory for locks.
-   * @throws IOException on I/O error.
-   */
-  public HBaseSchemaTable(
-      KijiURI kijiURI,
-      Configuration conf,
-      HTableInterfaceFactory tableFactory,
-      LockFactory lockFactory)
-      throws IOException {
-    this(newSchemaHashTable(kijiURI, conf, tableFactory),
-        newSchemaIdTable(kijiURI, conf, tableFactory),
-        newLock(kijiURI, lockFactory),
-        kijiURI);
-  }
-
-  /**
    * Wrap an existing HBase table assumed to be where the schema data is stored.
    *
    * @param hashTable The HTable that maps schema hashes to schema entries.
    * @param idTable The HTable that maps schema IDs to schema entries.
-   * @param zkLock Lock protecting the schema tables.
    * @param uri URI of the Kiji instance this schema table belongs to.
-   * @throws IOException on I/O error.
+   * @throws java.io.IOException on I/O error.
    */
-  // TODO: Possibly make this constructor private
-  public HBaseSchemaTable(
-      HTableInterface hashTable,
-      HTableInterface idTable,
+  // TODO: Check whether this needs to be public
+  private CassandraSchemaTable(
+      CassandraTableInterface hashTable,
+      CassandraTableInterface idTable,
+      CassandraTableInterface counterTable,
       Lock zkLock,
       KijiURI uri)
       throws IOException {
     mSchemaHashTable = Preconditions.checkNotNull(hashTable);
     mSchemaIdTable = Preconditions.checkNotNull(idTable);
+    mCounterTable = Preconditions.checkNotNull(counterTable);
     mZKLock = Preconditions.checkNotNull(zkLock);
     mURI = uri;
 
@@ -300,6 +233,8 @@ public class HBaseSchemaTable implements KijiSchemaTable {
         "Cannot open SchemaTable instance in state %s.", oldState);
   }
 
+  // TODO: Probably add a constructor that gets a CassandraAdmin and uses that to create the m*Tables
+
   /**
    * Looks up a schema entry given an Avro schema object.
    *
@@ -307,7 +242,7 @@ public class HBaseSchemaTable implements KijiSchemaTable {
    *
    * @param schema Avro schema to look up.
    * @return Either the pre-existing entry for the specified schema, or a newly created entry.
-   * @throws IOException on I/O error.
+   * @throws java.io.IOException on I/O error.
    */
   private synchronized SchemaEntry getOrCreateSchemaEntry(final Schema schema) throws IOException {
     final State state = mState.get();
@@ -348,7 +283,7 @@ public class HBaseSchemaTable implements KijiSchemaTable {
    * @param schema Avro schema to register
    * @param schemaHash hash of the schema
    * @return Fully populated SchemaEntry
-   * @throws IOException on I/O error.
+   * @throws java.io.IOException on I/O error.
    */
   private SchemaEntry registerNewSchemaInTable(final Schema schema, final BytesKey schemaHash)
       throws IOException {
@@ -361,8 +296,8 @@ public class HBaseSchemaTable implements KijiSchemaTable {
 
       // Here we know the schema is unknown from the schema tables and no other process can
       // update the schema table.
-      final long schemaId = mSchemaIdTable.incrementColumnValue(SCHEMA_COUNTER_ROW_NAME_BYTES,
-          SCHEMA_COLUMN_FAMILY_BYTES, SCHEMA_COLUMN_QUALIFIER_BYTES, 1) - 1;
+      incrementSchemaIdCounter(1);
+      long schemaId = readSchemaIdCounter();
 
       final SchemaEntry entry = new SchemaEntry(schemaId, schemaHash, schema);
       storeInTable(toAvroEntry(entry));
@@ -373,6 +308,51 @@ public class HBaseSchemaTable implements KijiSchemaTable {
     }
   }
 
+  /**
+   * Increment the schema ID counter.
+   * @param incrementAmount Amount by which to increment the counter (can be negative).
+   */
+  private void incrementSchemaIdCounter(long incrementAmount) {
+    String tableName = mCounterTable.getTableName();
+    Session session = mCounterTable.getSession();
+    String incrementSign = incrementAmount >= 0 ? "+" : "-";
+    String queryText = String.format("UPDATE %s SET %s = %s %s %d WHERE %s=%s;",
+        tableName,
+        SCHEMA_COUNTER_COLUMN_VALUE,
+        SCHEMA_COUNTER_COLUMN_VALUE,
+        incrementSign,
+        incrementAmount,
+        SCHEMA_COUNTER_COLUMN_KEY,
+        SCHEMA_COUNTER_ONLY_KEY_VALUE
+    );
+    session.execute(queryText);
+  }
+
+  /**
+   * Read back the current value of the schema ID counter.
+   * @return Value of the counter.
+   */
+  private long readSchemaIdCounter() {
+    // Sanity check that counter value is 1!
+    String queryText = String.format("SELECT * FROM %s;", mCounterTable.getTableName());
+    ResultSet resultSet = mCounterTable.getSession().execute(queryText);
+    List<Row> rows = resultSet.all();
+    assert(rows.size() == 1);
+    Row row = rows.get(0);
+    return row.getLong(SCHEMA_COUNTER_COLUMN_VALUE);
+  }
+
+  /**
+   * Used for resetting the schema ID counter.
+   *
+   * This is fairly hackish and relies upon the counter being locked with a ZooKeeper lock.
+   * @param newCounterValue Value to which to set the counter.
+   */
+  private void setSchemaIdCounter(long newCounterValue) {
+    // Get the current counter value
+    long currentValue = readSchemaIdCounter();
+    incrementSchemaIdCounter(newCounterValue - currentValue);
+  }
 
   /**
    * Writes the given schema entry to the ID and hash tables.
@@ -380,7 +360,7 @@ public class HBaseSchemaTable implements KijiSchemaTable {
    * This is not protected from concurrent writes. Caller must ensure consistency.
    *
    * @param avroEntry Schema entry to write.
-   * @throws IOException on I/O error.
+   * @throws java.io.IOException on I/O error.
    */
   private void storeInTable(final SchemaTableEntry avroEntry)
       throws IOException {
@@ -395,30 +375,53 @@ public class HBaseSchemaTable implements KijiSchemaTable {
    * @param avroEntry Schema entry to write.
    * @param timestamp Write entries with this timestamp.
    * @param flush Whether to flush tables synchronously.
-   * @throws IOException on I/O error.
+   * @throws java.io.IOException on I/O error.
    */
   private void storeInTable(final SchemaTableEntry avroEntry, long timestamp, boolean flush)
       throws IOException {
+    // TODO: Replace with actual C* code
     final byte[] entryBytes = encodeSchemaEntry(avroEntry);
 
+    // TODO: Obviate this comment by doing all of this in batch.
     // Writes the ID mapping first: if the hash table write fails, we just lost one schema ID.
     // The hash table write must not happen before the ID table write has been persisted.
     // Otherwise, another client may see the hash entry, write cells with the schema ID that cannot
     // be decoded (since the ID mapping has not been written yet).
+    Session idSession = mSchemaIdTable.getSession();
 
-    final Put putId = new Put(longToVarInt64(avroEntry.getId()))
-        .add(SCHEMA_COLUMN_FAMILY_BYTES, SCHEMA_COLUMN_QUALIFIER_BYTES, timestamp, entryBytes);
-    mSchemaIdTable.put(putId);
-    if (flush) {
-      mSchemaIdTable.flushCommits();
-    }
+    String idQueryText = String.format(
+        "INSERT INTO TABLE %s(%s, %s, %s) VALUES(?, ?, ?);",
+        mSchemaIdTable.getTableName(),
+        SCHEMA_COLUMN_ID_KEY,
+        SCHEMA_COLUMN_TIME,
+        SCHEMA_COLUMN_VALUE);
 
-    final Put putHash = new Put(avroEntry.getHash().bytes())
-        .add(SCHEMA_COLUMN_FAMILY_BYTES, SCHEMA_COLUMN_QUALIFIER_BYTES, timestamp, entryBytes);
-    mSchemaHashTable.put(putHash);
-    if (flush) {
-      mSchemaHashTable.flushCommits();
-    }
+    PreparedStatement idPreparedStatement = idSession.prepare(idQueryText);
+    ResultSet resultSet = idSession.execute(idPreparedStatement.bind(
+        avroEntry.getId(),
+        timestamp,
+        CassandraByteUtil.bytesToByteBuffer(entryBytes)));
+
+    // TODO: Anything here to flush the table or verify that this worked?
+    //if (flush) { mSchemaIdTable.flushCommits(); }
+
+    Session hashSession = mSchemaHashTable.getSession();
+
+    String hashQueryText = String.format(
+        "INSERT INTO TABLE %s(%s, %s, %s) VALUES(?, ?, ?);",
+        mSchemaHashTable.getTableName(),
+        SCHEMA_COLUMN_HASH_KEY,
+        SCHEMA_COLUMN_TIME,
+        SCHEMA_COLUMN_VALUE);
+
+    PreparedStatement hashPreparedStatement = hashSession.prepare(hashQueryText);
+    ResultSet hashResultSet = hashSession.execute(hashPreparedStatement.bind(
+        avroEntry.getId(),
+        timestamp,
+        CassandraByteUtil.bytesToByteBuffer(entryBytes)));
+
+    // TODO: Anything here to flush the table or verify that this worked?
+    //if (flush) { mSchemaHashTable.flushCommits(); }
   }
 
   /**
@@ -426,12 +429,31 @@ public class HBaseSchemaTable implements KijiSchemaTable {
    *
    * @param schemaId schema ID
    * @return Avro schema entry, or null if the schema ID does not exist in the table
-   * @throws IOException on I/O error.
+   * @throws java.io.IOException on I/O error.
    */
   private SchemaTableEntry loadFromIdTable(long schemaId) throws IOException {
-    final Get get = new Get(longToVarInt64(schemaId));
-    final Result result = mSchemaIdTable.get(get);
-    return result.isEmpty() ? null : decodeSchemaEntry(result.value());
+    Session session = mSchemaIdTable.getSession();
+    String tableName = mSchemaIdTable.getTableName();
+
+    // TODO: Prepare this statement once in constructor, not every load.
+    String queryText = String.format(
+        "SELECT %s FROM %s WHERE %s=%d ORDER BY %s DESC LIMIT 1",
+        SCHEMA_COLUMN_VALUE,
+        tableName,
+        SCHEMA_COLUMN_ID_KEY,
+        schemaId,
+        SCHEMA_COLUMN_TIME
+    );
+    ResultSet resultSet = session.execute(queryText);
+    List<Row> rows = resultSet.all();
+
+    if (0 == rows.size()) {
+      return null;
+    }
+
+    assert(rows.size() == 1);
+    byte[] schemaAsBytes = CassandraByteUtil.byteBuffertoBytes(rows.get(0).getBytes(SCHEMA_COLUMN_VALUE));
+    return decodeSchemaEntry(schemaAsBytes);
   }
 
   /**
@@ -439,12 +461,33 @@ public class HBaseSchemaTable implements KijiSchemaTable {
    *
    * @param schemaHash schema hash
    * @return Avro schema entry, or null if the schema hash does not exist in the table
-   * @throws IOException on I/O error.
+   * @throws java.io.IOException on I/O error.
    */
   private SchemaTableEntry loadFromHashTable(BytesKey schemaHash) throws IOException {
-    final Get get = new Get(schemaHash.getBytes());
-    final Result result = mSchemaHashTable.get(get);
-    return result.isEmpty() ? null : decodeSchemaEntry(result.value());
+    Session session = mSchemaIdTable.getSession();
+    String tableName = mSchemaIdTable.getTableName();
+
+    ByteBuffer tableKey = CassandraByteUtil.bytesToByteBuffer(schemaHash.getBytes());
+
+    // TODO: Prepare this statement once in constructor, not every load.
+    String queryText = String.format(
+        "SELECT %s FROM %s WHERE %s=? ORDER BY %s DESC LIMIT 1",
+        SCHEMA_COLUMN_VALUE,
+        tableName,
+        SCHEMA_COLUMN_HASH_KEY,
+        SCHEMA_COLUMN_TIME
+    );
+    PreparedStatement preparedStatement = session.prepare(queryText);
+    ResultSet resultSet = session.execute(preparedStatement.bind(tableKey));
+    List<Row> rows = resultSet.all();
+
+    if (0 == rows.size()) {
+      return null;
+    }
+
+    assert(rows.size() == 1);
+    byte[] schemaAsBytes = CassandraByteUtil.byteBuffertoBytes(rows.get(0).getBytes(SCHEMA_COLUMN_VALUE));
+    return decodeSchemaEntry(schemaAsBytes);
   }
 
   /**
@@ -579,8 +622,9 @@ public class HBaseSchemaTable implements KijiSchemaTable {
     final State state = mState.get();
     Preconditions.checkState(state == State.OPEN,
         "Cannot flush SchemaTable instance in state %s.", state);
-    mSchemaIdTable.flushCommits();
-    mSchemaHashTable.flushCommits();
+    // TODO: Replace with actual C* code
+    //mSchemaIdTable.flushCommits();
+    //mSchemaHashTable.flushCommits();
   }
 
   /** {@inheritDoc} */
@@ -590,8 +634,9 @@ public class HBaseSchemaTable implements KijiSchemaTable {
     final State oldState = mState.getAndSet(State.CLOSED);
     Preconditions.checkState(oldState == State.OPEN,
         "Cannot close SchemaTable instance in state %s.", oldState);
-    mSchemaHashTable.close();
-    mSchemaIdTable.close();
+    // TODO: Replace with actual C* code
+    //mSchemaHashTable.close();
+    //mSchemaIdTable.close();
     ResourceUtils.closeOrLog(mZKLock);
   }
 
@@ -607,21 +652,91 @@ public class HBaseSchemaTable implements KijiSchemaTable {
     super.finalize();
   }
 
+
+  /**
+   * Install the schema hash table.
+   * @param admin
+   * @param tableName
+   */
+  private static CassandraTableInterface installHashTable(CassandraAdmin admin, String tableName) {
+    // Let's try to make this somewhat readable...
+    // TODO: Table should order by DESC for time
+    String tableDescription = String.format(
+        "(%s blob, %s timestamp, %s blob, PRIMARY KEY (%s, %s));",
+        SCHEMA_COLUMN_HASH_KEY,
+        SCHEMA_COLUMN_TIME,
+        SCHEMA_COLUMN_VALUE,
+        SCHEMA_COLUMN_HASH_KEY,
+        SCHEMA_COLUMN_TIME
+    );
+    return admin.createTable(tableName, tableDescription);
+  }
+
+  /**
+   * Install the schema ID table.
+   * @param admin
+   * @param tableName
+   */
+  private static CassandraTableInterface installIdTable(CassandraAdmin admin, String tableName) {
+    // TODO: Table should order by DESC for time
+    String tableDescription = String.format(
+        "(%s int, %s timestamp, %s blob, PRIMARY KEY (%s, %s));",
+        SCHEMA_COLUMN_ID_KEY,
+        SCHEMA_COLUMN_TIME,
+        SCHEMA_COLUMN_VALUE,
+        SCHEMA_COLUMN_ID_KEY,
+        SCHEMA_COLUMN_TIME
+    );
+    return admin.createTable(tableName, tableDescription);
+  }
+
+  /**
+   * Install the schema ID counter table.
+   * @param admin
+   * @param tableName
+   */
+  private static CassandraTableInterface installCounterTable(CassandraAdmin admin, String tableName) {
+    String tableDescription = String.format(
+        "(%s text PRIMARY KEY, %s counter);",
+        SCHEMA_COUNTER_COLUMN_KEY,
+        SCHEMA_COUNTER_COLUMN_VALUE
+    );
+    CassandraTableInterface ctable = admin.createTable(tableName, tableDescription);
+
+    // Now set the counter to zero
+    String queryText = String.format("UPDATE %s SET %s = %s + 0 WHERE %s=%s;",
+        tableName,
+        SCHEMA_COUNTER_COLUMN_VALUE,
+        SCHEMA_COUNTER_COLUMN_VALUE,
+        SCHEMA_COUNTER_COLUMN_KEY,
+        SCHEMA_COUNTER_ONLY_KEY_VALUE
+    );
+    admin.getSession().execute(queryText);
+
+    // Sanity check that counter value is 1!
+    queryText = String.format("SELECT * FROM %s;", tableName);
+    ResultSet resultSet = admin.getSession().execute(queryText);
+    List<Row> rows = resultSet.all();
+    assert(rows.size() == 1);
+    Row row = rows.get(0);
+    int counterValue = row.getInt(SCHEMA_COUNTER_COLUMN_VALUE);
+    assert(0 == counterValue);
+
+    return ctable;
+  }
+
   /**
    * Install the schema table into a Kiji instance.
    *
-   * @param admin The HBase Admin interface for the HBase cluster to install into.
+   * @param admin The C* Admin interface for the HBase cluster to install into.
    * @param kijiURI the KijiURI.
    * @param conf The Hadoop configuration.
-   * @param tableFactory HTableInterface factory.
-   * @param lockFactory Factory for locks.
-   * @throws IOException on I/O error.
+   * @throws java.io.IOException on I/O error.
    */
   public static void install(
-      HBaseAdmin admin,
+      CassandraAdmin admin,
       KijiURI kijiURI,
       Configuration conf,
-      HTableInterfaceFactory tableFactory,
       LockFactory lockFactory)
       throws IOException {
     // Keep all versions of schema entries:
@@ -630,43 +745,26 @@ public class HBaseSchemaTable implements KijiSchemaTable {
     //      - with different schema IDs in some rare cases, for example when a client crashes
     //        while writing an entry.
     //      - with different schemas on MD5 hash collisions.
-    final int maxVersions = Integer.MAX_VALUE;
 
-    final HTableDescriptor hashTableDescriptor = new HTableDescriptor(
-        KijiManagedHBaseTableName.getSchemaHashTableName(kijiURI.getInstance()).toString());
-    final HColumnDescriptor hashColumnDescriptor = SchemaPlatformBridge.get()
-        .createHColumnDescriptorBuilder(SCHEMA_COLUMN_FAMILY_BYTES)
-        .setMaxVersions(maxVersions)
-        .setCompressionType(Compression.Algorithm.NONE)
-        .setInMemory(false)
-        .setBlockCacheEnabled(true)
-        .setTimeToLive(HConstants.FOREVER)
-        .setBloomType(BloomType.NONE)
-        .build();
-    hashTableDescriptor.addFamily(hashColumnDescriptor);
-    admin.createTable(hashTableDescriptor);
+    CassandraTableInterface hashTable = installHashTable(
+        admin,
+        KijiManagedCassandraTableName.getSchemaHashTableName(kijiURI.getInstance()).toString());
 
-    final HTableDescriptor idTableDescriptor = new HTableDescriptor(
-        KijiManagedHBaseTableName.getSchemaIdTableName(kijiURI.getInstance()).toString());
-    final HColumnDescriptor idColumnDescriptor = SchemaPlatformBridge.get()
-        .createHColumnDescriptorBuilder(SCHEMA_COLUMN_FAMILY_BYTES)
-        .setMaxVersions(maxVersions)
-        .setCompressionType(Compression.Algorithm.NONE)
-        .setInMemory(false)
-        .setBlockCacheEnabled(true)
-        .setTimeToLive(HConstants.FOREVER)
-        .setBloomType(BloomType.NONE)
-        .build();
-    idTableDescriptor.addFamily(idColumnDescriptor);
-    admin.createTable(idTableDescriptor);
+    CassandraTableInterface idTable = installIdTable(
+        admin,
+        KijiManagedCassandraTableName.getSchemaIdTableName(kijiURI.getInstance()).toString());
 
-    final HBaseSchemaTable schemaTable = new HBaseSchemaTable(
-        newSchemaHashTable(kijiURI, conf, tableFactory),
-        newSchemaIdTable(kijiURI, conf, tableFactory),
+    CassandraTableInterface counterTable = installCounterTable(
+        admin,
+        KijiManagedCassandraTableName.getSchemaCounterTableName(kijiURI.getInstance()).toString());
+
+    final CassandraSchemaTable schemaTable = new CassandraSchemaTable(
+        hashTable,
+        idTable,
+        counterTable,
         newLock(kijiURI, lockFactory),
         kijiURI);
     try {
-      schemaTable.setSchemaIdCounter(0L);
       schemaTable.registerPrimitiveSchemas();
     } finally {
       ResourceUtils.closeOrLog(schemaTable);
@@ -674,23 +772,14 @@ public class HBaseSchemaTable implements KijiSchemaTable {
   }
 
   /**
-   * Sets the schema ID counter.
+   * Deletes a C* table.
    *
-   * @param counter New value for the schema ID counter.
-   * @throws IOException on I/O error.
-   */
-  private void setSchemaIdCounter(long counter) throws IOException {
-    mSchemaIdTable.put(new Put(SCHEMA_COUNTER_ROW_NAME_BYTES)
-        .add(SCHEMA_COLUMN_FAMILY_BYTES, SCHEMA_COLUMN_QUALIFIER_BYTES, Bytes.toBytes(counter)));
-  }
-
-  /**
-   * Deletes an HBase table.
-   *
-   * @param admin HBase admin client.
+   * @param admin C* admin client.
    * @param tableName Name of the table to delete.
    */
-  private static void deleteTable(HBaseAdmin admin, String tableName) {
+  private static void deleteTable(CassandraAdmin admin, String tableName) {
+    // TODO: Replace with actual C* code
+    /*
     try {
       if (admin.tableExists(tableName)) {
         if (admin.isTableEnabled(tableName)) {
@@ -701,6 +790,7 @@ public class HBaseSchemaTable implements KijiSchemaTable {
     } catch (IOException ioe) {
       LOG.error(String.format("Unable to delete table '%s': %s", tableName, ioe.toString()));
     }
+    */
   }
 
   /**
@@ -708,10 +798,12 @@ public class HBaseSchemaTable implements KijiSchemaTable {
    *
    * @param admin The HBase Admin object.
    * @param kijiURI The KijiURI for the instance to remove.
-   * @throws IOException If there is an error.
+   * @throws java.io.IOException If there is an error.
    */
-  public static void uninstall(HBaseAdmin admin, KijiURI kijiURI)
+  public static void uninstall(CassandraAdmin admin, KijiURI kijiURI)
+  // TODO: Replace with actual C* code
       throws IOException {
+    /*
     final String hashTableName =
         KijiManagedHBaseTableName.getSchemaHashTableName(kijiURI.getInstance()).toString();
     deleteTable(admin, hashTableName);
@@ -719,6 +811,7 @@ public class HBaseSchemaTable implements KijiSchemaTable {
     final String idTableName =
         KijiManagedHBaseTableName.getSchemaIdTableName(kijiURI.getInstance()).toString();
     deleteTable(admin, idTableName);
+    */
   }
 
   /** {@inheritDoc} */
@@ -727,6 +820,7 @@ public class HBaseSchemaTable implements KijiSchemaTable {
     final State state = mState.get();
     Preconditions.checkState(state == State.OPEN,
         "Cannot backup SchemaTable instance in state %s.", state);
+    // TODO: Figure out how to implement this lock in C*. (This is not as simple as using a batch operation most likely...)
     mZKLock.lock();
     List<SchemaTableEntry> entries = Lists.newArrayList();
     try {
@@ -759,9 +853,11 @@ public class HBaseSchemaTable implements KijiSchemaTable {
   /** {@inheritDoc} */
   @Override
   public void fromBackup(final SchemaTableBackup backup) throws IOException {
+    // TODO: Replace with actual C* code
     final State state = mState.get();
     Preconditions.checkState(state == State.OPEN,
         "Cannot restore backup to SchemaTable instance in state %s.", state);
+    // TODO: Figure out how to implement this lock in C*. (This is not as simple as using a batch operation most likely...)
     mZKLock.lock();
     try {
       /** Entries from the schema hash table. */
@@ -798,8 +894,8 @@ public class HBaseSchemaTable implements KijiSchemaTable {
       final long nextSchemaId = maxSchemaId + 1;
 
       flush();
-      SchemaPlatformBridge.get().setWriteBufferSize(mSchemaIdTable, schemaTableEntries.size() + 1);
-      SchemaPlatformBridge.get().setWriteBufferSize(mSchemaHashTable, schemaTableEntries.size());
+      //SchemaPlatformBridge.get().setWriteBufferSize(mSchemaIdTable, schemaTableEntries.size() + 1);
+      //SchemaPlatformBridge.get().setWriteBufferSize(mSchemaHashTable, schemaTableEntries.size());
 
       // Restored schema entries share the same timestamp:
       final long timestamp = System.currentTimeMillis();
@@ -890,7 +986,7 @@ public class HBaseSchemaTable implements KijiSchemaTable {
   /**
    * Pre-registers all the primitive data types.
    *
-   * @throws IOException on I/O failure.
+   * @throws java.io.IOException on I/O failure.
    */
   private synchronized void registerPrimitiveSchemas() throws IOException {
     int expectedSchemaId = 0;
@@ -909,51 +1005,58 @@ public class HBaseSchemaTable implements KijiSchemaTable {
    *
    * @param hashTable schema hash HTable.
    * @return the set of schema entries from the schema hash table.
-   * @throws IOException on I/O error.
+   * @throws java.io.IOException on I/O error.
    */
-  private Set<SchemaEntry> loadSchemaHashTable(HTableInterface hashTable) throws IOException {
+  private Set<SchemaEntry> loadSchemaHashTable(CassandraTableInterface hashTable) throws IOException {
+    // TODO: Replace with actual C* code
     LOG.info("Loading entries from schema hash table.");
     final Set<SchemaEntry> entries = new HashSet<SchemaEntry>();
     int hashTableRowCounter = 0;
-    final ResultScanner hashTableScanner = hashTable.getScanner(
-        new Scan()
-            .addColumn(SCHEMA_COLUMN_FAMILY_BYTES, SCHEMA_COLUMN_QUALIFIER_BYTES)
-            .setMaxVersions());  // retrieve all versions
-    for (Result result : hashTableScanner) {
+
+    // Fetch all of the schemas from the schema hash table (all versions)
+    String queryText = String.format("SELECT * FROM %s;", hashTable.getTableName());
+    ResultSet resultSet = hashTable.getSession().execute(queryText);
+
+    for (Row row : resultSet) {
       hashTableRowCounter += 1;
+
+      // TODO: Not sure how to replicate this check in C*...
+      /*
       if (result.getRow().length != Hasher.HASH_SIZE_BYTES) {
         LOG.error(String.format(
             "Invalid schema hash table row key size: %s, expecting %d bytes.",
             new BytesKey(result.getRow()), Hasher.HASH_SIZE_BYTES));
         continue;
-      }
-      final BytesKey rowKey = new BytesKey(result.getRow());
-      for (KeyValue keyValue : result.getColumn(SCHEMA_COLUMN_FAMILY_BYTES,
-                                                SCHEMA_COLUMN_QUALIFIER_BYTES)) {
-        try {
-          final SchemaEntry entry = fromAvroEntry(decodeSchemaEntry(keyValue.getValue()));
-          entries.add(entry);
-          if (!getSchemaHash(entry.getSchema()).equals(entry.getHash())) {
-            LOG.error(String.format(
-                "Invalid schema hash table entry: computed schema hash %s does not match entry %s",
-                getSchemaHash(entry.getSchema()), entry));
-          }
-          if (!rowKey.equals(entry.getHash())) {
-            LOG.error(String.format("Inconsistent schema hash table: "
-                + "hash encoded in row key %s does not match schema entry: %s",
-                rowKey, entry));
-          }
-        } catch (IOException ioe) {
+      */
+
+      // Get the row key, timestamp, and schema for this row
+      final BytesKey rowKey = new BytesKey(CassandraByteUtil.byteBuffertoBytes(row.getBytes(SCHEMA_COLUMN_HASH_KEY)));
+      final long timestamp = row.getLong(SCHEMA_COLUMN_TIME);
+      final byte[] schemaAsBytes = CassandraByteUtil.byteBuffertoBytes(row.getBytes(SCHEMA_COLUMN_VALUE));
+
+      try {
+        final SchemaEntry entry = fromAvroEntry(decodeSchemaEntry(schemaAsBytes));
+        entries.add(entry);
+        if (!getSchemaHash(entry.getSchema()).equals(entry.getHash())) {
           LOG.error(String.format(
-              "Unable to decode schema hash table entry for row %s, timestamp %d: %s",
-              rowKey, keyValue.getTimestamp(), ioe));
-          continue;
-        } catch (AvroRuntimeException are) {
-          LOG.error(String.format(
-              "Unable to decode schema hash table entry for row %s, timestamp %d: %s",
-              rowKey, keyValue.getTimestamp(), are));
-          continue;
+              "Invalid schema hash table entry: computed schema hash %s does not match entry %s",
+              getSchemaHash(entry.getSchema()), entry));
         }
+        if (!rowKey.equals(entry.getHash())) {
+          LOG.error(String.format("Inconsistent schema hash table: "
+              + "hash encoded in row key %s does not match schema entry: %s",
+              rowKey, entry));
+        }
+      } catch (IOException ioe) {
+        LOG.error(String.format(
+            "Unable to decode schema hash table entry for row %s, timestamp %d: %s",
+            rowKey, timestamp, ioe));
+        continue;
+      } catch (AvroRuntimeException are) {
+        LOG.error(String.format(
+            "Unable to decode schema hash table entry for row %s, timestamp %d: %s",
+            rowKey, timestamp, are));
+        continue;
       }
     }
     LOG.info(String.format(
@@ -966,57 +1069,57 @@ public class HBaseSchemaTable implements KijiSchemaTable {
    *
    * @param idTable schema ID HTable.
    * @return the set of schema entries from the schema ID table.
-   * @throws IOException on I/O error.
+   * @throws java.io.IOException on I/O error.
    */
-  private Set<SchemaEntry> loadSchemaIdTable(HTableInterface idTable) throws IOException {
+  private Set<SchemaEntry> loadSchemaIdTable(CassandraTableInterface idTable) throws IOException {
+    // TODO: Replace with actual C* code
     LOG.info("Loading entries from schema ID table.");
     int idTableRowCounter = 0;
     final Set<SchemaEntry> entries = new HashSet<SchemaEntry>();
-    final ResultScanner idTableScanner = idTable.getScanner(
-        new Scan()
-        .addColumn(SCHEMA_COLUMN_FAMILY_BYTES, SCHEMA_COLUMN_QUALIFIER_BYTES)
-        .setMaxVersions());  // retrieve all versions
-    for (Result result : idTableScanner) {
-      // Skip the schema ID counter row:
-      if (Arrays.equals(result.getRow(), SCHEMA_COUNTER_ROW_NAME_BYTES)) {
-        continue;
-      }
+
+    // Fetch all of the schemas from the schema ID table (all versions)
+    String queryText = String.format("SELECT * FROM %s;", idTable.getTableName());
+    ResultSet resultSet = idTable.getSession().execute(queryText);
+
+    for (Row row : resultSet) {
       idTableRowCounter += 1;
-      final BytesKey rowKey = new BytesKey(result.getRow());
+
+      // Get the row key, timestamp, and schema for this row
+      // Use "Unsafe" version of method here to get raw bytes no matter what format the field is in the C* table.
+      final BytesKey rowKey = new BytesKey(CassandraByteUtil.byteBuffertoBytes(row.getBytesUnsafe(SCHEMA_COLUMN_ID_KEY)));
 
       long schemaId = -1;
       try {
-        schemaId = new ByteStreamArray(result.getRow()).readVarInt64();
-      } catch (EncodingException exn) {
+        schemaId = row.getLong(SCHEMA_COLUMN_ID_KEY);
+      } catch (InvalidTypeException exn) {
         LOG.error(String.format("Unable to decode schema ID encoded in row key %s: %s",
             rowKey, exn));
       }
 
-      for (KeyValue keyValue : result.getColumn(SCHEMA_COLUMN_FAMILY_BYTES,
-                                                SCHEMA_COLUMN_QUALIFIER_BYTES)) {
-        try {
-          final SchemaEntry entry = fromAvroEntry(decodeSchemaEntry(keyValue.getValue()));
-          entries.add(entry);
-          if (!getSchemaHash(entry.getSchema()).equals(entry.getHash())) {
-            LOG.error(String.format("Invalid schema hash table entry with row key %s: "
-                + "computed schema hash %s does not match entry %s",
-                rowKey, getSchemaHash(entry.getSchema()), entry));
-          }
-          if (schemaId != entry.getId()) {
-            LOG.error(String.format("Inconsistent schema ID table: "
-                + "ID encoded in row key %d does not match entry: %s", schemaId, entry));
-          }
-        } catch (IOException ioe) {
-          LOG.error(String.format(
-              "Unable to decode schema ID table entry for row %s, timestamp %d: %s",
-              rowKey, keyValue.getTimestamp(), ioe));
-          continue;
-        } catch (AvroRuntimeException are) {
-          LOG.error(String.format(
-              "Unable to decode schema ID table entry for row %s, timestamp %d: %s",
-              rowKey, keyValue.getTimestamp(), are));
-          continue;
+      final long timestamp = row.getLong(SCHEMA_COLUMN_TIME);
+      final byte[] schemaAsBytes = CassandraByteUtil.byteBuffertoBytes(row.getBytes(SCHEMA_COLUMN_VALUE));
+      try {
+        final SchemaEntry entry = fromAvroEntry(decodeSchemaEntry(schemaAsBytes));
+        entries.add(entry);
+        if (!getSchemaHash(entry.getSchema()).equals(entry.getHash())) {
+          LOG.error(String.format("Invalid schema hash table entry with row key %s: "
+              + "computed schema hash %s does not match entry %s",
+              rowKey, getSchemaHash(entry.getSchema()), entry));
         }
+        if (schemaId != entry.getId()) {
+          LOG.error(String.format("Inconsistent schema ID table: "
+              + "ID encoded in row key %d does not match entry: %s", schemaId, entry));
+        }
+      } catch (IOException ioe) {
+        LOG.error(String.format(
+            "Unable to decode schema ID table entry for row %s, timestamp %d: %s",
+            rowKey, timestamp, ioe));
+        continue;
+      } catch (AvroRuntimeException are) {
+        LOG.error(String.format(
+            "Unable to decode schema ID table entry for row %s, timestamp %d: %s",
+            rowKey, timestamp, are));
+        continue;
       }
     }
     LOG.info(String.format(
@@ -1027,7 +1130,7 @@ public class HBaseSchemaTable implements KijiSchemaTable {
   /** {@inheritDoc} */
   @Override
   public String toString() {
-    return Objects.toStringHelper(HBaseSchemaTable.class)
+    return Objects.toStringHelper(CassandraSchemaTable.class)
         .add("uri", mURI)
         .add("state", mState.get())
         .toString();

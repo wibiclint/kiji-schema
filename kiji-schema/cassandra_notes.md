@@ -1,5 +1,12 @@
 Note about Cassandra development, refactoring, etc.
 
+- TODO: Update copyrights, check for any stale HBase comments
+- TODO: See whether we can make some of the constructors for system, meta, schema tables private.
+- TODO: Add constructor methods for the C* meta, system, schema tables that match those for HBase
+- TODO: Optimize all of the get/put value code for the meta, system, schema tables such that we
+  generate a prepared statement only once (in the constructor)
+- TODO: Get unit tests working for new C* meta, system, schema tables
+
 Week of 2014-01-06
 ==================
 
@@ -34,6 +41,7 @@ New files:
 
 - New classes to provide similar functionality to HBaseAdmin and HTableInterface
   - o.k.s.impl.cassandra.CassandraAdmin
+  - o.k.s.impl.cassandra.CassandraTableInterface
 
 
 Interfacing with C* tables versus HBase tables

@@ -102,6 +102,9 @@ public final class KijiManagedCassandraTableName {
   /** The name component used for the Kiji schema IDs table. */
   private static final String KIJI_SCHEMA_ID_COMPONENT = "schema_id";
 
+  /** The name component used for the Kiji schema IDs counter table. */
+  private static final String KIJI_SCHEMA_COUNTER_COMPONENT = "schema_id_counter";
+
   /** The name component used for the Kiji system table. */
   private static final String KIJI_SYSTEM_COMPONENT = "system";
 
@@ -205,6 +208,16 @@ public final class KijiManagedCassandraTableName {
    */
   public static KijiManagedCassandraTableName getSchemaIdTableName(String kijiInstanceName) {
     return new KijiManagedCassandraTableName(kijiInstanceName, KIJI_SCHEMA_ID_COMPONENT);
+  }
+
+  /**
+   * Gets a new instance of a Kiji-managed Cassandra table that holds the Kiji schema IDs counter table.
+   *
+   * @param kijiInstanceName The name of the Kiji instance.
+   * @return The name of the Cassandra table used to store the Kiji schema IDs counter table.
+   */
+  public static KijiManagedCassandraTableName getSchemaCounterTableName(String kijiInstanceName) {
+    return new KijiManagedCassandraTableName(kijiInstanceName, KIJI_SCHEMA_COUNTER_COMPONENT);
   }
 
   /**

@@ -36,8 +36,10 @@ public class CassandraAdmin {
    * @param tableName The name of the table to create.
    * @param tableDescription A string with the table layout.
    */
-  public void createTable(String tableName, String tableDescription) {
+  public CassandraTableInterface createTable(String tableName, String tableDescription) {
+    // TODO: Keep track of all tables associated with this session
     mSession.execute("CREATE TABLE " + tableName + " " + tableDescription + ";");
+    return CassandraTableInterface.createFromCassandraAdmin(this, tableName);
   }
 
   public CassandraTableInterface getCassandraTableInterface(String tableName) {
@@ -55,4 +57,6 @@ public class CassandraAdmin {
     // TODO: Lots of checks that this keyspace exists, that this command succeeded, etc.
     session.execute("USE " + keyspace);
   }
+
+  // TODO: Add something for closing the session and all of the tables.
 }
