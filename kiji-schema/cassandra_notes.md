@@ -6,6 +6,7 @@ Note about Cassandra development, refactoring, etc.
 - TODO: Optimize all of the get/put value code for the meta, system, schema tables such that we
   generate a prepared statement only once (in the constructor)
 - TODO: Get unit tests working for new C* meta, system, schema tables
+- TODO: Figure out how we want to organize the unit tests for Kiji-specific stuff
 
 Week of 2014-01-06
 ==================
@@ -129,5 +130,85 @@ records)
 used for beyond "column annotations."
 
 
+### Common notes for all of the tables
+
+All three of the tables have the following common methods:
+
+- `public static HTableInterface newFooTable(KijiURI, Configuration, HTableFactory)`.  Creates an
+  `HTableInterface` pointing to the HBase table for the system table, schema ID table, schema hash
+  table, or meta table.
+    - Called internally from the constructor that uses the `HTableInterfaceFactory` (used to get a
+      pointer to the `HTableInterface` for calling the other constructor)
+    - Called internally from the `install` method for the same reason (get pointers to
+      `HTableInterface` methods before calling constructor)
+- Constructor `FooTable(KijiURI, Configuration, HTableInterfaceFactory)`.  As described above, uses
+  the `HTableInterfaceFactory` and the `newFooTable` static method to get pointers to one or more
+  `HTableInterface` objects.
+- Constructor `FooTable(KijiURI, HTableInterface)`.  Just assigns the URI and table to members and
+  performs some sanity checks (e.g., updating and checking `mState`).
+- Installer `static void install(HBaseAdmin, KijiURI, Configuration, HTableInterfaceFactory, some
+  map of properties)`.
+  This method actually creates the table (instead of just getting a pointer to its
+  `HTableInterface`).
+- Installer `static void install(HBaseAdmin, KijiURI, Configuration, HTableInterfaceFactory)`.  Just
+  calls the other installer, but with an empty map of properties.
+- Uninstaller `static void uninstall(HBaseAdmin, KijiURI)`.  Deletes the table.
+
+What calls what?
+
+- As far as I can tell, the *only* place that calls `install` or `uninstall` is `KijiInstaller.`
+- Although `newFooTable` is public, the *only* place I see it called is within the `FooTable` class,
+  inside the constructor that uses the `HTableInterfaceFactory`.  (*TODO: CAN WE MAKE THIS METHOD
+  PRIVATE?*)
+- The constructors with the `HTableInterfaceFactory` get called from `HBaseKiji`.
+- The constructors that take an `HTableInterface` as an argument get called only within `FooTable`
+  and within the unit tests.
+
+We'll keep all of these methods for the Cassandra implementations of these classes.  The main
+difference is that we are using `CassandraAdmin` to fill in the role of `HBaseAdmin` and
+`HTableInterfaceFactory`.  The methods will therefor look like the following:
+
+- `public static CassandraTableInterface newFooTable(KijiURI, Configuration, CassandraAdmin)`
+- Constructor `FooTable(KijiURI, Configuration, CassandraAdmin)`
+- Constructor `FooTable(KijiURI, CassandraTableInterface)`
+- Installer `static void install(CassandraAdmin, KijiURI, Configuration, map of properties)`
+- Installer `static void install(CassandraAdmin, KijiURI, Configuration)`
+- Uninstaller `static void uninstall(CassandraAdmin, KijiURI)`
+
+
+Week of 2014-01-13
+==================
+
+Goals for this week:
+
+- Add unit test support for what we did last week
+- Add support for meta tables
+
+New packages:
+
+New files:
+
+- o.k.s.impl.cassandra.CassandraMetaTable
+
+
+Unit testing
+------------
+
+We are assuming that uses will have an environment with Cassandra, ZooKeeper, and HBase installed.
+Ideally we can add C* nodes to whatever fake HBase we are using now.
+
+Unclear now how we should organize the unit tests for the C* implementations of Kiji.  For now, I'll
+create a new o.k.s.cassandra package.
+
+
+Notes on update the meta table
+------------------------------
+
+(I did not finish the meta table updates last week.)
+
+We will have two column families, one for the layout-specific metadata and one for user-defined
+metadata.  In C*, a column family and a table are the same thing, so we'll also have two
+`CassandraTableInterface` members of the `CassandraMetaTable` class (as opposed to the single
+`HTableInterface` in `HBAseMetaTable`).
 
 

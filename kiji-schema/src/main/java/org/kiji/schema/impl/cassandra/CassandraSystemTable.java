@@ -102,6 +102,41 @@ public class CassandraSystemTable implements KijiSystemTable {
   private String mConstructorStack = "";
 
   /**
+   * Creates a new CassandraTableInterface for the Kiji system table.
+   *
+   * @param kijiURI The KijiURI.
+   * @param conf The Hadoop configuration.
+   * @param admin Wrapper around open C* session.
+   * @return a new CassandraTableInterface for the Kiji system table.
+   * @throws IOException on I/O error.
+   */
+  public static CassandraTableInterface newSystemTable(
+      KijiURI kijiURI,
+      Configuration conf,
+      CassandraAdmin admin)
+      throws IOException {
+    final String tableName =
+        KijiManagedCassandraTableName.getSystemTableName(kijiURI.getInstance()).toString();
+    return admin.getCassandraTableInterface(tableName);
+  }
+
+  /**
+   * Wrap an existing Cassandra table that is assumed to be the table that stores the
+   * Kiji instance properties.
+   *
+   * @param kijiURI URI of the Kiji instance this table belongs to.
+   * @param conf Hadoop configuration (not used now)
+   * @param admin Wrapper around open C* session.
+   */
+  public CassandraSystemTable(
+      KijiURI kijiURI,
+      Configuration conf,
+      CassandraAdmin admin)
+    throws IOException {
+    this(kijiURI, newSystemTable(kijiURI, conf, admin));
+  }
+
+  /**
    * Wrap an existing Cassandra table that is assumed to be the table that stores the
    * Kiji instance properties.
    *

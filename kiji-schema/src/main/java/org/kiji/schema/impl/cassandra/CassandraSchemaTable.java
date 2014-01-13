@@ -203,6 +203,82 @@ public class CassandraSchemaTable implements KijiSchemaTable {
   }
 
   /**
+   * Creates an C* table handle to the schema hash table.
+   *
+   * @param kijiURI the KijiURI.
+   * @param conf the Hadoop configuration.
+   * @param admin Wrapper around C* session.
+   * @return a new interface for the table storing the mapping from schema hash to schema entry.
+   * @throws IOException on I/O error.
+   */
+  public static CassandraTableInterface newSchemaHashTable(
+      KijiURI kijiURI,
+      Configuration conf,
+      CassandraAdmin admin)
+      throws IOException {
+    return admin.getCassandraTableInterface(
+        KijiManagedCassandraTableName.getSchemaHashTableName(kijiURI.getInstance()).toString());
+  }
+
+  /**
+   * Creates an C* table handle to the schema ID table.
+   *
+   * @param kijiURI the KijiURI.
+   * @param conf the Hadoop configuration.
+   * @param admin Wrapper around C* session.
+   * @return a new interface for the table storing the mapping from schema ID to schema entry.
+   * @throws IOException on I/O error.
+   */
+  public static CassandraTableInterface newSchemaIdTable(
+      KijiURI kijiURI,
+      Configuration conf,
+      CassandraAdmin admin)
+      throws IOException {
+    return admin.getCassandraTableInterface(
+        KijiManagedCassandraTableName.getSchemaIdTableName(kijiURI.getInstance()).toString());
+  }
+
+  /**
+   * Creates an C* table handle to the schema counter table.
+   *
+   * @param kijiURI the KijiURI.
+   * @param conf the Hadoop configuration.
+   * @param admin Wrapper around C* session.
+   * @return a new interface for the table storing the schema ID counter.
+   * @throws IOException on I/O error.
+   */
+  public static CassandraTableInterface newSchemaCounterTable(
+      KijiURI kijiURI,
+      Configuration conf,
+      CassandraAdmin admin)
+      throws IOException {
+    return admin.getCassandraTableInterface(
+        KijiManagedCassandraTableName.getSchemaCounterTableName(kijiURI.getInstance()).toString());
+  }
+
+  /**
+   * Wrap existing C* tables with schema mappings in them.
+   * @param kijiURI
+   * @param conf
+   * @param admin
+   * @param lockFactory
+   * @throws IOException
+   */
+  public CassandraSchemaTable(
+      KijiURI kijiURI,
+      Configuration conf,
+      CassandraAdmin admin,
+      LockFactory lockFactory)
+      throws IOException {
+    this(newSchemaHashTable(kijiURI, conf, admin),
+        newSchemaIdTable(kijiURI, conf, admin),
+        newSchemaCounterTable(kijiURI, conf, admin),
+        newLock(kijiURI, lockFactory),
+        kijiURI);
+  }
+
+
+  /**
    * Wrap an existing HBase table assumed to be where the schema data is stored.
    *
    * @param hashTable The HTable that maps schema hashes to schema entries.
