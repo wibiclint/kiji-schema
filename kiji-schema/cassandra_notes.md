@@ -7,6 +7,7 @@ Note about Cassandra development, refactoring, etc.
   generate a prepared statement only once (in the constructor)
 - TODO: Get unit tests working for new C* meta, system, schema tables
 - TODO: Figure out how we want to organize the unit tests for Kiji-specific stuff
+- TODO: Double check that all rows with timestamps are ordered by DESC
 
 Week of 2014-01-06
 ==================
@@ -184,6 +185,10 @@ Goals for this week:
 - Add unit test support for what we did last week
 - Add support for meta tables
 - Refactor layout.impl code into layout.impl.hbase
+- Refine the `CassandraAdmin` and `CassandraTableInterface` classes
+  - Start adding more checking, reference counting, etc.
+  - Add more documentation (especially with regard to whose responsibility it is to close which
+    tables)
 
 New packages:
 - o.k.s.layout.impl.cassandra
@@ -214,5 +219,15 @@ We will have two column families, one for the layout-specific metadata and one f
 metadata.  In C*, a column family and a table are the same thing, so we'll also have two
 `CassandraTableInterface` members of the `CassandraMetaTable` class (as opposed to the single
 `HTableInterface` in `HBAseMetaTable`).
+
+Within the `CassandraTableLayoutDatabase` I implemented straight insertions instead of the
+"check-and-insert" that was present in the HBase implementation.  We should be able to implement the
+"check-and-insert" stuff pretty easily with the CQL "lightweight transactions."
+
+
+What to do about HBase "flush" calls?
+-------------------------------------
+
+Should these just be C* writes with higher consistency requirements?
 
 

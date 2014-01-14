@@ -93,13 +93,32 @@ public class CassandraMetaTable implements KijiMetaTable {
    * @return a new HTableInterface for the specified table.
    * @throws java.io.IOException on I/O error.
    */
-  public static CassandraTableInterface newMetaTable(
+  public static CassandraTableInterface newMetaLayoutTable(
       KijiURI kijiURI,
       Configuration conf,
       CassandraAdmin admin)
       throws IOException {
     final String tableName =
-        KijiManagedCassandraTableName.getMetaTableName(kijiURI.getInstance()).toString();
+        KijiManagedCassandraTableName.getMetaLayoutTableName(kijiURI.getInstance()).toString();
+    return admin.getCassandraTableInterface(tableName);
+  }
+
+  /**
+   * Creates an CassandraTableInterface for the specified table.
+   *
+   * @param kijiURI the KijiURI.
+   * @param conf Hadoop configuration.
+   * @param admin Wrapper around open C* session.
+   * @return a new HTableInterface for the specified table.
+   * @throws java.io.IOException on I/O error.
+   */
+  public static CassandraTableInterface newMetaKeyValueTable(
+      KijiURI kijiURI,
+      Configuration conf,
+      CassandraAdmin admin)
+      throws IOException {
+    final String tableName =
+        KijiManagedCassandraTableName.getMetaKeyValueTableName(kijiURI.getInstance()).toString();
     return admin.getCassandraTableInterface(tableName);
   }
 
@@ -118,7 +137,11 @@ public class CassandraMetaTable implements KijiMetaTable {
       KijiSchemaTable schemaTable,
       CassandraAdmin admin)
       throws IOException {
-    this(kijiURI, newMetaTable(kijiURI, conf, admin), schemaTable);
+    this(
+        kijiURI,
+        newMetaLayoutTable(kijiURI, conf, admin),
+        newMetaKeyValueTable(kijiURI, conf, admin),
+        schemaTable);
   }
 
   /**
@@ -141,7 +164,8 @@ public class CassandraMetaTable implements KijiMetaTable {
       throws IOException {
     this(
         kijiURI,
-        ctable,
+        cLayoutTable,
+        cKeyValueTable,
         new CassandraTableLayoutDatabase(kijiURI, cLayoutTable, schemaTable),
         new CassandraTableKeyValueDatabase(cKeyValueTable));
   }

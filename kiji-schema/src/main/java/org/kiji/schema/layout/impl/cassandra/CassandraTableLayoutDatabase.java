@@ -19,6 +19,7 @@
 
 package org.kiji.schema.layout.impl.cassandra;
 
+import com.datastax.driver.core.*;
 import com.google.common.base.Objects;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Lists;
@@ -26,15 +27,17 @@ import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
 import org.apache.hadoop.hbase.HColumnDescriptor;
 import org.apache.hadoop.hbase.HConstants;
-import org.apache.hadoop.hbase.KeyValue;
-import org.apache.hadoop.hbase.client.*;
 import org.apache.hadoop.hbase.io.hfile.Compression;
-import org.apache.hadoop.hbase.regionserver.StoreFile.BloomType;
 import org.apache.hadoop.hbase.util.Bytes;
+import org.apache.hadoop.hbase.regionserver.StoreFile.BloomType;
 import org.kiji.annotations.ApiAudience;
 import org.kiji.schema.*;
 import org.kiji.schema.avro.*;
+import org.kiji.schema.cassandra.KijiManagedCassandraTableName;
 import org.kiji.schema.impl.AvroCellEncoder;
+import org.kiji.schema.impl.cassandra.CassandraAdmin;
+import org.kiji.schema.impl.cassandra.CassandraByteUtil;
+import org.kiji.schema.impl.cassandra.CassandraTableInterface;
 import org.kiji.schema.layout.*;
 import org.kiji.schema.layout.TableLayoutBuilder.LayoutOptions;
 import org.kiji.schema.layout.TableLayoutBuilder.LayoutOptions.SchemaFormat;
@@ -44,16 +47,15 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
-import java.util.List;
-import java.util.Map;
-import java.util.NavigableMap;
-import java.util.Set;
+import java.nio.ByteBuffer;
+import java.util.*;
 
 /**
- * <p>Manages Kiji table layouts using a column family in an HBase table as a backing store.</p>
+ * <p>Manages Kiji table layouts using a Cassandra table as a backing store.</p>
  *
  * <p>
- * The HTable row key is the name of the table, and the row has 3 columns:
+ * The C* primary key is the name of the table, and the row has 3 columns:
+ *   <li> timestamp (needs to be explicit in C*);</li>
  *   <li> the layout update, as specified by the user/submitter; </li>
  *   <li> the effective layout after applying the update; </li>
  *   <li> a hash of the effective layout. </li>
@@ -71,38 +73,32 @@ import java.util.Set;
 public final class CassandraTableLayoutDatabase implements KijiTableLayoutDatabase {
   private static final Logger LOG = LoggerFactory.getLogger(CassandraTableLayoutDatabase.class);
 
+  public static final String QUALIFIER_TABLE = "table";
+  public static final String QUALIFIER_TIME = "time";
+
   /**
-   * HBase column qualifier used to store layout updates.
+   * C* column used to store layout updates.
    * Layout updates are binary encoded TableLayoutDesc records.
    */
   public static final String QUALIFIER_UPDATE = "update";
-  private static final byte[] QUALIFIER_UPDATE_BYTES = Bytes.toBytes(QUALIFIER_UPDATE);
 
   /**
-   * HBase column qualifier used to store absolute layouts.
+   * C* column used to store absolute layouts.
    * Table layouts are binary encoded TableLayoutDesc records.
    */
   public static final String QUALIFIER_LAYOUT = "layout";
-  private static final byte[] QUALIFIER_LAYOUT_BYTES = Bytes.toBytes(QUALIFIER_LAYOUT);
 
   /**
-   * HBase column qualifier used to store layout IDs.
+   * C* column used to store layout IDs.
    * Currently, IDs are assigned using a long counter starting at 1, and encoded as a string.
    */
   public static final String QUALIFIER_LAYOUT_ID = "layout_id";
-  private static final byte[] QUALIFIER_LAYOUT_ID_BYTES = Bytes.toBytes(QUALIFIER_LAYOUT_ID);
 
   /** URI of the Kiji instance this layout database is for. */
   private final KijiURI mKijiURI;
 
-  /** The HTable to use to store the layouts. */
-  private final HTableInterface mTable;
-
-  /** The column family in the HTable to use for storing layouts. */
-  private final String mFamily;
-
-  /** HBase column family, as bytes. */
-  private final byte[] mFamilyBytes;
+  /** The C* table to use to store the layouts. */
+  private final CassandraTableInterface mTable;
 
   /** The schema table. */
   private final KijiSchemaTable mSchemaTable;
@@ -119,29 +115,45 @@ public final class CassandraTableLayoutDatabase implements KijiTableLayoutDataba
       .setValue(TableLayoutDesc.SCHEMA$.getFullName())
       .build();
 
+  /**
+   * Install a table for storing table layout information.
+   * @param admin A wrapper around an open C* session.
+   * @param uri The KijiURI of the instance for this table.
+   */
+  public static void install(CassandraAdmin admin, KijiURI uri) {
+    String tableName = KijiManagedCassandraTableName.getMetaLayoutTableName(uri.getInstance()).toString();
+
+    // Standard C* table layout.  Use text key + timestamp as composite primary key to allow selection by timestamp.
+    String tableDescription = String.format(
+        "(%s text, %s timeuuid, %s int, %s blob, %s blob, PRIMARY KEY (%s, %s));",
+        QUALIFIER_TABLE,
+        QUALIFIER_TIME,
+        QUALIFIER_LAYOUT_ID,
+        QUALIFIER_LAYOUT,
+        QUALIFIER_UPDATE,
+        QUALIFIER_TABLE,
+        QUALIFIER_TIME);
+    admin.createTable(tableName, tableDescription);
+  }
 
   /**
-   * Creates a new <code>HBaseTableLayoutDatabase</code> instance.
+   * Creates a new <code>CassandraTableLayoutDatabase</code> instance.
    *
-   * <p>This class does not take ownership of the HTable.  The caller should close it when
+   * <p>This class does not take ownership of the table.  The caller should close it when
    * it is no longer needed.</p>
    *
    * @param kijiURI URI of the Kiji instance this layout database belongs to.
-   * @param htable The HTable used to store the layout data.
-   * @param family The name of the column family within the HTable used to store layout data.
+   * @param ctable The C* table used to store the layout data.
    * @param schemaTable The Kiji schema table.
    * @throws java.io.IOException on I/O error.
    */
   public CassandraTableLayoutDatabase(
       KijiURI kijiURI,
-      HTableInterface htable,
-      String family,
+      CassandraTableInterface ctable,
       KijiSchemaTable schemaTable)
       throws IOException {
     mKijiURI = kijiURI;
-    mTable = Preconditions.checkNotNull(htable);
-    mFamily = Preconditions.checkNotNull(family);
-    mFamilyBytes = Bytes.toBytes(mFamily);
+    mTable = Preconditions.checkNotNull(ctable);
     mSchemaTable = Preconditions.checkNotNull(schemaTable);
     final CellSpec cellSpec = CellSpec.fromCellSchema(CELL_SCHEMA, mSchemaTable);
     mCellEncoder = new AvroCellEncoder(cellSpec);
@@ -194,30 +206,30 @@ public final class CassandraTableLayoutDatabase implements KijiTableLayoutDataba
           String.format("Layout ID '%s' already exists", layoutId));
     }
 
-    // Construct the Put request to write the layout to the HTable.
-    final byte[] tableNameBytes = Bytes.toBytes(tableName);
-    final Put put = new Put(tableNameBytes)
-        .add(mFamilyBytes, QUALIFIER_UPDATE_BYTES, encodeTableLayoutDesc(update))
-        .add(mFamilyBytes, QUALIFIER_LAYOUT_BYTES, encodeTableLayoutDesc(tableLayout.getDesc()))
-        .add(mFamilyBytes, QUALIFIER_LAYOUT_ID_BYTES, Bytes.toBytes(layoutId));
+    String metaTableName = mTable.getTableName();
+    Session session = mTable.getSession();
 
+    // TODO: Make this query a member of the class and prepare in the constructor
+    // TODO: This should do a "check-and-put" to match the HBase implementation.
+    String queryText = String.format(
+        "INSERT INTO %s (%s, %s, %s, %s) VALUES (?, now(), ?, ?, ?)",
+        metaTableName,
+        QUALIFIER_TABLE,
+        QUALIFIER_TIME,
+        QUALIFIER_LAYOUT_ID,
+        QUALIFIER_LAYOUT,
+        QUALIFIER_UPDATE);
+    PreparedStatement preparedStatement = session.prepare(queryText);
+    session.execute(preparedStatement.bind(
+        tableName,
+        layoutId,
+        CassandraByteUtil.bytesToByteBuffer(encodeTableLayoutDesc(tableLayout.getDesc())),
+        CassandraByteUtil.bytesToByteBuffer(encodeTableLayoutDesc(update))
+    ));
+
+    // TODO: C* flush?
     // Flush the writer schema for the Avro table layout first so other readers can see it.
-    mSchemaTable.flush();
-
-    // Write the new layout:
-    if (!hasCurrentLayout) {
-      // New table, no reference layout, this is the first layout:
-      mTable.put(put);
-    } else {
-      // Make sure nobody else is walking ahead of us:
-      final byte[] refLayoutIdBytes = Bytes.toBytes(refLayoutIdStr);
-      if (!mTable.checkAndPut(
-          tableNameBytes, mFamilyBytes, QUALIFIER_LAYOUT_ID_BYTES, refLayoutIdBytes, put)) {
-        throw new IOException(String.format(
-            "Unable to update layout for table '%s' based on reference layout with ID '%s'",
-            tableName, refLayoutIdStr));
-      }
-    }
+    //mSchemaTable.flush();
 
     return tableLayout;
   }
@@ -233,20 +245,46 @@ public final class CassandraTableLayoutDatabase implements KijiTableLayoutDataba
     return layouts.get(0);
   }
 
+  /**
+   * Internal helper method containing common code for ready values for a given key from the table.
+   * @param table Name of the table for which to fetch the values (part of the key-value database key).
+   * @param numVersions Number of versions to fetch for the given table, key combination.
+   * @return A list of C* rows for the query.
+   */
+  private List<Row> getRows(String table, int numVersions) {
+    Preconditions.checkArgument(numVersions >= 1,  "numVersions must be positive");
+
+    String metaTableName = mTable.getTableName();
+    Session session = mTable.getSession();
+
+    // TODO: Prepare this statement once in constructor, not every load.
+    String queryText = String.format(
+        "SELECT * FROM %s WHERE %s=%s ORDER BY %s DESC LIMIT 1",
+        metaTableName,
+        QUALIFIER_TABLE,
+        table,
+        QUALIFIER_TIME
+    );
+
+    ResultSet resultSet = session.execute(queryText);
+    List<com.datastax.driver.core.Row> rows = resultSet.all();
+    return rows;
+  }
+
   /** {@inheritDoc} */
   @Override
   public List<KijiTableLayout> getTableLayoutVersions(String table, int numVersions)
       throws IOException {
     Preconditions.checkArgument(numVersions >= 1,  "numVersions must be positive");
 
-    final Get get = new Get(Bytes.toBytes(table))
-        .addColumn(mFamilyBytes, QUALIFIER_LAYOUT_BYTES)
-        .setMaxVersions(numVersions);
-    final Result result = mTable.get(get);
+    List<Row> rows = getRows(table, numVersions);
 
+    // Convert result into a list of bytes
     final List<KijiTableLayout> layouts = Lists.newArrayList();
-    for (KeyValue column : result.getColumn(mFamilyBytes, QUALIFIER_LAYOUT_BYTES)) {
-      layouts.add(KijiTableLayout.newLayout(decodeTableLayoutDesc(column.getValue())));
+    for (Row row: rows) {
+      ByteBuffer blob = row.getBytes(QUALIFIER_LAYOUT);
+      byte[] bytes = CassandraByteUtil.byteBuffertoBytes(blob);
+      layouts.add(KijiTableLayout.newLayout(decodeTableLayoutDesc(bytes)));
     }
     return layouts;
   }
@@ -257,98 +295,102 @@ public final class CassandraTableLayoutDatabase implements KijiTableLayoutDataba
       String table, int numVersions) throws IOException {
     Preconditions.checkArgument(numVersions >= 1, "numVersions must be positive");
 
-    // Gather the layout data from the Htable.
-    final Get get = new Get(Bytes.toBytes(table))
-        .addColumn(mFamilyBytes, QUALIFIER_LAYOUT_BYTES)
-        .setMaxVersions(numVersions);
-    final Result result = mTable.get(get);
+    List<Row> rows = getRows(table, numVersions);
 
-    /** Map from timestamp to table layout. */
-    final NavigableMap<Long, KijiTableLayout> timedLayouts = Maps.newTreeMap();
+    // Convert result into a map from timestamps to values
+    final NavigableMap<Long, KijiTableLayout> timedValues = Maps.newTreeMap();
+    for (Row row: rows) {
+      ByteBuffer blob = row.getBytes(QUALIFIER_LAYOUT);
+      byte[] bytes = CassandraByteUtil.byteBuffertoBytes(blob);
+      KijiTableLayout layout = KijiTableLayout.newLayout(decodeTableLayoutDesc(bytes));
 
-    // Pull out the full map: family -> qualifier -> timestamp -> TableLayoutDesc.
-    // Family and qualifier are already specified : the 2 outer maps must be size 11.
-    final NavigableMap<byte[], NavigableMap<byte[], NavigableMap<Long, byte[]>>> familyMap =
-        result.getMap();
-    Preconditions.checkState(familyMap.size() == 1);
-    final NavigableMap<byte[], NavigableMap<Long, byte[]>> qualifierMap =
-        familyMap.get(familyMap.firstKey());
-    Preconditions.checkState(qualifierMap.size() == 1);
-    final NavigableMap<Long, byte[]> timeSerieMap = qualifierMap.get(qualifierMap.firstKey());
-    for (Map.Entry<Long, byte[]> timeSerieEntry : timeSerieMap.entrySet()) {
-      final long timestamp = timeSerieEntry.getKey();
-      final byte[] bytes = timeSerieEntry.getValue();
-      final KijiTableLayout layout = KijiTableLayout.newLayout(decodeTableLayoutDesc(bytes));
-      Preconditions.checkState(timedLayouts.put(timestamp, layout) == null);
+      Long timestamp = row.getLong(QUALIFIER_TIME);
+      Preconditions.checkState(timedValues.put(timestamp, layout) == null);
     }
-    return timedLayouts;
+    return timedValues;
   }
 
   /** {@inheritDoc} */
   @Override
   public void removeAllTableLayoutVersions(String table) throws IOException {
-    final Delete delete = new Delete(Bytes.toBytes(table))
-        .deleteColumns(mFamilyBytes, QUALIFIER_UPDATE_BYTES)
-        .deleteColumns(mFamilyBytes, QUALIFIER_LAYOUT_BYTES)
-        .deleteColumns(mFamilyBytes, QUALIFIER_LAYOUT_ID_BYTES);
-    mTable.delete(delete);
+    String metaTableName = mTable.getTableName();
+    Session session = mTable.getSession();
+
+    // TODO: Make this query a member of the class and prepare in the constructor
+    String queryText = String.format(
+        "DELETE FROM %s WHERE %s=%s",
+        metaTableName,
+        QUALIFIER_TABLE,
+        table
+    );
+
+    // TODO: Check for success?
+    session.execute(queryText);
   }
 
   /** {@inheritDoc} */
   @Override
   public void removeRecentTableLayoutVersions(String table, int numVersions) throws IOException {
     Preconditions.checkArgument(numVersions >= 1, "numVersions must be positive");
-    final Delete delete = new Delete(Bytes.toBytes(table));
-    for (int i = 0; i < numVersions; i++) {
-      delete
-          .deleteColumn(mFamilyBytes, QUALIFIER_UPDATE_BYTES)
-          .deleteColumn(mFamilyBytes, QUALIFIER_LAYOUT_BYTES)
-          .deleteColumn(mFamilyBytes, QUALIFIER_LAYOUT_ID_BYTES);
+    // Unclear how to do this in C* without first reading about the most-recent versions
+
+    // Get a list of versions to delete
+    List<Row> rows = getRows(table, numVersions);
+
+    String metaTableName = mTable.getTableName();
+    Session session = mTable.getSession();
+
+    // TODO: Make this query a member of the class and prepare in the constructor
+    String queryText = String.format(
+        "DELETE FROM %s WHERE %s=%s AND %s=?",
+        metaTableName,
+        QUALIFIER_TABLE,
+        table,
+        QUALIFIER_TIME
+    );
+
+    PreparedStatement preparedStatement = session.prepare(queryText);
+    for (Row row: rows) {
+      Long timestamp = row.getLong(QUALIFIER_TIME);
+      session.execute(preparedStatement.bind(timestamp));
     }
-    mTable.delete(delete);
   }
 
   /** {@inheritDoc} */
   @Override
   public List<String> listTables() throws IOException {
-    final Scan scan = new Scan()
-        .addColumn(mFamilyBytes, QUALIFIER_LAYOUT_BYTES)
-        .setMaxVersions(1);
 
-    final ResultScanner resultScanner = mTable.getScanner(scan);
 
-    final List<String> tableNames = Lists.newArrayList();
-    for (Result result : resultScanner) {
-      tableNames.add(Bytes.toString(result.getRow()));
+    // Just return a set of in-use tables
+    // TODO: Make this query a member of the class and prepare in the constructor
+
+    String metaTableName = mTable.getTableName();
+    Session session = mTable.getSession();
+
+    String queryText = String.format(
+        "SELECT %s FROM %s",
+        QUALIFIER_TABLE,
+        metaTableName
+    );
+
+    ResultSet resultSet = session.execute(queryText);
+    Set<String> keys = new HashSet<String>();
+
+    // This code makes me miss Scala
+    for (Row row: resultSet.all()) {
+      keys.add(row.getString(QUALIFIER_TABLE));
     }
-    ResourceUtils.closeOrLog(resultScanner);
-    return tableNames;
+
+    List<String> list = new ArrayList<String>();
+    list.addAll(keys);
+    return list;
   }
 
   /** {@inheritDoc} */
   @Override
   public boolean tableExists(String tableName) throws IOException {
-    boolean retval = false;
-    final Scan scan = new Scan()
-        .addColumn(mFamilyBytes, QUALIFIER_LAYOUT_BYTES)
-        .setMaxVersions(1);
-
-    ResultScanner resultScanner = null;
-    try {
-      resultScanner = mTable.getScanner(scan);
-
-      for (Result result : resultScanner) {
-        if (tableName.equals(Bytes.toString(result.getRow()))) {
-          retval = true;
-          break;
-        }
-      }
-    } finally {
-      if (null != resultScanner) {
-        resultScanner.close();
-      }
-    }
-    return retval;
+    List<String> tables = listTables();
+    return tables.contains(tableName);
   }
 
   /**
@@ -371,41 +413,40 @@ public final class CassandraTableLayoutDatabase implements KijiTableLayoutDataba
   /** {@inheritDoc} */
   @Override
   public TableLayoutsBackup layoutsToBackup(String table) throws IOException {
-    Get get = new Get(Bytes.toBytes(table));
-    get.addColumn(mFamilyBytes, QUALIFIER_UPDATE_BYTES)
-        .addColumn(mFamilyBytes, QUALIFIER_LAYOUT_BYTES);
-    Result result = mTable.get(get);
-       if (result.isEmpty()) {
-         LOG.info(String.format("There is no row in the MetaTable named '%s'.", table));
-       }
-       final Map<byte[], NavigableMap<Long, byte[]>> qualifierMap =
-           result.getMap().get(mFamilyBytes);
-       final List<TableLayoutBackupEntry> history = Lists.newArrayList();
-       if ((qualifierMap == null) || qualifierMap.isEmpty()) {
-         LOG.info(String.format("Empty layout row for table '%s'.", table));
-       } else {
-         final Map<Long, byte[]> updateSerieMap = qualifierMap.get(QUALIFIER_UPDATE_BYTES);
-         final Map<Long, byte[]> layoutSerieMap = qualifierMap.get(QUALIFIER_LAYOUT_BYTES);
+    final List<TableLayoutBackupEntry> history = Lists.newArrayList();
+    TableLayoutsBackup backup = TableLayoutsBackup.newBuilder().setLayouts(history).build();
 
-         for (Map.Entry<Long, byte[]> serieEntry : layoutSerieMap.entrySet()) {
-           final long timestamp = serieEntry.getKey();
-           final TableLayoutDesc layout = decodeTableLayoutDesc(serieEntry.getValue());
-           TableLayoutDesc update = null;
-           if (updateSerieMap != null) {
-             final byte[] bytes = updateSerieMap.get(timestamp);
-             if (bytes != null) {
-               update = decodeTableLayoutDesc(bytes);
-             }
-           }
-           history.add(TableLayoutBackupEntry.newBuilder()
-               .setLayout(layout)
-               .setUpdate(update)
-               .setTimestamp(timestamp)
-               .build());
-         }
-       }
-       TableLayoutsBackup backup = TableLayoutsBackup.newBuilder().setLayouts(history).build();
-       return backup;
+    List<Row> rows = getRows(table, Integer.MAX_VALUE);
+    if (rows.isEmpty()) {
+      LOG.info(String.format("There is no row in the MetaTable named '%s' or the row is empty.", table));
+      return backup;
+    }
+
+    for (Row row: rows) {
+      final long timestamp = row.getLong(QUALIFIER_TIME);
+      final TableLayoutDesc layout =
+          decodeTableLayoutDesc(
+              CassandraByteUtil.byteBuffertoBytes(
+                row.getBytes(QUALIFIER_LAYOUT)
+              )
+          );
+
+
+      // TODO: May need some check here that the update is not null
+      final TableLayoutDesc update =
+          decodeTableLayoutDesc(
+              CassandraByteUtil.byteBuffertoBytes(
+                  row.getBytes(QUALIFIER_UPDATE)
+              )
+          );
+
+      history.add(TableLayoutBackupEntry.newBuilder()
+          .setLayout(layout)
+          .setUpdate(update)
+          .setTimestamp(timestamp)
+          .build());
+    }
+    return backup;
   }
 
   /** {@inheritDoc} */
@@ -413,18 +454,56 @@ public final class CassandraTableLayoutDatabase implements KijiTableLayoutDataba
   public void restoreLayoutsFromBackup(String tableName, TableLayoutsBackup layoutBackup) throws
       IOException {
     LOG.info(String.format("Restoring layout history for table '%s'.", tableName));
+
+    String metaTableName = mTable.getTableName();
+    Session session = mTable.getSession();
+
+    // Looks like we need insertions with and without updates and timestamps.
+
+    // TODO: Make this query a member of the class and prepare in the constructor
+    String queryTextInsertAll = String.format(
+        "INSERT INTO %s (%s, %s, %s, %s) VALUES (?, ?, ?, ?)",
+        metaTableName,
+        QUALIFIER_TABLE,
+        QUALIFIER_TIME,
+        QUALIFIER_LAYOUT,
+        QUALIFIER_UPDATE);
+    PreparedStatement preparedStatementInsertAll = session.prepare(queryTextInsertAll);
+
+    String queryTextInsertLayout = String.format(
+        "INSERT INTO %s (%s, %s, %s) VALUES (?, now(), ?)",
+        metaTableName,
+        QUALIFIER_TABLE,
+        QUALIFIER_TIME,
+        QUALIFIER_LAYOUT);
+    PreparedStatement preparedStatementInsertLayout = session.prepare(queryTextInsertLayout);
+
+    // TODO: Unclear what happens to layout IDs here...
     for (TableLayoutBackupEntry lbe : layoutBackup.getLayouts()) {
       final byte[] layoutBytes = encodeTableLayoutDesc(lbe.getLayout());
-      final Put put = new Put(Bytes.toBytes(tableName))
-          .add(mFamilyBytes, QUALIFIER_LAYOUT_BYTES, layoutBytes);
+      final ByteBuffer layoutByteBuffer = CassandraByteUtil.bytesToByteBuffer(layoutBytes);
+
       if (lbe.getUpdate() != null) {
         final byte[] updateBytes = encodeTableLayoutDesc(lbe.getUpdate());
+        final ByteBuffer updateByteBuffer = CassandraByteUtil.bytesToByteBuffer(updateBytes);
         final long timestamp = lbe.getTimestamp();
-        put.add(mFamilyBytes, QUALIFIER_UPDATE_BYTES, timestamp, updateBytes);
+
+        session.execute(preparedStatementInsertAll.bind(
+            tableName,
+            timestamp,
+            layoutByteBuffer,
+            updateByteBuffer
+        ));
+      } else {
+        session.execute(preparedStatementInsertLayout.bind(
+            tableName,
+            layoutByteBuffer
+        ));
       }
-      mTable.put(put);
     }
-    mTable.flushCommits();
+
+    // TODO: Some kind of flush?
+
   }
 
   /**
@@ -454,7 +533,6 @@ public final class CassandraTableLayoutDatabase implements KijiTableLayoutDataba
   public String toString() {
     return Objects.toStringHelper(CassandraTableLayoutDatabase.class)
         .add("uri", mKijiURI)
-        .add("family", mFamily)
         .toString();
   }
 }
