@@ -373,7 +373,7 @@ public class CassandraSchemaTable implements KijiSchemaTable {
       // Here we know the schema is unknown from the schema tables and no other process can
       // update the schema table.
       incrementSchemaIdCounter(1);
-      long schemaId = readSchemaIdCounter();
+      long schemaId = readSchemaIdCounter() - 1;
 
       final SchemaEntry entry = new SchemaEntry(schemaId, schemaHash, schema);
       storeInTable(toAvroEntry(entry));

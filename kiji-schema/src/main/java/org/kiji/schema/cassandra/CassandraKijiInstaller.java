@@ -23,13 +23,10 @@ import java.io.IOException;
 import java.util.Collections;
 import java.util.Map;
 
-import com.google.common.base.Joiner;
 import org.apache.hadoop.conf.Configuration;
+import org.kiji.schema.*;
 import org.kiji.schema.hbase.HBaseFactory;
-import org.kiji.schema.impl.cassandra.CassandraAdmin;
-import org.kiji.schema.impl.cassandra.CassandraMetaTable;
-import org.kiji.schema.impl.cassandra.CassandraSchemaTable;
-import org.kiji.schema.impl.cassandra.CassandraSystemTable;
+import org.kiji.schema.impl.cassandra.*;
 import org.kiji.schema.util.LockFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -40,17 +37,9 @@ import com.datastax.driver.core.Cluster;
 import com.datastax.driver.core.Session;
 
 
-import org.kiji.schema.KijiInvalidNameException;
-import org.kiji.schema.KijiURI;
-import org.kiji.schema.KijiAlreadyExistsException;
-import org.kiji.schema.KijiNotInstalledException;
 import org.kiji.annotations.ApiAudience;
 import org.kiji.annotations.ApiStability;
-//import org.kiji.schema.impl.cassandra.CassandraMetaTable;
-//import org.kiji.schema.impl.cassandra.CassandraSchemaTable;
-//import org.kiji.schema.impl.cassandra.CassandraSystemTable;
-import org.kiji.schema.security.KijiSecurityManager;
-import org.kiji.schema.util.ResourceUtils;
+import org.kiji.schema.security.CassandraKijiSecurityManager;
 
 /** Installs or uninstalls Kiji instances from an Cassandra cluster. */
 @ApiAudience.Public
@@ -120,13 +109,26 @@ public final class CassandraKijiInstaller {
       ResultSet results = cassandraSession.execute(queryText);
 
       // Create a CassandraAdmin wrapping around the session to pass to the installation code for system, meta, and schema tables.
-      CassandraAdmin cassandraAdmin = CassandraAdmin.makeFromOpenSession(cassandraSession, "kiji_" + uri.getInstance());
+      CassandraAdmin cassandraAdmin = CassandraAdmin.makeFromOpenSession(
+          cassandraSession,
+          KijiManagedCassandraTableName.getCassandraKeyspaceForKijiInstance(uri.getInstance())
+      );
 
       // Install the system, meta, and schema tables.
       CassandraSystemTable.install(cassandraAdmin, uri, conf, properties);
       CassandraMetaTable.install(cassandraAdmin, uri);
       CassandraSchemaTable.install(cassandraAdmin, uri, conf, lockFactory);
 
+      // Grant the current user all privileges on the instance just created, if security is enabled.
+      // TODO: Replace with factory method
+      final Kiji kiji = CassandraKiji.create(uri, conf, cassandraAdmin, lockFactory);
+      try {
+        if (kiji.isSecurityEnabled()) {
+          CassandraKijiSecurityManager.installInstanceCreator(uri, conf, cassandraAdmin);
+        }
+      } finally {
+        kiji.release();
+      }
 
     } catch (AlreadyExistsException aee) {
       throw new KijiAlreadyExistsException(String.format(

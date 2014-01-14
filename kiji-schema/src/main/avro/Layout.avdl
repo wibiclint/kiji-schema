@@ -112,7 +112,7 @@ protocol KijiTableLayoutRecords {
 
     /**
      * Automatically registers writer schemas on write (if possible) and restricts the table
-     * so that it only has one registered reade schema.
+     * so that it only has one registered reader schema.
      */
     DEVELOPER,
 

@@ -1,6 +1,11 @@
 package org.kiji.schema.impl.cassandra;
 
+import com.datastax.driver.core.Cluster;
 import com.datastax.driver.core.Session;
+import org.kiji.schema.KijiURI;
+import org.kiji.schema.cassandra.KijiManagedCassandraTableName;
+
+import java.io.Closeable;
 
 /**
  * Lightweight wrapper to mimic the functionality of HBaseAdmin.
@@ -12,7 +17,7 @@ import com.datastax.driver.core.Session;
  * TODO: Need to figure out who is in charge of closing out the open session here...
  *
  */
-public class CassandraAdmin {
+public class CassandraAdmin implements Closeable{
 
   /** Current C* session for the given keyspace. */
   private final Session mSession;
@@ -26,6 +31,14 @@ public class CassandraAdmin {
    */
   public static CassandraAdmin makeFromOpenSession(Session session, String keyspace) {
     return new CassandraAdmin(session, keyspace);
+  }
+
+  public static CassandraAdmin makeFromKijiURI(KijiURI kijiURI) {
+    // TODO: Replace "localhost" with host from KijiURI.
+    Cluster cluster = Cluster.builder().addContactPoint("localhost").build();
+    Session cassandraSession = cluster.connect();
+    String keyspace = KijiManagedCassandraTableName.getCassandraKeyspaceForKijiInstance(kijiURI.getInstance());
+    return new CassandraAdmin(cassandraSession, keyspace);
   }
 
   /**
@@ -62,4 +75,13 @@ public class CassandraAdmin {
   public void disableTable(String tableName) { }
 
   public void deleteTable(String tableName) { }
+
+  // TODO: Implement check for whether a table exists!
+  public boolean tableExists(String tableName) {
+    return true;
+  }
+
+  // TODO: Implement close method
+  public void close() {
+  }
 }

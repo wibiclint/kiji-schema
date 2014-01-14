@@ -1,5 +1,8 @@
 Note about Cassandra development, refactoring, etc.
 
+Open TODOs
+==========
+
 - TODO: Update copyrights, check for any stale HBase comments
 - TODO: See whether we can make some of the constructors for system, meta, schema tables private.
 - TODO: Add constructor methods for the C* meta, system, schema tables that match those for HBase
@@ -8,6 +11,30 @@ Note about Cassandra development, refactoring, etc.
 - TODO: Get unit tests working for new C* meta, system, schema tables
 - TODO: Figure out how we want to organize the unit tests for Kiji-specific stuff
 - TODO: Double check that all rows with timestamps are ordered by DESC
+
+
+Open questions
+==============
+
+(This is kind of a random list.  There are other open items on the spreadsheet in google docs.)
+
+- Do we want to have a common `TableLayoutDesc` for HBase- and C*-backed Kiji tables?  There is a
+  lot of HBase-specific stuff in there now.  Things we could put into a C*-specific layout
+  description:
+    - Query patterns.  e.g., for a given column family, do we want to search for all versions for a
+      given qualifier, or all qualifiers for a given version (e.g., the most recent)?  (This choice
+      affects the order of the columns in the composite primary key.)
+- The same goes for data requests.  Presumably we need some way to expose the C* consistency levels
+  to the user.
+- *Code reuse:* Do we want to do a broader refactoring of the interfaces and classes in
+  `o.k.s.impl.hbase` and `o.k.s.impl.cassandra` to share more code between the HBase and C*
+  implementations?  Many of the pairs of HBase/C* classes share probably 80-90% of the code, with
+  the only differences existing in the methods that actually interact with the underlying tables.
+  (Scala's traits would be perfect for this, since we could make the interfaces into traits and put
+  the common code there...)
+- How do we want to implement permissions?
+
+
 
 Week of 2014-01-06
 ==================
@@ -189,15 +216,23 @@ Goals for this week:
   - Start adding more checking, reference counting, etc.
   - Add more documentation (especially with regard to whose responsibility it is to close which
     tables)
+- Begin looking at how to implement Cassandra KijiTables.
 
 New packages:
 - o.k.s.layout.impl.cassandra
 
 New files:
 
+
+- o.k.s.impl.cassandra.CassandraKiji
+- o.k.s.impl.cassandra.CassandraKijiFactory
+- o.k.s.impl.cassandra.CassandraKijiTable
 - o.k.s.impl.cassandra.CassandraMetaTable
-- o.k.s.layout.impl.cassandra.CassandraTableLayoutDatabase
 - o.k.s.impl.cassandra.CassandraTableKeyValueDatabase
+- o.k.s.layout.impl.cassandra.CassandraTableLayoutDatabase
+- o.k.s.layout.impl.cassandra.CassandraTableSchemaTranslator
+- o.k.s.security.CassandraKijiSecurityManager
+- o.k.s.tools.CassandraCreateTableTool
 
 
 Unit testing
@@ -231,3 +266,22 @@ What to do about HBase "flush" calls?
 Should these just be C* writes with higher consistency requirements?
 
 
+Security
+--------
+
+I did not put `CassandraKijiSecurityManager` into
+o.k.s.security.impl.cassandra.CassandraKijiSecurityManager because there are so many package-private
+security things that it needs to access.  I assume this code is going to have to get rewritten
+anyway, so I did the minimum to get it to compile for now.
+
+
+Notes on support for creating C*-backed Kiji tables
+---------------------------------------------------
+
+The current table layout (stored in `TableLayoutDesc` Avro records) has a lot of HBase-specific
+stuff.  We may want to make a separate description for C*-backed Kiji tables.
+
+HBase offers a very nice data structure, `HTableDescriptor`, that contains all of the layout
+information for an HTable.  I'm not sure if we have anything similar for Cassandra.  The mapping
+between Kiji tables and C* tables is not as straightforward as that between Kiji tables and HTables,
+so we may need to make big changes in how we handle the Kiji / C* translation.

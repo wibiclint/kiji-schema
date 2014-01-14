@@ -276,6 +276,16 @@ public final class KijiManagedCassandraTableName {
   }
 
   /**
+   * Get the name of the keyspace in C* for this Kiji instance.
+   *
+   * @param kijiInstanceName The name of the Kiji instance.
+   * @return The name of the C* keyspace.
+   */
+  public static String getCassandraKeyspaceForKijiInstance(String kijiInstanceName) {
+    return "kiji_" + kijiInstanceName;
+  }
+
+  /**
    * Gets the name of the Cassandra table that stores the data for this Kiji table.
    *
    * @return The Cassandra table name as a UTF-8 encoded byte array.

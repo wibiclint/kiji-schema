@@ -17,3 +17,4 @@ org.kiji.schema.tools.UninstallTool
 org.kiji.schema.tools.VersionTool
 org.kiji.schema.tools.CassandraInstallTool
 org.kiji.schema.tools.CassandraUninstallTool
+org.kiji.schema.tools.CassandraCreateTableTool
