@@ -368,18 +368,11 @@ public class CassandraMetaTable implements KijiMetaTable {
    * @param uri The uri of the Kiji instance to install.
    * @throws java.io.IOException If there is an error.
    */
-  public static void install(HBaseAdmin admin, KijiURI uri)
+  public static void install(CassandraAdmin admin, KijiURI uri)
     throws IOException {
-    // TODO: Create separate tables for the layout information and for the user key-value store.  Since these are separate tables now, delegate to their respective classes.
-    /*
-    HTableDescriptor tableDescriptor = new HTableDescriptor(
-      KijiManagedHBaseTableName.getMetaTableName(uri.getInstance()).toString());
-    tableDescriptor.addFamily(
-      HBaseTableLayoutDatabase.getHColumnDescriptor(LAYOUT_COLUMN_FAMILY));
-    tableDescriptor.addFamily(
-      HBaseTableLayoutDatabase.getHColumnDescriptor(META_COLUMN_FAMILY));
-    admin.createTable(tableDescriptor);
-    */
+    // Create separate tables for the layout information and for the user key-value store.  Since these are separate tables now, delegate to their respective classes.
+    CassandraTableLayoutDatabase.install(admin, uri);
+    CassandraTableKeyValueDatabase.install(admin, uri);
   }
 
   /**

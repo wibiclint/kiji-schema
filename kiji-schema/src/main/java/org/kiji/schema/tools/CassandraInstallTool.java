@@ -96,6 +96,7 @@ public final class CassandraInstallTool extends BaseTool {
     try {
       CassandraKijiInstaller.get().install(
           mKijiURI,
+          HBaseFactory.Provider.get(),
           initialProperties,
           getConf());
       getPrintStream().println("Successfully created Kiji instance: " + mKijiURI);

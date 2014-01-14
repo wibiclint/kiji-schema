@@ -25,8 +25,12 @@ import java.util.Map;
 
 import com.google.common.base.Joiner;
 import org.apache.hadoop.conf.Configuration;
+import org.kiji.schema.hbase.HBaseFactory;
 import org.kiji.schema.impl.cassandra.CassandraAdmin;
+import org.kiji.schema.impl.cassandra.CassandraMetaTable;
+import org.kiji.schema.impl.cassandra.CassandraSchemaTable;
 import org.kiji.schema.impl.cassandra.CassandraSystemTable;
+import org.kiji.schema.util.LockFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import com.datastax.driver.core.exceptions.AlreadyExistsException;
@@ -70,13 +74,14 @@ public final class CassandraKijiInstaller {
    * @throws KijiInvalidNameException if the Kiji instance name is invalid or already exists.
    */
   public void install(KijiURI uri, Configuration conf) throws IOException {
-    install(uri, Collections.<String, String>emptyMap(), conf);
+    install(uri, HBaseFactory.Provider.get(), Collections.<String, String>emptyMap(), conf);
   }
 
   /**
    * Installs a Kiji instance.
    *
    * @param uri URI of the Kiji instance to install.
+   * @param hbaseFactory HBase factory (needed for building ZooKeeper locks).
    * @param properties Map of the initial system properties for installation, to be used in addition
    *     to the defaults.
    * @param conf Hadoop configuration (TODO: Not clear if we really need this here).
@@ -85,6 +90,7 @@ public final class CassandraKijiInstaller {
    */
   public void install(
       KijiURI uri,
+      HBaseFactory hbaseFactory,
       Map<String, String> properties,
       Configuration conf)
       throws IOException {
@@ -92,6 +98,8 @@ public final class CassandraKijiInstaller {
       throw new KijiInvalidNameException(String.format(
           "Kiji URI '%s' does not specify a Kiji instance name", uri));
     }
+
+    final LockFactory lockFactory = hbaseFactory.getLockFactory(uri, conf);
 
     // Try to create the keyspace.  If it already exists, the then the query will return an
     // AlreadyExistsException.
@@ -116,8 +124,8 @@ public final class CassandraKijiInstaller {
 
       // Install the system, meta, and schema tables.
       CassandraSystemTable.install(cassandraAdmin, uri, conf, properties);
-      //HBaseMetaTable.install(hbaseAdmin, uri);
-      //HBaseSchemaTable.install(hbaseAdmin, uri, conf, tableFactory, lockFactory);
+      CassandraMetaTable.install(cassandraAdmin, uri);
+      CassandraSchemaTable.install(cassandraAdmin, uri, conf, lockFactory);
 
 
     } catch (AlreadyExistsException aee) {

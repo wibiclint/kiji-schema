@@ -51,7 +51,7 @@ public class CassandraTableKeyValueDatabase
   public static final Logger LOG = LoggerFactory.getLogger(CassandraTableKeyValueDatabase.class);
 
   // TODO: final static vars for key, value column names in the C* table
-  public static final String KV_COLUMN_TABLE = "table";
+  public static final String KV_COLUMN_TABLE = "table_name";
   public static final String KV_COLUMN_KEY = "key";
   public static final String KV_COLUMN_VALUE = "value";
   public static final String KV_COLUMN_TIME = "time";
@@ -322,7 +322,7 @@ public class CassandraTableKeyValueDatabase
          valAsByteBuffer.toString(),
          mTable.getTableName()));
 
-     session.execute(preparedStatement.bind(tableName, key, timestamp, valAsByteBuffer));
+     session.execute(preparedStatement.bind(tableName, key, new Date(timestamp), valAsByteBuffer));
    }
    LOG.debug("Flushing commits to restore key-values from backup.");
    // TODO: Any flush needed?

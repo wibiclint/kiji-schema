@@ -392,7 +392,7 @@ public class CassandraSchemaTable implements KijiSchemaTable {
     String tableName = mCounterTable.getTableName();
     Session session = mCounterTable.getSession();
     String incrementSign = incrementAmount >= 0 ? "+" : "-";
-    String queryText = String.format("UPDATE %s SET %s = %s %s %d WHERE %s=%s;",
+    String queryText = String.format("UPDATE %s SET %s = %s %s %d WHERE %s='%s';",
         tableName,
         SCHEMA_COUNTER_COLUMN_VALUE,
         SCHEMA_COUNTER_COLUMN_VALUE,
@@ -466,7 +466,7 @@ public class CassandraSchemaTable implements KijiSchemaTable {
     Session idSession = mSchemaIdTable.getSession();
 
     String idQueryText = String.format(
-        "INSERT INTO TABLE %s(%s, %s, %s) VALUES(?, ?, ?);",
+        "INSERT INTO %s(%s, %s, %s) VALUES(?, ?, ?);",
         mSchemaIdTable.getTableName(),
         SCHEMA_COLUMN_ID_KEY,
         SCHEMA_COLUMN_TIME,
@@ -475,7 +475,7 @@ public class CassandraSchemaTable implements KijiSchemaTable {
     PreparedStatement idPreparedStatement = idSession.prepare(idQueryText);
     ResultSet resultSet = idSession.execute(idPreparedStatement.bind(
         avroEntry.getId(),
-        timestamp,
+        new Date(timestamp),
         CassandraByteUtil.bytesToByteBuffer(entryBytes)));
 
     // TODO: Anything here to flush the table or verify that this worked?
@@ -484,7 +484,7 @@ public class CassandraSchemaTable implements KijiSchemaTable {
     Session hashSession = mSchemaHashTable.getSession();
 
     String hashQueryText = String.format(
-        "INSERT INTO TABLE %s(%s, %s, %s) VALUES(?, ?, ?);",
+        "INSERT INTO %s(%s, %s, %s) VALUES(?, ?, ?);",
         mSchemaHashTable.getTableName(),
         SCHEMA_COLUMN_HASH_KEY,
         SCHEMA_COLUMN_TIME,
@@ -492,8 +492,8 @@ public class CassandraSchemaTable implements KijiSchemaTable {
 
     PreparedStatement hashPreparedStatement = hashSession.prepare(hashQueryText);
     ResultSet hashResultSet = hashSession.execute(hashPreparedStatement.bind(
-        avroEntry.getId(),
-        timestamp,
+        CassandraByteUtil.bytesToByteBuffer(avroEntry.getHash().bytes()),
+        new Date(timestamp),
         CassandraByteUtil.bytesToByteBuffer(entryBytes)));
 
     // TODO: Anything here to flush the table or verify that this worked?
@@ -540,8 +540,8 @@ public class CassandraSchemaTable implements KijiSchemaTable {
    * @throws java.io.IOException on I/O error.
    */
   private SchemaTableEntry loadFromHashTable(BytesKey schemaHash) throws IOException {
-    Session session = mSchemaIdTable.getSession();
-    String tableName = mSchemaIdTable.getTableName();
+    Session session = mSchemaHashTable.getSession();
+    String tableName = mSchemaHashTable.getTableName();
 
     ByteBuffer tableKey = CassandraByteUtil.bytesToByteBuffer(schemaHash.getBytes());
 
@@ -756,7 +756,7 @@ public class CassandraSchemaTable implements KijiSchemaTable {
   private static CassandraTableInterface installIdTable(CassandraAdmin admin, String tableName) {
     // TODO: Table should order by DESC for time
     String tableDescription = String.format(
-        "(%s int, %s timestamp, %s blob, PRIMARY KEY (%s, %s));",
+        "(%s bigint, %s timestamp, %s blob, PRIMARY KEY (%s, %s));",
         SCHEMA_COLUMN_ID_KEY,
         SCHEMA_COLUMN_TIME,
         SCHEMA_COLUMN_VALUE,
@@ -780,13 +780,14 @@ public class CassandraSchemaTable implements KijiSchemaTable {
     CassandraTableInterface ctable = admin.createTable(tableName, tableDescription);
 
     // Now set the counter to zero
-    String queryText = String.format("UPDATE %s SET %s = %s + 0 WHERE %s=%s;",
+    String queryText = String.format("UPDATE %s SET %s = %s + 0 WHERE %s='%s';",
         tableName,
         SCHEMA_COUNTER_COLUMN_VALUE,
         SCHEMA_COUNTER_COLUMN_VALUE,
         SCHEMA_COUNTER_COLUMN_KEY,
         SCHEMA_COUNTER_ONLY_KEY_VALUE
     );
+    LOG.debug(queryText);
     admin.getSession().execute(queryText);
 
     // Sanity check that counter value is 1!
@@ -795,7 +796,7 @@ public class CassandraSchemaTable implements KijiSchemaTable {
     List<Row> rows = resultSet.all();
     assert(rows.size() == 1);
     Row row = rows.get(0);
-    int counterValue = row.getInt(SCHEMA_COUNTER_COLUMN_VALUE);
+    long counterValue = row.getLong(SCHEMA_COUNTER_COLUMN_VALUE);
     assert(0 == counterValue);
 
     return ctable;

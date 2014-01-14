@@ -73,14 +73,14 @@ import java.util.*;
 public final class CassandraTableLayoutDatabase implements KijiTableLayoutDatabase {
   private static final Logger LOG = LoggerFactory.getLogger(CassandraTableLayoutDatabase.class);
 
-  public static final String QUALIFIER_TABLE = "table";
+  public static final String QUALIFIER_TABLE = "table_name";
   public static final String QUALIFIER_TIME = "time";
 
   /**
    * C* column used to store layout updates.
    * Layout updates are binary encoded TableLayoutDesc records.
    */
-  public static final String QUALIFIER_UPDATE = "update";
+  public static final String QUALIFIER_UPDATE = "layout_update";
 
   /**
    * C* column used to store absolute layouts.
@@ -352,7 +352,7 @@ public final class CassandraTableLayoutDatabase implements KijiTableLayoutDataba
     PreparedStatement preparedStatement = session.prepare(queryText);
     for (Row row: rows) {
       Long timestamp = row.getLong(QUALIFIER_TIME);
-      session.execute(preparedStatement.bind(timestamp));
+      session.execute(preparedStatement.bind(new Date(timestamp)));
     }
   }
 
@@ -490,7 +490,7 @@ public final class CassandraTableLayoutDatabase implements KijiTableLayoutDataba
 
         session.execute(preparedStatementInsertAll.bind(
             tableName,
-            timestamp,
+            new Date(timestamp),
             layoutByteBuffer,
             updateByteBuffer
         ));
