@@ -26,6 +26,13 @@ public class CassandraTableInterface {
 
   public Session getSession() { return mAdmin.getSession(); }
 
+  public String toString() { return mTableName; }
+
+  /**
+   * TODO: This might need to do some cleanup, handle some reference counting, etc.
+   */
+  public void close() { }
+
   /**
    * Create a new Cassandra table interface for the session / keyspace in this admin and a table name.
    *

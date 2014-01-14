@@ -94,7 +94,10 @@ public final class KijiManagedCassandraTableName {
       Pattern.compile("kiji[_](.*)[.](meta|system|schema_hash|schema_id)");
 
   /** The name component used for the Kiji meta table. */
-  private static final String KIJI_META_COMPONENT = "meta";
+  private static final String KIJI_META_KEY_VALUE_COMPONENT = "meta_key_value";
+
+  /** The name component used for the Kiji meta table (layout). */
+  private static final String KIJI_META_LAYOUT_COMPONENT= "meta_layout";
 
   /** The name component used for the Kiji schema hash table. */
   private static final String KIJI_SCHEMA_HASH_COMPONENT = "schema_hash";
@@ -186,8 +189,18 @@ public final class KijiManagedCassandraTableName {
    * @param kijiInstanceName The name of the Kiji instance.
    * @return The name of the Cassandra table used to store the Kiji meta table.
    */
-  public static KijiManagedCassandraTableName getMetaTableName(String kijiInstanceName) {
-    return new KijiManagedCassandraTableName(kijiInstanceName, KIJI_META_COMPONENT);
+  public static KijiManagedCassandraTableName getMetaLayoutTableName(String kijiInstanceName) {
+    return new KijiManagedCassandraTableName(kijiInstanceName, KIJI_META_LAYOUT_COMPONENT);
+  }
+
+  /**
+   * Gets a new instance of a Kiji-managed Cassandra table that holds the Kiji user-defined key-value pairs.
+   *
+   * @param kijiInstanceName The name of the Kiji instance.
+   * @return The name of the Cassandra table used to store the Kiji meta table.
+   */
+  public static KijiManagedCassandraTableName getMetaKeyValueTableName(String kijiInstanceName) {
+    return new KijiManagedCassandraTableName(kijiInstanceName, KIJI_META_KEY_VALUE_COMPONENT);
   }
 
   /**

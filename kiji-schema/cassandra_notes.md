@@ -183,12 +183,16 @@ Goals for this week:
 
 - Add unit test support for what we did last week
 - Add support for meta tables
+- Refactor layout.impl code into layout.impl.hbase
 
 New packages:
+- o.k.s.layout.impl.cassandra
 
 New files:
 
 - o.k.s.impl.cassandra.CassandraMetaTable
+- o.k.s.layout.impl.cassandra.CassandraTableLayoutDatabase
+- o.k.s.impl.cassandra.CassandraTableKeyValueDatabase
 
 
 Unit testing

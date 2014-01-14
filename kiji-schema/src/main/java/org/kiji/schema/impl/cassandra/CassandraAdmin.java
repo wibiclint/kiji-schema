@@ -59,4 +59,7 @@ public class CassandraAdmin {
   }
 
   // TODO: Add something for closing the session and all of the tables.
+  public void disableTable(String tableName) { }
+
+  public void deleteTable(String tableName) { }
 }
