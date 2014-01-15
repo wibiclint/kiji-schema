@@ -11,6 +11,9 @@ Open TODOs
 - TODO: Get unit tests working for new C* meta, system, schema tables
 - TODO: Figure out how we want to organize the unit tests for Kiji-specific stuff
 - TODO: Double check that all rows with timestamps are ordered by DESC
+- TODO: I think the methods in `KijiManagedCassandraTableName` could be a little bit more explicit
+  about whether they are returning names in the Kiji namespace or in the C* namespace.
+- TODO: Add super-unstable annotations to this API.  :)
 
 
 Open questions
@@ -33,6 +36,151 @@ Open questions
   (Scala's traits would be perfect for this, since we could make the interfaces into traits and put
   the common code there...)
 - How do we want to implement permissions?
+- Do we want to offer any kind of reduced Kiji functionality for users that have Cassandra set up,
+  but don't have ZooKeeper installed?
+
+
+Mapping Kiji to Cassandra
+=========================
+
+Below is an early draft of a way to translate Kiji tables into Cassandra.
+
+
+Kiji table
+----------
+
+A Kiji table corresponds to a group of C* tables (previously known as C* "column families"), all of
+which share the same row key.
+
+
+Locality groups
+---------------
+
+For now, we can skip implementing locality groups.  I'm not sure how to implement these later on.
+As far as I can tell, we have pretty good control over how data within a single C* table is
+structured (by using compound primary keys and composite partition keys), but beyond that I am nto
+sure what we can do.
+
+### Whether to store locality group information in memory or on disk
+
+In a talk from the C* Summit EU 2013, one of the speakers [describes how to ensure that Cassandra
+keeps some tables in
+memory](http://www.slideshare.net/planetcassandra/c-summit-eu-2013-playlists-at-spotify-using-cassandra-to-store-version-controlled-objects)
+(see slide 32/37).  The bottom line from his talk was that Cassandra's row cache did not work.
+Maybe this is fixed in Cassandra 2.x.
+
+### Data retention lifetime
+
+In Kiji, we specify TTL at the locality-group level.  CQL allows users to specify a TTL when
+inserting data into a table.  We can allow users of C* Kiji to specify TTL for locality groups as
+they do now and propagate that information down to every insert we perform.
+
+### Maximum number of versions to keep
+
+I'm not sure of a simple way to implement this in Cassandra.  We could have a counter for every
+fully-qualified column that keeps track of the total number of versions, and, once we have the max
+number of versions for the fully-qualified column, we could delete an older version for every new
+version that we add (in practice we'd probably want to have a threshold for how many stale values we
+leave in the table before we clean up).
+
+See the section below with CQL for implementing column families for a note about what to do if the
+max number of versions is one.
+
+### Type of compression
+
+CQL allows you to specify `LZ4`, `Snappy`, and `DEFALTE.`  The DataStax CQL documentation has a lot
+of details about the compression options.
+
+### Bloom filter settings
+
+CQL allows you to set the `bloom_filter_fp_chance` property for a table to tune the chance of
+getting a false positive from your bloom filter.
+
+
+Map-type families
+-----------------
+
+We can implement map-type families in the same way in C*.  For every family, we have *two* C* tables
+that looks like the following:
+
+    CREATE TABLE kiji_table_name_column_family_name_qual_time (
+      first_row_key_field text,
+      second_row_key_field int,
+      qualifier text,
+      time timeuuid,
+      value blob,
+      PRIMARY KEY ( (first_row_key_field, second_row_key_field), qualifier, time)
+    ) WITH CLUSTERING ORDER BY (time DESC);
+
+    CREATE TABLE kiji_table_name_column_family_name_time_qual (
+      first_row_key_field text,
+      second_row_key_field int,
+      qualifier text,
+      time timeuuid,
+      value blob,
+      PRIMARY KEY ( (first_row_key_field, second_row_key_field), time, qualifier)
+    ) WITH CLUSTERING ORDER BY (time DESC);
+
+The two tables are identical except for the order of the composite partition keys.  The first table
+allows us to make a data request that selects a range of timestamps for a given qualifier.  The
+second table allows ut o make a data request for the latest version of every qualifier.
+
+To begin with, we likely want to implement only one of these tables.  Having two tables like this
+means that we'll have to use batch commands for writes to ensure that the two views of the same
+table stay in-sync.
+
+Note that this example shows how to use Cassandra's compound row keys.
+
+If the max number of versions for a locality group is one, then we can use a single C* table per
+column family in the locality group, and we can remove the timestamp from the composite partition
+key.  By removing the timestamp from the partition key, insertions for a given row key and qualifier
+will always overwrite previous insertions, so we will have only one version in the table at any
+time.
+
+
+Group-type families
+-------------------
+
+We can likely use the map-type family implementation described above for group-type families.  In an
+ideal world, we would be able to do some optimizations for group-type families such that we add
+dedicated Cassandra table columns for every qualifier in the group-type family.  Doing so would
+allow us to map directly between primitive types in Kiji and Cassandra without using Avro and blobs.
+
+
+Row keys
+--------
+
+Currently we limit the fields in row keys to strings, ints, and longs.  We can pretty easily
+implement Kiji row keys by using Cassandra's compound row keys.
+
+### Using null in row keys
+
+I am pretty sure that we cannot do this if we use Cassandra's compound row keys.  I believe that an
+insert has to specify a value for every field in the row key.
+
+
+Kiji cell schemas
+-----------------
+
+I'd like to not support any of the legacy cell schemas (`INLINE`, `CLASS`) and support only
+`COUNTER` and `AVRO`.
+
+
+CQL collections
+---------------
+
+CQL has nice built-in support for lists, maps, and sets.  I chose not to use them above, however,
+for a couple of reasons:
+
+- Any query that selects a collection returns the entire collection (no paging)
+- The collections max out at 64K entries
+
+
+Other stuff we may want to expose
+---------------------------------
+
+- Compaction strategies
+- Caching
 
 
 
@@ -244,6 +392,9 @@ Ideally we can add C* nodes to whatever fake HBase we are using now.
 Unclear now how we should organize the unit tests for the C* implementations of Kiji.  For now, I'll
 create a new o.k.s.cassandra package.
 
+Joe suggests using a Vagrant virtual machine that can run a C* server that the unit tests can use.
+Another option is using Cassandra's `EmbeddedCassandraService.`
+
 
 Notes on update the meta table
 ------------------------------
@@ -278,6 +429,10 @@ anyway, so I did the minimum to get it to compile for now.
 Notes on support for creating C*-backed Kiji tables
 ---------------------------------------------------
 
+Summary of stuff that we'll have to change:
+
+### Table layout descriptions
+
 The current table layout (stored in `TableLayoutDesc` Avro records) has a lot of HBase-specific
 stuff.  We may want to make a separate description for C*-backed Kiji tables.
 
@@ -285,3 +440,94 @@ HBase offers a very nice data structure, `HTableDescriptor`, that contains all o
 information for an HTable.  I'm not sure if we have anything similar for Cassandra.  The mapping
 between Kiji tables and C* tables is not as straightforward as that between Kiji tables and HTables,
 so we may need to make big changes in how we handle the Kiji / C* translation.
+
+
+### Entity ID factory
+
+We don't have to do all of the hashing, etc. within Kiji anymore.  We could do so, and just make
+every entity ID a C* blob, but doing so would really reduce the readability of the C* table to
+anyone familiar with C* (and make debugging a lot harder).
+
+
+### Updating table layouts
+
+All of the synchronization / update-passing stuff related to updating table layouts, e.g., 
+
+- InnerLayoutUpdater
+- LayoutTracker
+- LayoutCapsule
+- LayoutConsumer (I'm assuming a `LayoutConsumer` is a table reader or writer)
+
+...can probably stay the same.  This is a pretty large portion of the code in `HBaseKijiTable.`
+
+
+### Reader / Writer factories
+
+These seem to allow the user to override the default encoding and decoding of data going to/from
+tables.  I suggest punting on these for now.
+
+
+### Table annotator?
+
+This provides a way to work with the user-defined key-value pairs in the meta table.  Should be
+pretty easy to get this to work with Cassandra.
+
+
+### Bulk load
+
+Loading HFiles into a C* does not make sense (AFAIK).  Possibly we will want to offer functionality
+similar to this in the future, but with bulk loading of SSTables.
+
+
+### Regions
+
+Don't really make sense in the context of a C* implementation.
+
+
+### `KijiTableWriter`
+
+This looks pretty straightforward and should map well to C*.  It looks like this is where the rubber
+meets the road and we really implement the Kiji / HBase interface for writes.  Here is where we will
+put a lot of the C* code that implements writes to the C* tables.
+
+In the `KijiTableWriter` we are mostly just dealing with puts of single cells, so we shouldn't have
+to deal too much with the messiness of having one C* table per Kiji column family.
+
+
+### `KijiTableReader`, `KijiRowData`, `KijiRowScanner`, `HBaseRequestAdapter`
+
+This is where a lot of the action will happen.  We have to think carefully about how we encapsulate
+the code that maps between Kiji and C*.
+
+A lot of the code in `KijiTableReader` again concerns how to synchronize table layouts and handle
+different cell decoders.  This code should not have to change.
+
+
+So where does all of the C* / Kiji interface code go?
+-----------------------------------------------------
+
+Translations between C* and Kiji need to happen in the following places:
+
+- Any updates to table layouts (including creating a table layout)
+- Translating Kiji writes in C* writes
+- Translating Kiji reads in C* queries
+- Translating C* query results into Kiji read results
+- (We also do some C* stuff when we create Kiji instances and create the system, meta, and schema
+  tables, but that is decoupled from the other operations.  We should easily be able to change how
+  we represent any of these extra tables in C* without changing anything else in Kiji.)
+
+It would be good to keep all of this translation code as localized as possible so that we can easily
+make changes to how we implement Kiji under the hood in C*.
+
+Here is a list of places where we'll have to put changes:
+
+- `CassandraKijiTableReader`
+- `CassandraKijiTableWriter`
+- `CassandraKijiRowData`
+- `CassandraKijiRowScanner`
+- `CassandraRequestAdapter`
+- `CassandraKijiTable`
+- `CassandraKiji` (this contains a lot of the code for implementing updates to table layout)
+- `CassandraTableSchemaTranslator` (I don't know if we'll have the equivalent of
+  `ColumnNameTranslator` because the mapping from Kiji column to C* will be so different from what
+  you would get in HBase.
