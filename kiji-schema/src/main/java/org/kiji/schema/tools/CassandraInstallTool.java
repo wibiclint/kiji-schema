@@ -24,6 +24,7 @@ import java.util.List;
 import java.util.Map;
 
 import com.google.common.base.Preconditions;
+import org.kiji.schema.cassandra.CassandraFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -96,7 +97,7 @@ public final class CassandraInstallTool extends BaseTool {
     try {
       CassandraKijiInstaller.get().install(
           mKijiURI,
-          HBaseFactory.Provider.get(),
+          CassandraFactory.Provider.get(),
           initialProperties,
           getConf());
       getPrintStream().println("Successfully created Kiji instance: " + mKijiURI);

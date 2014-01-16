@@ -1,4 +1,5 @@
-Note about Cassandra development, refactoring, etc.
+Notes about Cassandra development, refactoring, etc.
+====================================================
 
 Open TODOs
 ==========
@@ -381,6 +382,11 @@ New files:
 - o.k.s.layout.impl.cassandra.CassandraTableSchemaTranslator
 - o.k.s.security.CassandraKijiSecurityManager
 - o.k.s.tools.CassandraCreateTableTool
+- o.k.s.cassandra.CassandraFactory
+- o.k.s.cassandra.CassandraFactory
+- o.k.s.impl.cassandra.CassandraAdminFactory
+- o.k.s.impl.cassandra.DefaultCassandraAdminFactory
+- o.k.s.impl.cassandra.DefaultCassandraAdminFactory
 
 
 Unit testing
@@ -531,3 +537,11 @@ Here is a list of places where we'll have to put changes:
 - `CassandraTableSchemaTranslator` (I don't know if we'll have the equivalent of
   `ColumnNameTranslator` because the mapping from Kiji column to C* will be so different from what
   you would get in HBase.
+
+
+Cassandra analogue to `HBaseFactory`
+------------------------------------
+
+We need a Cassandra class that produces C* interfaces given URIs, especially to allow us to switch
+between "live" and in-memory C* during unit testing.  To this end, we create `CassandraFactory.`
+

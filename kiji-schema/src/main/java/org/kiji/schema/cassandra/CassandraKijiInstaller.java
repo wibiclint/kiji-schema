@@ -63,14 +63,14 @@ public final class CassandraKijiInstaller {
    * @throws KijiInvalidNameException if the Kiji instance name is invalid or already exists.
    */
   public void install(KijiURI uri, Configuration conf) throws IOException {
-    install(uri, HBaseFactory.Provider.get(), Collections.<String, String>emptyMap(), conf);
+    install(uri, CassandraFactory.Provider.get(), Collections.<String, String>emptyMap(), conf);
   }
 
   /**
    * Installs a Kiji instance.
    *
    * @param uri URI of the Kiji instance to install.
-   * @param hbaseFactory HBase factory (needed for building ZooKeeper locks).
+   * @param cassandraFactory C* factory.
    * @param properties Map of the initial system properties for installation, to be used in addition
    *     to the defaults.
    * @param conf Hadoop configuration (TODO: Not clear if we really need this here).
@@ -79,7 +79,7 @@ public final class CassandraKijiInstaller {
    */
   public void install(
       KijiURI uri,
-      HBaseFactory hbaseFactory,
+      CassandraFactory cassandraFactory,
       Map<String, String> properties,
       Configuration conf)
       throws IOException {
@@ -88,7 +88,7 @@ public final class CassandraKijiInstaller {
           "Kiji URI '%s' does not specify a Kiji instance name", uri));
     }
 
-    final LockFactory lockFactory = hbaseFactory.getLockFactory(uri, conf);
+    final LockFactory lockFactory = cassandraFactory.getLockFactory(uri, conf);
 
     // Try to create the keyspace.  If it already exists, the then the query will return an
     // AlreadyExistsException.
