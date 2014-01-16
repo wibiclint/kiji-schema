@@ -17,29 +17,9 @@ import java.io.Closeable;
  * TODO: Need to figure out who is in charge of closing out the open session here...
  *
  */
-public class CassandraAdmin implements Closeable{
+public interface CassandraAdmin extends Closeable {
 
-  /** Current C* session for the given keyspace. */
-  private final Session mSession;
-
-  public Session getSession() { return mSession; }
-
-  /**
-   * Create new instance of CassandraAdmin from an already-open C* session.
-   *
-   * @return a new CassandraAdmin instance.
-   */
-  public static CassandraAdmin makeFromOpenSession(Session session, String keyspace) {
-    return new CassandraAdmin(session, keyspace);
-  }
-
-  public static CassandraAdmin makeFromKijiURI(KijiURI kijiURI) {
-    // TODO: Replace "localhost" with host from KijiURI.
-    Cluster cluster = Cluster.builder().addContactPoint("localhost").build();
-    Session cassandraSession = cluster.connect();
-    String keyspace = KijiManagedCassandraTableName.getCassandraKeyspaceForKijiInstance(kijiURI.getInstance());
-    return new CassandraAdmin(cassandraSession, keyspace);
-  }
+  public Session getSession();
 
   /**
    * Create a table in the given keyspace.
@@ -49,39 +29,18 @@ public class CassandraAdmin implements Closeable{
    * @param tableName The name of the table to create.
    * @param tableDescription A string with the table layout.
    */
-  public CassandraTableInterface createTable(String tableName, String tableDescription) {
-    // TODO: Keep track of all tables associated with this session
-    mSession.execute("CREATE TABLE " + tableName + " " + tableDescription + ";");
-    return CassandraTableInterface.createFromCassandraAdmin(this, tableName);
-  }
+  public CassandraTableInterface createTable(String tableName, String tableDescription);
 
-  public CassandraTableInterface getCassandraTableInterface(String tableName) {
-    // TODO: Some code to make sure that this table actually exists!
-    return CassandraTableInterface.createFromCassandraAdmin(this, tableName);
-  }
-
-  /**
-   * Constructor for creating a C* admin from an open C* session.
-   * @param session An open Session connected to a cluster with a keyspace selected.
-   * @param keyspace The name of the keyspace to use.
-   */
-  private CassandraAdmin(Session session, String keyspace) {
-    this.mSession = session;
-    // TODO: Lots of checks that this keyspace exists, that this command succeeded, etc.
-    session.execute("USE " + keyspace);
-  }
+  public CassandraTableInterface getCassandraTableInterface(String tableName);
 
   // TODO: Add something for closing the session and all of the tables.
-  public void disableTable(String tableName) { }
+  public void disableTable(String tableName);
 
-  public void deleteTable(String tableName) { }
+  public void deleteTable(String tableName);
 
   // TODO: Implement check for whether a table exists!
-  public boolean tableExists(String tableName) {
-    return true;
-  }
+  public boolean tableExists(String tableName);
 
   // TODO: Implement close method
-  public void close() {
-  }
+  public void close();
 }

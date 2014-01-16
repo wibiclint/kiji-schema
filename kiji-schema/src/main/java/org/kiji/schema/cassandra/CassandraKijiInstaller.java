@@ -108,11 +108,8 @@ public final class CassandraKijiInstaller {
           " WITH REPLICATION = {'class' : 'SimpleStrategy', 'replication_factor': 1}";
       ResultSet results = cassandraSession.execute(queryText);
 
-      // Create a CassandraAdmin wrapping around the session to pass to the installation code for system, meta, and schema tables.
-      CassandraAdmin cassandraAdmin = CassandraAdmin.makeFromOpenSession(
-          cassandraSession,
-          KijiManagedCassandraTableName.getCassandraKeyspaceForKijiInstance(uri.getInstance())
-      );
+      CassandraAdminFactory cassandraAdminFactory = cassandraFactory.getCassandraAdminFactory(uri);
+      CassandraAdmin cassandraAdmin = cassandraAdminFactory.create(uri);
 
       // Install the system, meta, and schema tables.
       CassandraSystemTable.install(cassandraAdmin, uri, conf, properties);

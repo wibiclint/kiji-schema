@@ -26,6 +26,7 @@ import org.kiji.delegation.Priority;
 import org.kiji.schema.Kiji;
 import org.kiji.schema.KijiFactory;
 import org.kiji.schema.KijiURI;
+import org.kiji.schema.cassandra.CassandraFactory;
 import org.kiji.schema.hbase.HBaseFactory;
 import org.kiji.schema.impl.hbase.HBaseKiji;
 
@@ -46,10 +47,13 @@ public final class CassandraKijiFactory implements KijiFactory {
   public Kiji open(KijiURI uri, Configuration conf) throws IOException {
     final HBaseFactory hbaseFactory = HBaseFactory.Provider.get();
     final Configuration confCopy = new Configuration(conf);
+    CassandraFactory cassandraFactory = CassandraFactory.Provider.get();
+    CassandraAdminFactory adminFactory = cassandraFactory.getCassandraAdminFactory(uri);
+    CassandraAdmin admin = adminFactory.create(uri);
     return new CassandraKiji(
         uri,
         confCopy,
-        CassandraAdmin.makeFromKijiURI(uri),
+        admin,
         hbaseFactory.getLockFactory(uri, confCopy));
   }
 

@@ -29,6 +29,7 @@ import org.kiji.schema.*;
 import org.kiji.schema.avro.RowKeyEncoding;
 import org.kiji.schema.avro.RowKeyFormat;
 import org.kiji.schema.avro.TableLayoutDesc;
+import org.kiji.schema.cassandra.CassandraFactory;
 import org.kiji.schema.cassandra.KijiManagedCassandraTableName;
 import org.kiji.schema.hbase.HBaseFactory;
 import org.kiji.schema.impl.Versions;
@@ -337,7 +338,9 @@ public final class CassandraKiji implements Kiji {
     Preconditions.checkState(state == State.OPEN,
         "Cannot get HBase admin for Kiji instance %s in state %s.", this, state);
     if (null == mAdmin) {
-      mAdmin = CassandraAdmin.makeFromKijiURI(mURI);
+      CassandraFactory cassandraFactory = CassandraFactory.Provider.get();
+      CassandraAdminFactory adminFactory = cassandraFactory.getCassandraAdminFactory(mURI);
+      mAdmin = adminFactory.create(mURI);
     }
     return mAdmin;
   }
