@@ -31,7 +31,7 @@ import java.io.IOException;
 import static org.junit.Assert.*;
 
 /** Tests for KijiSystemTable. */
-public class TestCassandraKijiSystemTable extends CassandraKijiClientTest {
+public class TestCassandraSystemTable extends CassandraKijiClientTest {
   private static final String KEY = "some.system.property";
   private static final byte[] VALUE1 = Bytes.toBytes("value1");
   private static final byte[] VALUE2 = Bytes.toBytes("value2");

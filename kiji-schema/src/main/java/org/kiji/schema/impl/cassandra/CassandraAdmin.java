@@ -1,6 +1,5 @@
 package org.kiji.schema.impl.cassandra;
 
-import com.datastax.driver.core.Cluster;
 import com.datastax.driver.core.ResultSet;
 import com.datastax.driver.core.Session;
 import org.kiji.schema.KijiURI;
@@ -53,7 +52,9 @@ public abstract class CassandraAdmin implements Closeable {
     // TODO: Should check whether the keyspace is longer than 48 characters long and if so provide a Kiji error to the user.
     String queryText = "CREATE KEYSPACE IF NOT EXISTS " + keyspace +
         " WITH REPLICATION = {'class' : 'SimpleStrategy', 'replication_factor': 1}";
-    ResultSet results = getSession().execute(queryText);
+    getSession().execute(queryText);
+    getSession().execute(String.format("USE %s", keyspace));
+
   }
 
   /**
@@ -62,11 +63,11 @@ public abstract class CassandraAdmin implements Closeable {
    * This wrapper exists so that we can add lots of extra boilerplate checks in here.
    *
    * @param tableName The name of the table to create.
-   * @param tableDescription A string with the table layout.
+   * @param cassandraTableLayout A string with the table layout.
    */
-  public CassandraTableInterface createTable(String tableName, String tableDescription) {
+  public CassandraTableInterface createTable(String tableName, String cassandraTableLayout) {
     // TODO: Keep track of all tables associated with this session
-    mSession.execute("CREATE TABLE " + tableName + " " + tableDescription + ";");
+    mSession.execute("CREATE TABLE " + tableName + " " + cassandraTableLayout + ";");
     return CassandraTableInterface.createFromCassandraAdmin(this, tableName);
   }
 
