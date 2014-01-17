@@ -136,6 +136,9 @@ public class CassandraSystemTable implements KijiSystemTable {
     this(kijiURI, newSystemTable(kijiURI, conf, admin));
   }
 
+  private final PreparedStatement preparedStatementGetValue;
+  private final PreparedStatement preparedStatementPutValue;
+
   /**
    * Wrap an existing Cassandra table that is assumed to be the table that stores the
    * Kiji instance properties.
@@ -153,6 +156,18 @@ public class CassandraSystemTable implements KijiSystemTable {
     final State oldState = mState.getAndSet(State.OPEN);
     Preconditions.checkState(oldState == State.UNINITIALIZED,
         "Cannot open SystemTable instance in state %s.", oldState);
+
+    String queryText;
+    Session session = mTable.getSession();
+
+    // Prepare some statements for CQL queries
+    queryText = "SELECT " + VALUE_COLUMN + " FROM " +  mTable.getTableName() +
+        " WHERE " + KEY_COLUMN + "=?";
+    preparedStatementGetValue = session.prepare(queryText);
+
+    queryText = "INSERT INTO " +  mTable.getTableName() + "(" + KEY_COLUMN + "," + VALUE_COLUMN + ") VALUES(?,?);";
+    preparedStatementPutValue = session.prepare(queryText);
+
   }
 
   /** {@inheritDoc} */
@@ -222,40 +237,36 @@ public class CassandraSystemTable implements KijiSystemTable {
   /** {@inheritDoc} */
   @Override
   public byte[] getValue(String key) throws IOException {
+    LOG.info(String.format("Reading value for key = %s", key));
     final State state = mState.get();
     Preconditions.checkState(state == State.OPEN,
         "Cannot get value from SystemTable instance in state %s.", state);
-
-    // TODO: Make this query a member of the class and prepare in the constructor
-    String queryText = "SELECT " + VALUE_COLUMN + " FROM " +  mTable.getTableName() +
-        " WHERE " + KEY_COLUMN + "=?";
-    Session session = mTable.getSession();
-    PreparedStatement preparedStatement = session.prepare(queryText);
-    ResultSet resultSet = session.execute(preparedStatement.bind(key));
+    ResultSet resultSet = mTable.getSession().execute(preparedStatementGetValue.bind(key));
 
     // Extra the value from the byte buffer, otherwise return this empty buffer
     // TODO: Some checks here?
     List<Row> rows = resultSet.all();
-    assert(rows.size() == 1);
-    com.datastax.driver.core.Row row = rows.get(0);
-
-    return CassandraByteUtil.byteBuffertoBytes(row.getBytes(VALUE_COLUMN));
+    if (rows.size() == 1) {
+      Row row = rows.get(0);
+      return CassandraByteUtil.byteBuffertoBytes(row.getBytes(VALUE_COLUMN));
+    } else if (rows.size() > 0) {
+      assert(false) :
+      "Expected to get back exactly zero or one rows from query to get value from system table, but got back " + rows;
+    }
+    return null;
   }
 
   /** {@inheritDoc} */
   @Override
   public void putValue(String key, byte[] value) throws IOException {
+    LOG.info(String.format("Putting key, value = %s,%s", key, value));
     final State state = mState.get();
     Preconditions.checkState(state == State.OPEN,
         "Cannot put value into SystemTable instance in state %s.", state);
     ByteBuffer valAsByteBuffer = CassandraByteUtil.bytesToByteBuffer(value);
-
-    // TODO: Make this query a member of the class and prepare in the constructor
-    String queryText = "INSERT INTO " +  mTable.getTableName() + "(" + KEY_COLUMN + "," + VALUE_COLUMN + ") VALUES(?,?);";
     Session session = mTable.getSession();
-    PreparedStatement preparedStatement = session.prepare(queryText);
     // TODO: Check for success?
-    session.execute(preparedStatement.bind(key, valAsByteBuffer));
+    session.execute(preparedStatementPutValue.bind(key, valAsByteBuffer));
   }
 
   /** {@inheritDoc} */

@@ -49,11 +49,13 @@ public class TestCassandraKijiSystemTable extends CassandraKijiClientTest {
 
   @Test
   public void testPutGet() throws IOException {
+    System.err.println("Hopefully this prints something!!!!");
     final Kiji kiji = getKiji();
     final KijiSystemTable systemTable = kiji.getSystemTable();
 
     assertNull(systemTable.getValue(KEY));
 
+    System.err.println("Putting first value in!");
     systemTable.putValue(KEY, VALUE1);
     assertArrayEquals(VALUE1, systemTable.getValue(KEY));
 

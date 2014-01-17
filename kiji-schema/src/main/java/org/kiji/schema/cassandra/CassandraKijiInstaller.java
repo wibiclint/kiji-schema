@@ -90,16 +90,14 @@ public final class CassandraKijiInstaller {
 
     final LockFactory lockFactory = cassandraFactory.getLockFactory(uri, conf);
 
-    // Try to create the keyspace.  If it already exists, the then the query will return an
-    // AlreadyExistsException.
-    // TODO: Figure out a cleaner way to check whether the keyspace already exists.
-
     try {
-      // Create the keyspace for this kiji instance.
       LOG.info(String.format("Installing Cassandra Kiji instance '%s'.", uri));
 
       CassandraAdminFactory cassandraAdminFactory = cassandraFactory.getCassandraAdminFactory(uri);
       CassandraAdmin cassandraAdmin = cassandraAdminFactory.create(uri);
+
+      // Create the keyspace
+
 
       // Install the system, meta, and schema tables.
       CassandraSystemTable.install(cassandraAdmin, uri, conf, properties);

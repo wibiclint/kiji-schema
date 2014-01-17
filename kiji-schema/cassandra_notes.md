@@ -15,7 +15,8 @@ Open TODOs
 - TODO: I think the methods in `KijiManagedCassandraTableName` could be a little bit more explicit
   about whether they are returning names in the Kiji namespace or in the C* namespace.
 - TODO: Add super-unstable annotations to this API.  :)
-- TODO: Check for any case-sensitivity issues
+- TODO: Check for any case-sensitivity issues - The CQL commands that we are using to create and
+  manipulate tables may need some kind of quotes or other escaping to maintain upper/lower case.
 
 
 Open questions

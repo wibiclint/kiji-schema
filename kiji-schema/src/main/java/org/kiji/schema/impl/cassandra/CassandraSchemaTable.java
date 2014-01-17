@@ -168,10 +168,52 @@ public class CassandraSchemaTable implements KijiSchemaTable {
   private static final DatumWriter<SchemaTableEntry> SCHEMA_ENTRY_WRITER =
       new SpecificDatumWriter<SchemaTableEntry>(SchemaTableEntry.SCHEMA$);
 
+  /** Prepared statement for reading from the hash table. */
+  private PreparedStatement preparedStatementReadHashTable = null;
+
+  /** Prepared statement for writing to the hash table. */
+  private PreparedStatement preparedStatementWriteHashTable = null;
+
+  /** Prepared statement for writing to the ID table. */
+  private PreparedStatement preparedStatementWriteIdTable = null;
+
   /** {@inheritDoc} */
   @Override
   public BytesKey getSchemaHash(Schema schema) {
     return mHashCache.getHash(schema);
+  }
+
+  private void prepareQueryWriteHashTable() {
+    String hashQueryText = String.format(
+        "INSERT INTO %s(%s, %s, %s) VALUES(?, ?, ?);",
+        mSchemaHashTable.getTableName(),
+        SCHEMA_COLUMN_HASH_KEY,
+        SCHEMA_COLUMN_TIME,
+        SCHEMA_COLUMN_VALUE);
+
+    preparedStatementWriteHashTable = mSchemaHashTable.getSession().prepare(hashQueryText);
+  }
+
+  private void prepareQueryWriteIdTable() {
+    String idQueryText = String.format(
+        "INSERT INTO %s(%s, %s, %s) VALUES(?, ?, ?);",
+        mSchemaIdTable.getTableName(),
+        SCHEMA_COLUMN_ID_KEY,
+        SCHEMA_COLUMN_TIME,
+        SCHEMA_COLUMN_VALUE);
+
+    preparedStatementWriteIdTable =  mSchemaIdTable.getSession().prepare(idQueryText);
+  }
+
+  private void prepareQueryReadHashTable() {
+    String queryText = String.format(
+        "SELECT %s FROM %s WHERE %s=? ORDER BY %s DESC LIMIT 1",
+        SCHEMA_COLUMN_VALUE,
+        mSchemaHashTable.getTableName(),
+        SCHEMA_COLUMN_HASH_KEY,
+        SCHEMA_COLUMN_TIME
+    );
+    preparedStatementReadHashTable = mSchemaHashTable.getSession().prepare(queryText);
   }
 
   /**
@@ -307,6 +349,11 @@ public class CassandraSchemaTable implements KijiSchemaTable {
     final State oldState = mState.getAndSet(State.OPEN);
     Preconditions.checkState(oldState == State.UNINITIALIZED,
         "Cannot open SchemaTable instance in state %s.", oldState);
+
+    // Prepare queries that we'll use multiple times
+    prepareQueryWriteHashTable();
+    prepareQueryWriteIdTable();
+    prepareQueryReadHashTable();
   }
 
   // TODO: Probably add a constructor that gets a CassandraAdmin and uses that to create the m*Tables
@@ -465,15 +512,7 @@ public class CassandraSchemaTable implements KijiSchemaTable {
     // be decoded (since the ID mapping has not been written yet).
     Session idSession = mSchemaIdTable.getSession();
 
-    String idQueryText = String.format(
-        "INSERT INTO %s(%s, %s, %s) VALUES(?, ?, ?);",
-        mSchemaIdTable.getTableName(),
-        SCHEMA_COLUMN_ID_KEY,
-        SCHEMA_COLUMN_TIME,
-        SCHEMA_COLUMN_VALUE);
-
-    PreparedStatement idPreparedStatement = idSession.prepare(idQueryText);
-    ResultSet resultSet = idSession.execute(idPreparedStatement.bind(
+    ResultSet resultSet = idSession.execute(preparedStatementWriteIdTable.bind(
         avroEntry.getId(),
         new Date(timestamp),
         CassandraByteUtil.bytesToByteBuffer(entryBytes)));
@@ -483,18 +522,11 @@ public class CassandraSchemaTable implements KijiSchemaTable {
 
     Session hashSession = mSchemaHashTable.getSession();
 
-    String hashQueryText = String.format(
-        "INSERT INTO %s(%s, %s, %s) VALUES(?, ?, ?);",
-        mSchemaHashTable.getTableName(),
-        SCHEMA_COLUMN_HASH_KEY,
-        SCHEMA_COLUMN_TIME,
-        SCHEMA_COLUMN_VALUE);
-
-    PreparedStatement hashPreparedStatement = hashSession.prepare(hashQueryText);
-    ResultSet hashResultSet = hashSession.execute(hashPreparedStatement.bind(
-        CassandraByteUtil.bytesToByteBuffer(avroEntry.getHash().bytes()),
-        new Date(timestamp),
-        CassandraByteUtil.bytesToByteBuffer(entryBytes)));
+    ResultSet hashResultSet =
+        hashSession.execute(preparedStatementWriteHashTable.bind(
+            CassandraByteUtil.bytesToByteBuffer(avroEntry.getHash().bytes()),
+            new Date(timestamp),
+            CassandraByteUtil.bytesToByteBuffer(entryBytes)));
 
     // TODO: Anything here to flush the table or verify that this worked?
     //if (flush) { mSchemaHashTable.flushCommits(); }
@@ -545,16 +577,7 @@ public class CassandraSchemaTable implements KijiSchemaTable {
 
     ByteBuffer tableKey = CassandraByteUtil.bytesToByteBuffer(schemaHash.getBytes());
 
-    // TODO: Prepare this statement once in constructor, not every load.
-    String queryText = String.format(
-        "SELECT %s FROM %s WHERE %s=? ORDER BY %s DESC LIMIT 1",
-        SCHEMA_COLUMN_VALUE,
-        tableName,
-        SCHEMA_COLUMN_HASH_KEY,
-        SCHEMA_COLUMN_TIME
-    );
-    PreparedStatement preparedStatement = session.prepare(queryText);
-    ResultSet resultSet = session.execute(preparedStatement.bind(tableKey));
+    ResultSet resultSet = session.execute(preparedStatementReadHashTable.bind(tableKey));
     List<Row> rows = resultSet.all();
 
     if (0 == rows.size()) {

@@ -59,6 +59,43 @@ public class CassandraTableKeyValueDatabase
   /**  The HBase table that stores Kiji metadata. */
   private final CassandraTableInterface mTable;
 
+  private PreparedStatement preparedStatementPutValue = null;
+  private PreparedStatement preparedStatementKeySet = null;
+  private PreparedStatement preparedStatementRestoreKeyValuesFromBackup = null;
+
+  private void setPreparedStatementPutValue() {
+    String queryText = String.format(
+        "INSERT INTO %s (%s, %s, %s, %s) VALUES (?, ?, now(), ?)",
+        mTable.getTableName(),
+        KV_COLUMN_TABLE,
+        KV_COLUMN_KEY,
+        KV_COLUMN_TIME,
+        KV_COLUMN_VALUE);
+    preparedStatementPutValue = mTable.getSession().prepare(queryText);
+  }
+
+  private void setPreparedStatementKeySet() {
+    String queryText = String.format(
+        "SELECT %s FROM %s WHERE %s=?",
+        KV_COLUMN_KEY,
+        mTable.getTableName(),
+        KV_COLUMN_TABLE
+    );
+    preparedStatementKeySet = mTable.getSession().prepare(queryText);
+  }
+
+  private void setPreparedStatementRestoreKeyValuesFromBackup() {
+    // TODO: Make this query a member of the class and prepare in the constructor
+    String queryText = String.format(
+        "INSERT INTO %s (%s, %s, %s, %s) VALUES (?, ?, ?, ?)",
+        mTable.getTableName(),
+        KV_COLUMN_TABLE,
+        KV_COLUMN_KEY,
+        KV_COLUMN_TIME,
+        KV_COLUMN_VALUE);
+    preparedStatementRestoreKeyValuesFromBackup = mTable.getSession().prepare(queryText);
+  }
+
   /**
   * This class manages the storage and retrieval of key-value pairs on a per table basis. It is
   * backed by a C* table.
@@ -172,22 +209,10 @@ public class CassandraTableKeyValueDatabase
   @Override
   public CassandraTableKeyValueDatabase putValue(String table, String key, byte[] value)
       throws IOException {
-    String metaTableName = mTable.getTableName();
     Session session = mTable.getSession();
-
-    // TODO: Make this query a member of the class and prepare in the constructor
-    String queryText = String.format(
-        "INSERT INTO %s (%s, %s, %s, %s) VALUES (?, ?, now(), ?)",
-        metaTableName,
-        KV_COLUMN_TABLE,
-        KV_COLUMN_KEY,
-        KV_COLUMN_TIME,
-        KV_COLUMN_VALUE);
-
     ByteBuffer valAsByteBuffer = CassandraByteUtil.bytesToByteBuffer(value);
-    PreparedStatement preparedStatement = session.prepare(queryText);
     // TODO: Check for success?
-    session.execute(preparedStatement.bind(table, key, valAsByteBuffer));
+    session.execute(preparedStatementPutValue.bind(table, key, valAsByteBuffer));
     return this;
   }
 
@@ -217,18 +242,8 @@ public class CassandraTableKeyValueDatabase
     // Just return a set of in-use keys
     // TODO: Make this query a member of the class and prepare in the constructor
 
-    String metaTableName = mTable.getTableName();
     Session session = mTable.getSession();
-
-    String queryText = String.format(
-        "SELECT %s FROM %s WHERE %s=?",
-        KV_COLUMN_KEY,
-        metaTableName,
-        KV_COLUMN_TABLE
-    );
-
-    PreparedStatement preparedStatement = session.prepare(queryText);
-    ResultSet resultSet = session.execute(preparedStatement.bind(table));
+    ResultSet resultSet = session.execute(preparedStatementKeySet.bind(table));
     Set<String> keys = new HashSet<String>();
 
     for (Row row: resultSet.all()) {
@@ -297,17 +312,7 @@ public class CassandraTableKeyValueDatabase
    LOG.debug(String.format("Restoring '%s' key-value(s) from backup for table '%s'.",
        keyValueBackup.getKeyValues().size(), tableName));
 
-   String metaTableName = mTable.getTableName();
    Session session = mTable.getSession();
-   // TODO: Make this query a member of the class and prepare in the constructor
-   String queryText = String.format(
-       "INSERT INTO %s (%s, %s, %s, %s) VALUES (?, ?, ?, ?)",
-       metaTableName,
-       KV_COLUMN_TABLE,
-       KV_COLUMN_KEY,
-       KV_COLUMN_TIME,
-       KV_COLUMN_VALUE);
-   PreparedStatement preparedStatement = session.prepare(queryText);
 
    for (KeyValueBackupEntry kvRecord : keyValueBackup.getKeyValues()) {
      final String key = kvRecord.getKey();
@@ -322,7 +327,8 @@ public class CassandraTableKeyValueDatabase
          valAsByteBuffer.toString(),
          mTable.getTableName()));
 
-     session.execute(preparedStatement.bind(tableName, key, new Date(timestamp), valAsByteBuffer));
+     session.execute(preparedStatementRestoreKeyValuesFromBackup.bind(
+         tableName, key, new Date(timestamp), valAsByteBuffer));
    }
    LOG.debug("Flushing commits to restore key-values from backup.");
    // TODO: Any flush needed?
