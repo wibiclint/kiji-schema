@@ -32,7 +32,6 @@ import org.kiji.schema.KijiURI;
 import org.kiji.schema.avro.KeyValueBackup;
 import org.kiji.schema.avro.KeyValueBackupEntry;
 import org.kiji.schema.cassandra.KijiManagedCassandraTableName;
-import org.kiji.schema.util.ResourceUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -59,22 +58,22 @@ public class CassandraTableKeyValueDatabase
   /**  The HBase table that stores Kiji metadata. */
   private final CassandraTableInterface mTable;
 
-  private PreparedStatement preparedStatementPutValue = null;
-  private PreparedStatement preparedStatementKeySet = null;
-  private PreparedStatement preparedStatementRestoreKeyValuesFromBackup = null;
-  private PreparedStatement preparedStatementGetRows = null;
-  private PreparedStatement preparedStatementRemoveValues = null;
+  private PreparedStatement mPreparedStatementPutValue = null;
+  private PreparedStatement mPreparedStatementKeySet = null;
+  private PreparedStatement mPreparedStatementRestoreKeyValuesFromBackup = null;
+  private PreparedStatement mPreparedStatementGetRows = null;
+  private PreparedStatement mPreparedStatementRemoveValues = null;
 
   private void setPreparedStatementPutValue() {
     String queryText = String.format(
-        "INSERT INTO %s (%s, %s, %s, %s) VALUES (?, ?, now(), ?)",
+        "INSERT INTO %s (%s, %s, %s, %s) VALUES (?, ?, ?, ?)",
         mTable.getTableName(),
         KV_COLUMN_TABLE,
         KV_COLUMN_KEY,
         KV_COLUMN_TIME,
         KV_COLUMN_VALUE);
     //LOG.info("What is wrong with this? " + queryText);
-    preparedStatementPutValue = mTable.getSession().prepare(queryText);
+    mPreparedStatementPutValue = mTable.getSession().prepare(queryText);
   }
 
   private void setPreparedStatementKeySet() {
@@ -84,7 +83,7 @@ public class CassandraTableKeyValueDatabase
         mTable.getTableName(),
         KV_COLUMN_TABLE
     );
-    preparedStatementKeySet = mTable.getSession().prepare(queryText);
+    mPreparedStatementKeySet = mTable.getSession().prepare(queryText);
   }
 
   private void setPreparedStatementRestoreKeyValuesFromBackup() {
@@ -96,7 +95,7 @@ public class CassandraTableKeyValueDatabase
         KV_COLUMN_KEY,
         KV_COLUMN_TIME,
         KV_COLUMN_VALUE);
-    preparedStatementRestoreKeyValuesFromBackup = mTable.getSession().prepare(queryText);
+    mPreparedStatementRestoreKeyValuesFromBackup = mTable.getSession().prepare(queryText);
   }
 
   private void setPreparedStatementGetRows() {
@@ -106,7 +105,7 @@ public class CassandraTableKeyValueDatabase
         KV_COLUMN_TABLE,
         KV_COLUMN_KEY
     );
-    preparedStatementGetRows = mTable.getSession().prepare(queryText);
+    mPreparedStatementGetRows = mTable.getSession().prepare(queryText);
   }
 
   private void setPreparedStatementRemoveValues() {
@@ -116,7 +115,7 @@ public class CassandraTableKeyValueDatabase
         KV_COLUMN_TABLE,
         KV_COLUMN_KEY
     );
-    preparedStatementRemoveValues = mTable.getSession().prepare(queryText);
+    mPreparedStatementRemoveValues = mTable.getSession().prepare(queryText);
   }
 
   /**
@@ -144,7 +143,7 @@ public class CassandraTableKeyValueDatabase
 
     // Standard C* table layout.  Use text key + timestamp as composite primary key to allow selection by timestamp.
     String tableDescription = String.format(
-        "(%s text, %s text, %s timeuuid, %s blob, PRIMARY KEY (%s, %s, %s)) WITH CLUSTERING ORDER BY (%s ASC, %s DESC);",
+        "(%s text, %s text, %s timestamp, %s blob, PRIMARY KEY (%s, %s, %s)) WITH CLUSTERING ORDER BY (%s ASC, %s DESC);",
         KV_COLUMN_TABLE,
         KV_COLUMN_KEY,
         KV_COLUMN_TIME,
@@ -182,7 +181,7 @@ public class CassandraTableKeyValueDatabase
   private List<Row> getRows(String table, String key, int numVersions) {
     Preconditions.checkArgument(numVersions >= 1,  "numVersions must be positive");
     Session session = mTable.getSession();
-    ResultSet resultSet = session.execute(preparedStatementGetRows.bind(table, key, numVersions));
+    ResultSet resultSet = session.execute(mPreparedStatementGetRows.bind(table, key, numVersions));
     List<Row> rows = resultSet.all();
     return rows;
   }
@@ -222,7 +221,7 @@ public class CassandraTableKeyValueDatabase
     for (Row row: rows) {
       ByteBuffer blob = row.getBytes(KV_COLUMN_VALUE);
       final byte[] bytes = CassandraByteUtil.byteBuffertoBytes(blob);
-      Long timestamp = row.getLong(KV_COLUMN_TIME);
+      Long timestamp = row.getDate(KV_COLUMN_TIME).getTime();
       Preconditions.checkState(timedValues.put(timestamp, bytes) == null);
     }
     return timedValues;
@@ -232,12 +231,29 @@ public class CassandraTableKeyValueDatabase
   @Override
   public CassandraTableKeyValueDatabase putValue(String table, String key, byte[] value)
       throws IOException {
-    Preconditions.checkNotNull(preparedStatementPutValue);
+    Preconditions.checkNotNull(mPreparedStatementPutValue);
     Session session = mTable.getSession();
     ByteBuffer valAsByteBuffer = CassandraByteUtil.bytesToByteBuffer(value);
     // TODO: Check for success?
-    session.execute(preparedStatementPutValue.bind(table, key, valAsByteBuffer));
+    session.execute(mPreparedStatementPutValue.bind(table, key, new Date(), valAsByteBuffer));
     return this;
+  }
+
+  private void logRowsForTable(String tableName) {
+    String metaTableName = mTable.getTableName();
+    Session session = mTable.getSession();
+
+    // Get all of the keys for this table before the remove
+    ResultSet resultSet = session.execute(String.format(
+        "SELECT * from %s where %s='%s'",
+        metaTableName,
+        KV_COLUMN_TABLE,
+        tableName
+    ));
+    LOG.info("Rows for table " + tableName);
+    for (Row row: resultSet.all()) {
+      LOG.info("\t" + row.toString());
+    }
   }
 
   /** {@inheritDoc} */
@@ -246,8 +262,14 @@ public class CassandraTableKeyValueDatabase
     String metaTableName = mTable.getTableName();
     Session session = mTable.getSession();
 
+    LOG.info("Before delete:");
+    logRowsForTable(table);
+
     // TODO: Check for success?
-    session.execute(preparedStatementRemoveValues.bind(table, key));
+    session.execute(mPreparedStatementRemoveValues.bind(table, key));
+
+    LOG.info("After delete: ");
+    logRowsForTable(table);
   }
 
   /** {@inheritDoc} */
@@ -257,7 +279,7 @@ public class CassandraTableKeyValueDatabase
     // TODO: Make this query a member of the class and prepare in the constructor
 
     Session session = mTable.getSession();
-    ResultSet resultSet = session.execute(preparedStatementKeySet.bind(table));
+    ResultSet resultSet = session.execute(mPreparedStatementKeySet.bind(table));
     Set<String> keys = new HashSet<String>();
 
     for (Row row: resultSet.all()) {
@@ -273,6 +295,7 @@ public class CassandraTableKeyValueDatabase
     // Just return a set of in-use tables
     // TODO: Make this query a member of the class and prepare in the constructor
 
+
     String metaTableName = mTable.getTableName();
     Session session = mTable.getSession();
 
@@ -286,7 +309,9 @@ public class CassandraTableKeyValueDatabase
     Set<String> keys = new HashSet<String>();
 
     for (Row row: resultSet.all()) {
-      keys.add(row.getString(KV_COLUMN_TABLE));
+      String tableName = row.getString(KV_COLUMN_TABLE);
+      logRowsForTable(tableName);
+      keys.add(tableName);
     }
     return keys;
   }
@@ -295,6 +320,10 @@ public class CassandraTableKeyValueDatabase
  @Override
  public void removeAllValues(String table) throws IOException {
    Set<String> keysToRemove = keySet(table);
+   LOG.info(String.format(
+       "Removing all values for table %s, keys = %s",
+       table,
+       keysToRemove));
    for (String key : keysToRemove) {
      removeValues(table, key);
    }
@@ -341,7 +370,7 @@ public class CassandraTableKeyValueDatabase
          valAsByteBuffer.toString(),
          mTable.getTableName()));
 
-     session.execute(preparedStatementRestoreKeyValuesFromBackup.bind(
+     session.execute(mPreparedStatementRestoreKeyValuesFromBackup.bind(
          tableName, key, new Date(timestamp), valAsByteBuffer));
    }
    LOG.debug("Flushing commits to restore key-values from backup.");

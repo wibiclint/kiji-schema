@@ -24,8 +24,11 @@ import org.junit.Test;
 import org.kiji.schema.*;
 import org.kiji.schema.avro.*;
 import org.kiji.schema.impl.MetadataRestorer;
+import org.kiji.schema.impl.cassandra.CassandraMetadataRestorer;
 import org.kiji.schema.layout.KijiTableLayout;
 import org.kiji.schema.layout.KijiTableLayouts;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -34,8 +37,10 @@ import java.util.List;
 
 import static org.junit.Assert.*;
 
-/** Tests backuping and restoring Kiji meta tables. */
-public class TestCassandraMetaTable extends KijiClientTest {
+/** Tests backing up and restoring Kiji meta tables. */
+public class TestCassandraMetaTable extends CassandraKijiClientTest {
+
+  private static final Logger LOG = LoggerFactory.getLogger(CassandraKijiClientTest.class);
 
   private static final byte[] BYTES_VALUE = Bytes.toBytes("value");
 
@@ -46,15 +51,24 @@ public class TestCassandraMetaTable extends KijiClientTest {
     final KijiSchemaTable schemaTable = kiji.getSchemaTable();
     final KijiSystemTable systemTable = kiji.getSystemTable();
 
+    // Update the layout for table foo.
     final TableLayoutDesc layout = KijiTableLayouts.getLayout(KijiTableLayouts.FOO_TEST);
     final KijiTableLayout updatedLayout = metaTable.updateTableLayout("foo", layout);
+
+    // Insert a user-level key-value pair for table foo.
     metaTable.putValue("foo", "key", BYTES_VALUE);
 
+    // Insert a key-value pair in the system table
     systemTable.putValue("testKey", Bytes.toBytes("testValue"));
+
+    // The meta table should have a single table, foo, in it.
     assertEquals(1, metaTable.listTables().size());
     assertEquals(1, metaTable.tableSet().size());
+
+    // The meta table should have a single key-value pair, "key"/"value", for table foo.
     assertEquals(1, metaTable.keySet("foo").size());
     assertArrayEquals(BYTES_VALUE, metaTable.getValue("foo", "key"));
+
     // write to backupBuilder
     final MetadataBackup.Builder backupBuilder = MetadataBackup.newBuilder()
         .setLayoutVersion(kiji.getSystemTable().getDataVersion().toString())
@@ -88,12 +102,14 @@ public class TestCassandraMetaTable extends KijiClientTest {
     assertEquals(1, layoutBackups.size());
     assertEquals(updatedLayout.getDesc(), layoutBackups.get(0).getLayout());
 
+    // Delete the entries for "foo" from the meta table.
     metaTable.deleteTable("foo");
     assertTrue(!metaTable.tableSet().contains("foo"));
+    LOG.info("metaTable tables = " + metaTable.listTables());
     assertEquals(0, metaTable.listTables().size());
     assertEquals(0, metaTable.tableSet().size());
 
-    final MetadataRestorer restorer = new MetadataRestorer();
+    final CassandraMetadataRestorer restorer = new CassandraMetadataRestorer();
     restorer.restoreTables(backup, kiji);
 
     final KijiMetaTable newMetaTable = kiji.getMetaTable();

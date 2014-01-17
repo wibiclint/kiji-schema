@@ -1131,7 +1131,7 @@ public class CassandraSchemaTable implements KijiSchemaTable {
 
       // Get the row key, timestamp, and schema for this row
       final BytesKey rowKey = new BytesKey(CassandraByteUtil.byteBuffertoBytes(row.getBytes(SCHEMA_COLUMN_HASH_KEY)));
-      final long timestamp = row.getLong(SCHEMA_COLUMN_TIME);
+      final long timestamp = row.getDate(SCHEMA_COLUMN_TIME).getTime();
       final byte[] schemaAsBytes = CassandraByteUtil.byteBuffertoBytes(row.getBytes(SCHEMA_COLUMN_VALUE));
 
       try {
@@ -1196,7 +1196,7 @@ public class CassandraSchemaTable implements KijiSchemaTable {
             rowKey, exn));
       }
 
-      final long timestamp = row.getLong(SCHEMA_COLUMN_TIME);
+      final long timestamp = row.getDate(SCHEMA_COLUMN_TIME).getTime();
       final byte[] schemaAsBytes = CassandraByteUtil.byteBuffertoBytes(row.getBytes(SCHEMA_COLUMN_VALUE));
       try {
         final SchemaEntry entry = fromAvroEntry(decodeSchemaEntry(schemaAsBytes));

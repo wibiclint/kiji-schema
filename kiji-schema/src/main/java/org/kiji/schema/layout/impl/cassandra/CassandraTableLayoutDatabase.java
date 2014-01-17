@@ -109,12 +109,76 @@ public final class CassandraTableLayoutDatabase implements KijiTableLayoutDataba
   /** Decoder for concrete layout cells. */
   private final KijiCellDecoder<TableLayoutDesc> mCellDecoder;
 
+  private PreparedStatement mPreparedStatementGetRows = null;
+  private PreparedStatement mPreparedStatementUpdateTableLayout = null;
+  private PreparedStatement mPreparedStatementRemoveAllTableLayoutVersions = null;
+  private PreparedStatement mPreparedStatementRemoveRecentTableLayoutVersions = null;
+  private PreparedStatement mPreparedStatementListTables = null;
+
   private static final CellSchema CELL_SCHEMA = CellSchema.newBuilder()
       .setStorage(SchemaStorage.HASH)
       .setType(SchemaType.CLASS)
       .setValue(TableLayoutDesc.SCHEMA$.getFullName())
       .build();
 
+  private void setPreparedStatementGetRows() {
+    String metaTableName = mTable.getTableName();
+    Session session = mTable.getSession();
+
+    String queryText = String.format(
+        "SELECT * FROM %s WHERE %s=? LIMIT 1",
+        metaTableName,
+        QUALIFIER_TABLE,
+        QUALIFIER_TIME
+    );
+    mPreparedStatementGetRows = session.prepare(queryText);
+  }
+
+  private void setPreparedStatementUpdateTableLayout() {
+    String metaTableName = mTable.getTableName();
+    Session session = mTable.getSession();
+
+    String queryText = String.format(
+        "INSERT INTO %s (%s, %s, %s, %s, %s) VALUES (?, ?, ?, ?, ?)",
+        metaTableName,
+        QUALIFIER_TABLE,
+        QUALIFIER_TIME,
+        QUALIFIER_LAYOUT_ID,
+        QUALIFIER_LAYOUT,
+        QUALIFIER_UPDATE);
+    mPreparedStatementUpdateTableLayout = session.prepare(queryText);
+  }
+
+  private void setPreparedStatementRemoveAllTableLayoutVersions() {
+    String metaTableName = mTable.getTableName();
+    Session session = mTable.getSession();
+    String queryText = String.format(
+        "DELETE FROM %s WHERE %s=?",
+        metaTableName,
+        QUALIFIER_TABLE
+      );
+    mPreparedStatementRemoveAllTableLayoutVersions = session.prepare(queryText);
+  }
+
+  private void setPreparedStatementRemoveRecentTableLayoutVersions() {
+    String metaTableName = mTable.getTableName();
+    Session session = mTable.getSession();
+    String queryText = String.format(
+        "DELETE FROM %s WHERE %s=? AND %s=?",
+        metaTableName,
+        QUALIFIER_TABLE,
+        QUALIFIER_TIME
+    );
+    mPreparedStatementRemoveRecentTableLayoutVersions = session.prepare(queryText);
+  }
+  private void setPreparedStatementListTables() {
+    String queryText = String.format(
+        "SELECT %s FROM %s",
+        QUALIFIER_TABLE,
+        mTable.getTableName()
+    );
+    mPreparedStatementListTables = mTable.getSession().prepare(queryText);
+  }
   /**
    * Install a table for storing table layout information.
    * @param admin A wrapper around an open C* session.
@@ -124,14 +188,19 @@ public final class CassandraTableLayoutDatabase implements KijiTableLayoutDataba
     String tableName = KijiManagedCassandraTableName.getMetaLayoutTableName(uri.getInstance()).toString();
 
     // Standard C* table layout.  Use text key + timestamp as composite primary key to allow selection by timestamp.
+
+    // I did not use timeuuid here because we need to be able to write timestamps sometimes.
+
+    // For the rest of the table, the layout ID is a string, then we store the actual layout and update as blobs.
     String tableDescription = String.format(
-        "(%s text, %s timeuuid, %s int, %s blob, %s blob, PRIMARY KEY (%s, %s));",
+        "(%s text, %s timestamp, %s text, %s blob, %s blob, PRIMARY KEY (%s, %s)) WITH CLUSTERING ORDER BY (%s DESC);",
         QUALIFIER_TABLE,
         QUALIFIER_TIME,
         QUALIFIER_LAYOUT_ID,
         QUALIFIER_LAYOUT,
         QUALIFIER_UPDATE,
         QUALIFIER_TABLE,
+        QUALIFIER_TIME,
         QUALIFIER_TIME);
     admin.createTable(tableName, tableDescription);
   }
@@ -158,6 +227,11 @@ public final class CassandraTableLayoutDatabase implements KijiTableLayoutDataba
     final CellSpec cellSpec = CellSpec.fromCellSchema(CELL_SCHEMA, mSchemaTable);
     mCellEncoder = new AvroCellEncoder(cellSpec);
     mCellDecoder = SpecificCellDecoderFactory.get().create(cellSpec);
+    setPreparedStatementGetRows();
+    setPreparedStatementRemoveAllTableLayoutVersions();
+    setPreparedStatementUpdateTableLayout();
+    setPreparedStatementRemoveRecentTableLayoutVersions();
+    setPreparedStatementListTables();
   }
 
   /** {@inheritDoc} */
@@ -209,19 +283,11 @@ public final class CassandraTableLayoutDatabase implements KijiTableLayoutDataba
     String metaTableName = mTable.getTableName();
     Session session = mTable.getSession();
 
-    // TODO: Make this query a member of the class and prepare in the constructor
+    Preconditions.checkNotNull(mPreparedStatementUpdateTableLayout);
     // TODO: This should do a "check-and-put" to match the HBase implementation.
-    String queryText = String.format(
-        "INSERT INTO %s (%s, %s, %s, %s) VALUES (?, now(), ?, ?, ?)",
-        metaTableName,
-        QUALIFIER_TABLE,
-        QUALIFIER_TIME,
-        QUALIFIER_LAYOUT_ID,
-        QUALIFIER_LAYOUT,
-        QUALIFIER_UPDATE);
-    PreparedStatement preparedStatement = session.prepare(queryText);
-    session.execute(preparedStatement.bind(
+    session.execute(mPreparedStatementUpdateTableLayout.bind(
         tableName,
+        new Date(),
         layoutId,
         CassandraByteUtil.bytesToByteBuffer(encodeTableLayoutDesc(tableLayout.getDesc())),
         CassandraByteUtil.bytesToByteBuffer(encodeTableLayoutDesc(update))
@@ -253,22 +319,9 @@ public final class CassandraTableLayoutDatabase implements KijiTableLayoutDataba
    */
   private List<Row> getRows(String table, int numVersions) {
     Preconditions.checkArgument(numVersions >= 1,  "numVersions must be positive");
-
-    String metaTableName = mTable.getTableName();
-    Session session = mTable.getSession();
-
-    // TODO: Prepare this statement once in constructor, not every load.
-    String queryText = String.format(
-        "SELECT * FROM %s WHERE %s=%s ORDER BY %s DESC LIMIT 1",
-        metaTableName,
-        QUALIFIER_TABLE,
-        table,
-        QUALIFIER_TIME
-    );
-
-    ResultSet resultSet = session.execute(queryText);
-    List<com.datastax.driver.core.Row> rows = resultSet.all();
-    return rows;
+    Preconditions.checkNotNull(mPreparedStatementGetRows);
+    ResultSet resultSet = mTable.getSession().execute(mPreparedStatementGetRows.bind(table));
+    return resultSet.all();
   }
 
   /** {@inheritDoc} */
@@ -313,19 +366,11 @@ public final class CassandraTableLayoutDatabase implements KijiTableLayoutDataba
   /** {@inheritDoc} */
   @Override
   public void removeAllTableLayoutVersions(String table) throws IOException {
-    String metaTableName = mTable.getTableName();
-    Session session = mTable.getSession();
-
-    // TODO: Make this query a member of the class and prepare in the constructor
-    String queryText = String.format(
-        "DELETE FROM %s WHERE %s=%s",
-        metaTableName,
-        QUALIFIER_TABLE,
-        table
-    );
-
     // TODO: Check for success?
-    session.execute(queryText);
+    Preconditions.checkNotNull(mPreparedStatementRemoveAllTableLayoutVersions);
+    mTable.getSession().execute(
+        mPreparedStatementRemoveAllTableLayoutVersions.bind(table));
+
   }
 
   /** {@inheritDoc} */
@@ -337,43 +382,23 @@ public final class CassandraTableLayoutDatabase implements KijiTableLayoutDataba
     // Get a list of versions to delete
     List<Row> rows = getRows(table, numVersions);
 
-    String metaTableName = mTable.getTableName();
     Session session = mTable.getSession();
 
-    // TODO: Make this query a member of the class and prepare in the constructor
-    String queryText = String.format(
-        "DELETE FROM %s WHERE %s=%s AND %s=?",
-        metaTableName,
-        QUALIFIER_TABLE,
-        table,
-        QUALIFIER_TIME
-    );
-
-    PreparedStatement preparedStatement = session.prepare(queryText);
+    Preconditions.checkNotNull(mPreparedStatementRemoveRecentTableLayoutVersions);
     for (Row row: rows) {
       Long timestamp = row.getLong(QUALIFIER_TIME);
-      session.execute(preparedStatement.bind(new Date(timestamp)));
+      session.execute(mPreparedStatementRemoveRecentTableLayoutVersions.bind(table, new Date(timestamp)));
     }
   }
 
   /** {@inheritDoc} */
   @Override
   public List<String> listTables() throws IOException {
+    Preconditions.checkNotNull(mPreparedStatementListTables);
 
 
     // Just return a set of in-use tables
-    // TODO: Make this query a member of the class and prepare in the constructor
-
-    String metaTableName = mTable.getTableName();
-    Session session = mTable.getSession();
-
-    String queryText = String.format(
-        "SELECT %s FROM %s",
-        QUALIFIER_TABLE,
-        metaTableName
-    );
-
-    ResultSet resultSet = session.execute(queryText);
+    ResultSet resultSet = mTable.getSession().execute(mPreparedStatementListTables.bind());
     Set<String> keys = new HashSet<String>();
 
     // This code makes me miss Scala
@@ -423,7 +448,7 @@ public final class CassandraTableLayoutDatabase implements KijiTableLayoutDataba
     }
 
     for (Row row: rows) {
-      final long timestamp = row.getLong(QUALIFIER_TIME);
+      final long timestamp = row.getDate(QUALIFIER_TIME).getTime();
       final TableLayoutDesc layout =
           decodeTableLayoutDesc(
               CassandraByteUtil.byteBuffertoBytes(
@@ -471,7 +496,7 @@ public final class CassandraTableLayoutDatabase implements KijiTableLayoutDataba
     PreparedStatement preparedStatementInsertAll = session.prepare(queryTextInsertAll);
 
     String queryTextInsertLayout = String.format(
-        "INSERT INTO %s (%s, %s, %s) VALUES (?, now(), ?)",
+        "INSERT INTO %s (%s, %s, %s) VALUES (?, ?, ?)",
         metaTableName,
         QUALIFIER_TABLE,
         QUALIFIER_TIME,
@@ -497,6 +522,7 @@ public final class CassandraTableLayoutDatabase implements KijiTableLayoutDataba
       } else {
         session.execute(preparedStatementInsertLayout.bind(
             tableName,
+            new Date(),
             layoutByteBuffer
         ));
       }

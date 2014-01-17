@@ -22,10 +22,6 @@ package org.kiji.schema.impl.cassandra;
 import com.google.common.base.Objects;
 import com.google.common.base.Preconditions;
 import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.hbase.HTableDescriptor;
-import org.apache.hadoop.hbase.client.HBaseAdmin;
-import org.apache.hadoop.hbase.client.HTableInterface;
-import org.apache.hadoop.hbase.util.Bytes;
 import org.kiji.annotations.ApiAudience;
 import org.kiji.schema.KijiMetaTable;
 import org.kiji.schema.KijiSchemaTable;
@@ -33,12 +29,8 @@ import org.kiji.schema.KijiTableKeyValueDatabase;
 import org.kiji.schema.KijiURI;
 import org.kiji.schema.avro.*;
 import org.kiji.schema.cassandra.KijiManagedCassandraTableName;
-import org.kiji.schema.hbase.KijiManagedHBaseTableName;
-import org.kiji.schema.impl.HTableInterfaceFactory;
-import org.kiji.schema.impl.hbase.HBaseTableKeyValueDatabase;
 import org.kiji.schema.layout.KijiTableLayout;
 import org.kiji.schema.layout.KijiTableLayoutDatabase;
-import org.kiji.schema.layout.impl.HBaseTableLayoutDatabase;
 import org.kiji.schema.layout.impl.cassandra.CassandraTableLayoutDatabase;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -48,7 +40,7 @@ import java.util.*;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
- * An implementation of the KijiMetaTable that uses the 'kiji-meta' HBase table as the backing
+ * An implementation of the KijiMetaTable that uses the 'kiji-meta' C* table as the backing
  * store.
  */
 @ApiAudience.Private
@@ -364,7 +356,7 @@ public class CassandraMetaTable implements KijiMetaTable {
   /**
    * Install the meta table into a Kiji instance.
    *
-   * @param admin The HBase Admin interface for the HBase cluster to install into.
+   * @param admin The C* Admin interface for the C* cluster to install into.
    * @param uri The uri of the Kiji instance to install.
    * @throws java.io.IOException If there is an error.
    */
@@ -376,7 +368,7 @@ public class CassandraMetaTable implements KijiMetaTable {
   }
 
   /**
-   * Removes the meta table from HBase.
+   * Removes the meta table from C*.
    *
    * @param admin The HBase admin object.
    * @param uri The uri of the Kiji instance to uninstall.
@@ -384,7 +376,10 @@ public class CassandraMetaTable implements KijiMetaTable {
    */
   public static void uninstall(CassandraAdmin admin, KijiURI uri)
     throws IOException {
-    String tableName = KijiManagedHBaseTableName.getMetaTableName(uri.getInstance()).toString();
+    String tableName = KijiManagedCassandraTableName.getMetaKeyValueTableName(uri.getInstance()).toString();
+    admin.disableTable(tableName);
+    admin.deleteTable(tableName);
+    tableName = KijiManagedCassandraTableName.getMetaLayoutTableName(uri.getInstance()).toString();
     admin.disableTable(tableName);
     admin.deleteTable(tableName);
   }

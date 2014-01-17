@@ -4,6 +4,8 @@ import com.datastax.driver.core.ResultSet;
 import com.datastax.driver.core.Session;
 import org.kiji.schema.KijiURI;
 import org.kiji.schema.cassandra.KijiManagedCassandraTableName;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.Closeable;
 
@@ -18,6 +20,8 @@ import java.io.Closeable;
  *
  */
 public abstract class CassandraAdmin implements Closeable {
+
+  private static final Logger LOG = LoggerFactory.getLogger(CassandraAdmin.class);
 
   /** Current C* session for the given keyspace. */
   private final Session mSession;
@@ -79,7 +83,12 @@ public abstract class CassandraAdmin implements Closeable {
   // TODO: Add something for closing the session and all of the tables.
   public void disableTable(String tableName) { }
 
-  public void deleteTable(String tableName) { }
+  // TODO: Maybe have more checks here?
+  public void deleteTable(String tableName) {
+    String queryString = String.format("DROP TABLE %s;", tableName);
+    LOG.info("DROPPING TABLE LIKE THIS! " + queryString);
+    getSession().execute(queryString);
+  }
 
   // TODO: Implement check for whether a table exists!
   public boolean tableExists(String tableName) {
