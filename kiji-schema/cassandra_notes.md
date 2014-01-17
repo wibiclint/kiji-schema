@@ -15,6 +15,7 @@ Open TODOs
 - TODO: I think the methods in `KijiManagedCassandraTableName` could be a little bit more explicit
   about whether they are returning names in the Kiji namespace or in the C* namespace.
 - TODO: Add super-unstable annotations to this API.  :)
+- TODO: Check for any case-sensitivity issues
 
 
 Open questions
@@ -39,6 +40,16 @@ Open questions
 - How do we want to implement permissions?
 - Do we want to offer any kind of reduced Kiji functionality for users that have Cassandra set up,
   but don't have ZooKeeper installed?
+
+
+Note about Java 7
+=================
+
+Cassandra 2.x requires JDK 7.  The following error indicates that you are using JDK 6:
+
+    java.lang.UnsupportedClassVersionError: org/apache/cassandra/service/EmbeddedCassandraService : Unsupported major.minor version 51.0
+
+
 
 
 Mapping Kiji to Cassandra
@@ -372,34 +383,47 @@ New packages:
 
 New files:
 
-
+- o.k.s.cassandra.CassandraFactory
+- o.k.s.cassandra.TestingCassandraFactory
+- o.k.s.cassandra.CassandraKijiClientTest
+- o.k.s.impl.cassandra.CassandraAdminFactory
 - o.k.s.impl.cassandra.CassandraKiji
 - o.k.s.impl.cassandra.CassandraKijiFactory
 - o.k.s.impl.cassandra.CassandraKijiTable
 - o.k.s.impl.cassandra.CassandraMetaTable
 - o.k.s.impl.cassandra.CassandraTableKeyValueDatabase
+- o.k.s.impl.cassandra.DefaultCassandraAdmin
+- o.k.s.impl.cassandra.DefaultCassandraAdminFactory
+- o.k.s.impl.cassandra.DefaultCassandraFactory
+- o.k.s.impl.cassandra.TestingCassandraAdmin
+- o.k.s.impl.cassandra.TestingCassandraAdminFactory
 - o.k.s.layout.impl.cassandra.CassandraTableLayoutDatabase
 - o.k.s.layout.impl.cassandra.CassandraTableSchemaTranslator
 - o.k.s.security.CassandraKijiSecurityManager
 - o.k.s.tools.CassandraCreateTableTool
-- o.k.s.cassandra.CassandraFactory
-- o.k.s.cassandra.CassandraFactory
-- o.k.s.impl.cassandra.CassandraAdminFactory
-- o.k.s.impl.cassandra.DefaultCassandraAdminFactory
-- o.k.s.impl.cassandra.DefaultCassandraAdminFactory
 
 
-Unit testing
-------------
+Unit and integration testing
+----------------------------
 
 We are assuming that uses will have an environment with Cassandra, ZooKeeper, and HBase installed.
 Ideally we can add C* nodes to whatever fake HBase we are using now.
 
-Unclear now how we should organize the unit tests for the C* implementations of Kiji.  For now, I'll
-create a new o.k.s.cassandra package.
+For unit tests, we use Cassandra's `EmbeddedCassandraService.`  Much as the HBase implementation of
+Kiji has a `TestingHBaseFactory`, we have a `TestingCassandraFactory.`  This factory returns a
+`CassandraAdmin` object that will always use a singleton session with the
+`EmbeddedCassandraService.`
 
-Joe suggests using a Vagrant virtual machine that can run a C* server that the unit tests can use.
-Another option is using Cassandra's `EmbeddedCassandraService.`
+We need to figure out how we want to clean up Cassandra keyspaces before starting unit tests.  We
+don't want to carry over stale C* test sessions from test to test.
+
+Note that Cassandra limits keyspaces to 48 characters (?!), so we have to truncate the names of the
+Kiji instances used for tests.
+([Apparently](https://github.com/apache/cassandra/blob/trunk/src/java/org/apache/cassandra/config/Schema.java#L49)
+this is related to path-size limits in Windows!  Awesome!)
+
+For integration tests, Joe recommends using a Vagrant virtual machine to set up a C* server.
+
 
 
 Notes on update the meta table
@@ -537,11 +561,3 @@ Here is a list of places where we'll have to put changes:
 - `CassandraTableSchemaTranslator` (I don't know if we'll have the equivalent of
   `ColumnNameTranslator` because the mapping from Kiji column to C* will be so different from what
   you would get in HBase.
-
-
-Cassandra analogue to `HBaseFactory`
-------------------------------------
-
-We need a Cassandra class that produces C* interfaces given URIs, especially to allow us to switch
-between "live" and in-memory C* during unit testing.  To this end, we create `CassandraFactory.`
-

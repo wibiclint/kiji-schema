@@ -1,11 +1,13 @@
 package org.kiji.schema.impl.cassandra;
 
-import com.datastax.driver.core.Cluster;
-import com.datastax.driver.core.Session;
+import com.datastax.driver.core.*;
 import org.kiji.schema.KijiURI;
 import org.kiji.schema.cassandra.KijiManagedCassandraTableName;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.Closeable;
+import java.util.List;
 
 /**
  * Lightweight wrapper to mimic the functionality of HBaseAdmin.
@@ -19,20 +21,48 @@ import java.io.Closeable;
  */
 public class TestingCassandraAdmin implements CassandraAdmin {
 
+  private static final Logger LOG = LoggerFactory.getLogger(TestingCassandraAdmin.class);
+
   /** Current C* session for the given keyspace. */
   private final Session mSession;
 
   public Session getSession() { return mSession; }
 
+  // TODO: Figure out how to share this code with DefaultCassandraInstance.
   /**
    * Create new instance of CassandraAdmin from an already-open C* session.
    *
-   * @return a new CassandraAdmin instance.
+   * @param session An already-created Cassandra session for testing.
+   * @param kijiURI The URI of the Kiji instance to create.
+   * @return A C* admin instance for the Kiji instance.
    */
   public static TestingCassandraAdmin makeFromKijiURI(Session session, KijiURI kijiURI) {
+    createKeyspaceIfMissingForURI(session, kijiURI);
+    // TODO: Some sanity checks
+    LOG.debug("Keyspaces present:");
+    List<KeyspaceMetadata> keyspaces = session.getCluster().getMetadata().getKeyspaces();
+    for (KeyspaceMetadata ksm : keyspaces) {
+      LOG.debug(ksm.getName());
+    }
     // TODO: Replace "localhost" with host from KijiURI.
     String keyspace = KijiManagedCassandraTableName.getCassandraKeyspaceForKijiInstance(kijiURI.getInstance());
     return new TestingCassandraAdmin(session, keyspace);
+  }
+
+  /**
+   * Given a URI, create a keyspace for the Kiji instance if none yet exists.
+   *
+   * @param kijiURI The URI.
+   */
+  private static void createKeyspaceIfMissingForURI(Session session, KijiURI kijiURI) {
+    String keyspace = KijiManagedCassandraTableName.getCassandraKeyspaceForKijiInstance(
+        kijiURI.getInstance().toString()
+    );
+
+    // TODO: Should check whether the keyspace is longer than 48 characters long and if so provide a Kiji error to the user.
+    String queryText = "CREATE KEYSPACE IF NOT EXISTS " + keyspace +
+        " WITH REPLICATION = {'class' : 'SimpleStrategy', 'replication_factor': 1}";
+    ResultSet results = session.execute(queryText);
   }
 
   /**
@@ -53,6 +83,7 @@ public class TestingCassandraAdmin implements CassandraAdmin {
     // TODO: Some code to make sure that this table actually exists!
     return CassandraTableInterface.createFromCassandraAdmin(this, tableName);
   }
+
 
   /**
    * Constructor for creating a C* admin from an open C* session.

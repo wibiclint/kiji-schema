@@ -98,16 +98,6 @@ public final class CassandraKijiInstaller {
       // Create the keyspace for this kiji instance.
       LOG.info(String.format("Installing Cassandra Kiji instance '%s'.", uri));
 
-      // TODO: Replace "localhost" with host from KijiURI.
-      Cluster cluster = Cluster.builder().addContactPoint("localhost").build();
-      Session cassandraSession = cluster.connect();
-
-      // TODO: Need a way for users to specify strategy, replication, etc.
-      // TODO: This "kiji_" should really be added somewhere in KijiManagedCassandraTableName.
-      String queryText = "CREATE KEYSPACE kiji_" + uri.getInstance() +
-          " WITH REPLICATION = {'class' : 'SimpleStrategy', 'replication_factor': 1}";
-      ResultSet results = cassandraSession.execute(queryText);
-
       CassandraAdminFactory cassandraAdminFactory = cassandraFactory.getCassandraAdminFactory(uri);
       CassandraAdmin cassandraAdmin = cassandraAdminFactory.create(uri);
 
@@ -152,6 +142,8 @@ public final class CassandraKijiInstaller {
           "Kiji URI '%s' does not specify a Kiji instance name", uri));
     }
 
+    // TODO: Actually implement the uninstaller for Kiji C* instances!
+    /*
     try {
       // Just drop the keyspace...
       LOG.info(String.format("Removing the Cassandra Kiji instance '%s'.", uri.getInstance()));
@@ -166,8 +158,10 @@ public final class CassandraKijiInstaller {
     } catch (QueryExecutionException qee) {
       // TODO: Handle this!
     }
-
     LOG.info(String.format("Removed Cassandra Kiji instance '%s'.", uri.getInstance()));
+    */
+
+    LOG.info(String.format("UNINSTALL FOR CASSANDRA NOT IMPLEMENTED (Would be Removing the Cassandra Kiji instance %s).", uri.getInstance()));
   }
 
   /**

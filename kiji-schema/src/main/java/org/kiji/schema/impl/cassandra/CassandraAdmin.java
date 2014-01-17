@@ -43,4 +43,13 @@ public interface CassandraAdmin extends Closeable {
 
   // TODO: Implement close method
   public void close();
+
+  /**
+   * Inner class with shared code for different instantiations of CassandraAdmin.
+   *
+   */
+  static class CassandraAdminUtil {
+
+
+  }
 }

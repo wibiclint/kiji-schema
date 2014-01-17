@@ -1,6 +1,7 @@
 package org.kiji.schema.impl.cassandra;
 
 import com.datastax.driver.core.Cluster;
+import com.datastax.driver.core.ResultSet;
 import com.datastax.driver.core.Session;
 import org.kiji.schema.KijiURI;
 import org.kiji.schema.cassandra.KijiManagedCassandraTableName;
@@ -69,6 +70,22 @@ public class DefaultCassandraAdmin implements CassandraAdmin {
     this.mSession = session;
     // TODO: Lots of checks that this keyspace exists, that this command succeeded, etc.
     session.execute("USE " + keyspace);
+  }
+
+  /**
+   * Given a URI, create a keyspace for the Kiji instance if none yet exists.
+   *
+   * @param kijiURI The URI.
+   */
+  private static void createKeyspaceIfMissingForURI(Session session, KijiURI kijiURI) {
+    String keyspace = KijiManagedCassandraTableName.getCassandraKeyspaceForKijiInstance(
+        kijiURI.getInstance().toString()
+    );
+
+    // TODO: Should check whether the keyspace is longer than 48 characters long and if so provide a Kiji error to the user.
+    String queryText = "CREATE KEYSPACE IF NOT EXISTS " + keyspace +
+        " WITH REPLICATION = {'class' : 'SimpleStrategy', 'replication_factor': 1}";
+    ResultSet results = session.execute(queryText);
   }
 
   // TODO: Add something for closing the session and all of the tables.

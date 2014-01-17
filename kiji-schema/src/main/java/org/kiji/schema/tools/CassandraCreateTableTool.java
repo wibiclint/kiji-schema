@@ -93,7 +93,7 @@ public final class CassandraCreateTableTool extends BaseTool {
   @Override
   protected void setup() throws Exception {
     super.setup();
-    mKiji = (new CassandraKijiFactory()).open(mTableURI, getConf());
+    mKiji = CassandraKijiFactory.get().open(mTableURI, getConf());
   }
 
   /** {@inheritDoc} */

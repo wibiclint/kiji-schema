@@ -23,21 +23,21 @@ import com.datastax.driver.core.Cluster;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Maps;
 import org.apache.cassandra.service.EmbeddedCassandraService;
+import org.apache.cassandra.service.CassandraDaemon;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hbase.zookeeper.MiniZooKeeperCluster;
 import org.apache.zookeeper.KeeperException;
+import org.cassandraunit.utils.EmbeddedCassandraServerHelper;
 import org.kiji.delegation.Priority;
 import org.kiji.schema.KijiIOException;
 import org.kiji.schema.KijiURI;
 import org.kiji.schema.RuntimeInterruptedException;
 import org.kiji.schema.impl.cassandra.CassandraAdminFactory;
 import org.kiji.schema.impl.cassandra.DefaultCassandraFactory;
-import org.kiji.schema.impl.cassandra.TestingCassandraAdmin;
 import org.kiji.schema.impl.cassandra.TestingCassandraAdminFactory;
 import org.kiji.schema.layout.impl.ZooKeeperClient;
 import org.kiji.schema.util.LocalLockFactory;
 import org.kiji.schema.util.LockFactory;
-import org.kiji.testing.fakehtable.FakeHBase;
 import org.mortbay.log.Log;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -47,6 +47,11 @@ import com.datastax.driver.core.Session;
 import java.io.File;
 import java.io.IOException;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+
+import static java.util.concurrent.TimeUnit.SECONDS;
 
 /** Factory for Cassandra instances based on URIs. */
 public final class TestingCassandraFactory implements CassandraFactory {
@@ -71,15 +76,16 @@ public final class TestingCassandraFactory implements CassandraFactory {
   private static MiniZooKeeperCluster mMiniZkCluster;
 
   /**
-   * Singleton EmbeddedCassandraService for testing.
+   * Singleton Cassandra session for testing.
    *
    * Lazily instantiated when the first test requests a C* session for a .fake Kiji instance.
    *
    * Once started, will remain alive until the JVM shuts down.
    */
-  private static EmbeddedCassandraService embeddedCassandraService = null;
-
   private static Session cassandraSession = null;
+
+  private static CassandraDaemon cassandraDaemon = null;
+  static ExecutorService executor;
 
   /**
    * ZooKeeperClient used to create chroot directories prior to instantiating test ZooKeeperClients.
@@ -110,13 +116,50 @@ public final class TestingCassandraFactory implements CassandraFactory {
   /**
    * Public constructor. This should not be directly invoked by users; you should
    * use CassandraFactory.get(), which retains a singleton instance.
+   *
+   * This constructor needs to be public because the Java service loader must be able to instantiate it.
    */
-  // TODO: Shouldn't this be private then?
-  private TestingCassandraFactory() {
+  public TestingCassandraFactory() {
   }
 
   /** URIs for fake HBase instances are "kiji://.fake.[fake-id]/instance/table". */
   private static final String FAKE_CASSANDRA_ID_PREFIX = ".fake.";
+
+  /** Resets the testing HBase factory. */
+  public void reset() {
+    mLock.clear();
+  }
+
+  /** {@inheritDoc} */
+  @Override
+  public int getPriority(Map<String, String> runtimeHints) {
+    // Higher priority than default factory.
+    return Priority.HIGH;
+  }
+
+  //------------------------------------------------------------------------------------------------
+  // URI stuff
+
+  /** {@inheritDoc} */
+  @Override
+  public CassandraAdminFactory getCassandraAdminFactory(KijiURI uri) {
+    if (isFakeCassandraURI(uri)) {
+      String fakeCassandraID = getFakeCassandraID(uri);
+      Preconditions.checkNotNull(fakeCassandraID);
+
+      // Make sure that the EmbeddedCassandraService is started
+      try {
+        startEmbeddedCassandraServiceIfNotRunningAndOpenSession();
+      } catch (Exception e) {
+        throw new KijiIOException("Problem with embedded Cassandra session!" + e);
+      }
+
+      // Get an admin factory that will work with the embedded service
+      return createFakeCassandraAdminFactory(fakeCassandraID);
+    } else {
+      return DELEGATE.getCassandraAdminFactory(uri);
+    }
+  }
 
   /**
    * Extracts the ID of the fake C* from a Kiji URI.
@@ -142,7 +185,7 @@ public final class TestingCassandraFactory implements CassandraFactory {
    * @param uri The URI in question.
    * @return Whether the URI is for a fake instance or not.
    */
-  public boolean isFakeCassandraURI(KijiURI uri) {
+  private boolean isFakeCassandraURI(KijiURI uri) {
     if (uri.getZookeeperQuorum().size() != 1) {
       return false;
     }
@@ -153,23 +196,8 @@ public final class TestingCassandraFactory implements CassandraFactory {
     return true;
   }
 
-  /** {@inheritDoc} */
-  @Override
-  public CassandraAdminFactory getCassandraAdminFactory(KijiURI uri) {
-    if (isFakeCassandraURI(uri)) {
-      String fakeCassandraID = getFakeCassandraID(uri);
-      Preconditions.checkNotNull(fakeCassandraID);
-
-      // Make sure that the EmbeddedCassandraService is started
-      startEmbeddedCassandraServiceIfNotRunningAndOpenSession();
-
-      // Get an admin factory that will work with the embedded service
-      return createFakeCassandraAdminFactory(fakeCassandraID);
-    } else {
-      return DELEGATE.getCassandraAdminFactory(uri);
-    }
-  }
-
+  //------------------------------------------------------------------------------------------------
+  // Stuff for starting up C*
 
   /**
    * Return a fake C* admin factory for testing.
@@ -177,30 +205,43 @@ public final class TestingCassandraFactory implements CassandraFactory {
    * @return A C* admin factory that will produce C* admins that will all use the shared EmbeddedCassandraService.
    */
   private CassandraAdminFactory createFakeCassandraAdminFactory(String fakeCassandraID) {
-    Preconditions.checkNotNull(embeddedCassandraService);
+    Preconditions.checkNotNull(cassandraSession);
     return TestingCassandraAdminFactory.get(cassandraSession);
   }
 
   /**
    * Ensure that the EmbeddedCassandraService for unit tests is running.  If it is not, then start it.
    */
-  private void startEmbeddedCassandraServiceIfNotRunningAndOpenSession() {
-    if (null != embeddedCassandraService) {
-      Preconditions.checkNotNull(cassandraSession);
+  private void startEmbeddedCassandraServiceIfNotRunningAndOpenSession() throws Exception {
+    LOG.debug("Ready to start a C* service if necessary...");
+    if (null != cassandraSession) {
+      LOG.debug("C* is already running, no need to start the service.");
+      //Preconditions.checkNotNull(cassandraSession);
       return;
     }
-    // TODO: Check cassandraSession *is* null...
+    // TODO: Check cassandraSession *is* null..
+
+    LOG.debug("Starting EmbeddedCassandra!");
+    EmbeddedCassandraServerHelper.startEmbeddedCassandra();
+    /*
     try {
+      LOG.info("Starting EmbeddedCassandraService...");
       embeddedCassandraService = new EmbeddedCassandraService();
       embeddedCassandraService.start();
     } catch (IOException ioe) {
       throw new KijiIOException("Cannot start embedded C* service!");
     }
+    */
 
     // TODO: Possibly configure host for embedded C* session.
-    Cluster cluster = Cluster.builder().addContactPoint("localhost").build();
+    String hostIp = "127.0.0.1";
+    int port = 9142;
+    Cluster cluster = Cluster.builder().addContactPoints(hostIp).withPort(port).build();
     cassandraSession = cluster.connect();
   }
+
+  //------------------------------------------------------------------------------------------------
+  // Locks and ZooKeeper stuff
 
   /** {@inheritDoc} */
   @Override
@@ -218,18 +259,6 @@ public final class TestingCassandraFactory implements CassandraFactory {
       }
     }
     return DELEGATE.getLockFactory(uri, conf);
-  }
-
-  /** Resets the testing HBase factory. */
-  public void reset() {
-    mLock.clear();
-  }
-
-  /** {@inheritDoc} */
-  @Override
-  public int getPriority(Map<String, String> runtimeHints) {
-    // Higher priority than default factory.
-    return Priority.HIGH;
   }
 
   /**

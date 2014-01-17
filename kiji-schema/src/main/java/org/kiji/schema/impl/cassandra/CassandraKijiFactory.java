@@ -28,7 +28,6 @@ import org.kiji.schema.KijiFactory;
 import org.kiji.schema.KijiURI;
 import org.kiji.schema.cassandra.CassandraFactory;
 import org.kiji.schema.hbase.HBaseFactory;
-import org.kiji.schema.impl.hbase.HBaseKiji;
 
 import java.io.IOException;
 import java.util.Map;
@@ -36,6 +35,21 @@ import java.util.Map;
 /** Factory for constructing instances of CassandraKiji. */
 @ApiAudience.Private
 public final class CassandraKijiFactory implements KijiFactory {
+
+  /** Singleton C* Kiji factory. */
+  private static CassandraKijiFactory SINGLETON = null;
+
+  /**
+   * Getting for singleton instance.
+   * @return The singleton CassandraKijiFactory.
+   */
+  public static CassandraKijiFactory get() {
+    if (null == SINGLETON) {
+      SINGLETON = new CassandraKijiFactory();
+    }
+    return SINGLETON;
+  }
+
   /** {@inheritDoc} */
   @Override
   public Kiji open(KijiURI uri) throws IOException {
