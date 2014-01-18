@@ -1,13 +1,15 @@
 package org.kiji.schema.impl.cassandra;
 
-import com.datastax.driver.core.ResultSet;
-import com.datastax.driver.core.Session;
+import com.datastax.driver.core.*;
+import com.google.common.base.Preconditions;
+import org.kiji.schema.KijiIOException;
 import org.kiji.schema.KijiURI;
 import org.kiji.schema.cassandra.KijiManagedCassandraTableName;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.Closeable;
+import java.util.Collection;
 
 /**
  * Lightweight wrapper to mimic the functionality of HBaseAdmin.
@@ -36,6 +38,7 @@ public abstract class CassandraAdmin implements Closeable {
   }
 
   protected CassandraAdmin(Session session, KijiURI kijiURI) {
+    Preconditions.checkNotNull(session);
     this.mSession = session;
     this.mKijiURI = kijiURI;
     // TODO: We might want to replace this call in the constructor with a public version of the
@@ -71,6 +74,7 @@ public abstract class CassandraAdmin implements Closeable {
    */
   public CassandraTableInterface createTable(String tableName, String cassandraTableLayout) {
     // TODO: Keep track of all tables associated with this session
+    LOG.info("Creating table " + tableName);
     mSession.execute("CREATE TABLE " + tableName + " " + cassandraTableLayout + ";");
     return CassandraTableInterface.createFromCassandraAdmin(this, tableName);
   }
@@ -86,13 +90,59 @@ public abstract class CassandraAdmin implements Closeable {
   // TODO: Maybe have more checks here?
   public void deleteTable(String tableName) {
     String queryString = String.format("DROP TABLE %s;", tableName);
-    LOG.info("DROPPING TABLE LIKE THIS! " + queryString);
+    LOG.info("Deleting table " + tableName);
     getSession().execute(queryString);
+  }
+
+  public void deleteKeyspace() {
+    String ks = getKeyspace();
+
+    // Verify that there aren't any tables left in the keyspace.
+    Collection<TableMetadata> tableMetadata = getSession().getCluster().getMetadata().getKeyspace(ks).getTables();
+
+    if (tableMetadata.size() != 0) {
+      throw new KijiIOException(String.format(
+          "Cannot delete keyspace for Kiji instance %s while there are still table present! (tables=%s)",
+          mKijiURI.getInstance(),
+          tableMetadata.toString()
+      ));
+    }
+
+    String queryString = String.format(
+        "DROP KEYSPACE %s;",
+        getKeyspace()
+    );
+    getSession().execute(queryString);
+
+    Collection<KeyspaceMetadata> keyspaceMetadata = getSession().getCluster().getMetadata().getKeyspaces();
+    for (KeyspaceMetadata ksm : keyspaceMetadata) {
+      if (ksm.getName() == ks) {
+        throw new KijiIOException(String.format("Keyspace delete for %s failed!", ks));
+      }
+    }
   }
 
   // TODO: Implement check for whether a table exists!
   public boolean tableExists(String tableName) {
-    return true;
+    LOG.debug("Looking for table with name " + tableName);
+    Preconditions.checkNotNull(getSession());
+    String ks = getKeyspace();
+    LOG.debug("\tkeyspace = " + ks);
+    Metadata metadata = getSession().getCluster().getMetadata();
+    if (null == metadata.getKeyspace(ks)) {
+      LOG.debug("\tCannot find keyspace " + ks + ", assuming table " + tableName + " is not installed");
+      return false;
+    }
+    Collection<TableMetadata> tableMetadata = getSession().getCluster().getMetadata().getKeyspace(ks).getTables();
+    for (TableMetadata tm : tableMetadata) {
+      final String nameWithKeyspace = String.format("%s.%s", ks, tm.getName());
+      LOG.debug("\t" + nameWithKeyspace);
+      if (nameWithKeyspace.equals(tableName)) {
+        return true;
+      }
+    }
+    LOG.debug("\tCould not find any table with name matching table " + tableName);
+    return false;
   }
 
   // TODO: Implement close method

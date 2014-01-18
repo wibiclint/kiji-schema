@@ -37,8 +37,8 @@ public class TestCassandraKijiInstaller {
   public void testInstallThenUninstall() throws Exception {
     final Configuration conf = HBaseConfiguration.create();
     final KijiURI uri = KijiURI.newBuilder("kiji://.fake.kiji-installer/test").build();
-    KijiInstaller.get().install(uri, conf);
-    KijiInstaller.get().uninstall(uri, conf);
+    CassandraKijiInstaller.get().install(uri, conf);
+    CassandraKijiInstaller.get().uninstall(uri, conf);
   }
 
   @Test
@@ -46,7 +46,7 @@ public class TestCassandraKijiInstaller {
     final Configuration conf = HBaseConfiguration.create();
     final KijiURI uri = KijiURI.newBuilder("kiji://.fake.kiji-installer/").build();
     try {
-      KijiInstaller.get().install(uri, conf);
+      CassandraKijiInstaller.get().install(uri, conf);
       fail("An exception should have been thrown.");
     } catch (KijiInvalidNameException kine) {
       assertEquals(
@@ -60,7 +60,7 @@ public class TestCassandraKijiInstaller {
     final Configuration conf = HBaseConfiguration.create();
     final KijiURI uri = KijiURI.newBuilder("kiji://.fake.kiji-installer/").build();
     try {
-      KijiInstaller.get().uninstall(uri, conf);
+      CassandraKijiInstaller.get().uninstall(uri, conf);
       fail("An exception should have been thrown.");
     } catch (KijiInvalidNameException kine) {
       assertEquals(
@@ -75,7 +75,7 @@ public class TestCassandraKijiInstaller {
     final KijiURI uri =
         KijiURI.newBuilder("kiji://.fake.kiji-installer/anInstanceThatNeverExisted").build();
     try {
-      KijiInstaller.get().uninstall(uri, conf);
+      CassandraKijiInstaller.get().uninstall(uri, conf);
       fail("An exception should have been thrown.");
     } catch (KijiNotInstalledException knie) {
       assertTrue(Pattern.matches(

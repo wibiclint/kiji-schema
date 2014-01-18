@@ -24,10 +24,15 @@ import java.util.Collections;
 import java.util.Map;
 
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.hbase.client.HBaseAdmin;
 import org.kiji.schema.*;
 import org.kiji.schema.hbase.HBaseFactory;
 import org.kiji.schema.impl.cassandra.*;
+import org.kiji.schema.impl.hbase.HBaseMetaTable;
+import org.kiji.schema.impl.hbase.HBaseSchemaTable;
+import org.kiji.schema.impl.hbase.HBaseSystemTable;
 import org.kiji.schema.util.LockFactory;
+import org.kiji.schema.util.ResourceUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import com.datastax.driver.core.exceptions.AlreadyExistsException;
@@ -139,27 +144,38 @@ public final class CassandraKijiInstaller {
       throw new KijiInvalidNameException(String.format(
           "Kiji URI '%s' does not specify a Kiji instance name", uri));
     }
+    final CassandraAdminFactory adminFactory =
+        CassandraFactory.Provider.get().getCassandraAdminFactory(uri);
 
-    // TODO: Actually implement the uninstaller for Kiji C* instances!
-    /*
+    LOG.info(String.format("Removing the Cassandra Kiji instance '%s'.", uri.getInstance()));
+
+    final Kiji kiji = CassandraKijiFactory.get().open(uri, conf);
     try {
-      // Just drop the keyspace...
-      LOG.info(String.format("Removing the Cassandra Kiji instance '%s'.", uri.getInstance()));
+      // TODO: Check for permissions using KijiSecurityManager.
 
-      // TODO: Replace "localhost" with host from KijiURI.
-      Cluster cluster = Cluster.builder().addContactPoint("localhost").build();
-      Session cassandraSession = cluster.connect();
+      for (String tableName : kiji.getTableNames()) {
+        LOG.debug("Deleting kiji table " + tableName + "...");
+        kiji.deleteTable(tableName);
+      }
+      // Delete the user tables:
+      final CassandraAdmin admin = adminFactory.create(uri);
+      try {
 
-      // TODO: This "kiji_" should really be added somewhere in KijiManagedCassandraTableName.
-      String queryText = "DROP KEYSPACE kiji_" + uri.getInstance();
-      ResultSet results = cassandraSession.execute(queryText);
-    } catch (QueryExecutionException qee) {
-      // TODO: Handle this!
+        // Delete the system tables:
+        CassandraSystemTable.uninstall(admin, uri);
+        CassandraMetaTable.uninstall(admin, uri);
+        CassandraSchemaTable.uninstall(admin, uri);
+
+      } finally {
+        ResourceUtils.closeOrLog(admin);
+      }
+
+      // Actually delete the keyspace.
+
+    } finally {
+      kiji.release();
     }
     LOG.info(String.format("Removed Cassandra Kiji instance '%s'.", uri.getInstance()));
-    */
-
-    LOG.info(String.format("UNINSTALL FOR CASSANDRA NOT IMPLEMENTED (Would be Removing the Cassandra Kiji instance %s).", uri.getInstance()));
   }
 
   /**

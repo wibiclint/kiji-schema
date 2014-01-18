@@ -126,6 +126,7 @@ public class CassandraTableKeyValueDatabase
   */
   public CassandraTableKeyValueDatabase(CassandraTableInterface cTable) {
     mTable = Preconditions.checkNotNull(cTable);
+
     setPreparedStatementPutValue();
     setPreparedStatementKeySet();
     setPreparedStatementRestoreKeyValuesFromBackup();

@@ -104,6 +104,8 @@ public class CassandraSystemTable implements KijiSystemTable {
   /**
    * Creates a new CassandraTableInterface for the Kiji system table.
    *
+   * This method assumes that the system table already exists.
+   *
    * @param kijiURI The KijiURI.
    * @param conf The Hadoop configuration.
    * @param admin Wrapper around open C* session.
@@ -117,6 +119,13 @@ public class CassandraSystemTable implements KijiSystemTable {
       throws IOException {
     final String tableName =
         KijiManagedCassandraTableName.getSystemTableName(kijiURI.getInstance()).toString();
+    // Check that the table already exists!
+    if (!admin.tableExists(tableName)) {
+      LOG.info("Cannot find table " + tableName + ", assuming Kiji not installed...");
+      throw new KijiNotInstalledException(
+          String.format("Kiji instance %s is not installed.", kijiURI),
+          kijiURI);
+    }
     return admin.getCassandraTableInterface(tableName);
   }
 
@@ -124,16 +133,18 @@ public class CassandraSystemTable implements KijiSystemTable {
    * Wrap an existing Cassandra table that is assumed to be the table that stores the
    * Kiji instance properties.
    *
+   * This method assumes that the system table already exists.
+   *
    * @param kijiURI URI of the Kiji instance this table belongs to.
    * @param conf Hadoop configuration (not used now)
    * @param admin Wrapper around open C* session.
    */
-  public CassandraSystemTable(
+  public static CassandraSystemTable createAssumingTableExists(
       KijiURI kijiURI,
       Configuration conf,
       CassandraAdmin admin)
     throws IOException {
-    this(kijiURI, newSystemTable(kijiURI, conf, admin));
+    return new CassandraSystemTable(kijiURI, newSystemTable(kijiURI, conf, admin));
   }
 
   private final PreparedStatement preparedStatementGetValue;

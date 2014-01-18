@@ -25,6 +25,7 @@ import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.zookeeper.KeeperException;
 import org.kiji.annotations.ApiAudience;
+import org.kiji.delegation.Lookups;
 import org.kiji.schema.*;
 import org.kiji.schema.avro.RowKeyEncoding;
 import org.kiji.schema.avro.RowKeyFormat;
@@ -68,6 +69,7 @@ import java.util.concurrent.atomic.AtomicReference;
  */
 @ApiAudience.Private
 public final class CassandraKiji implements Kiji {
+
   private static final Logger LOG = LoggerFactory.getLogger(CassandraKiji.class);
   private static final Logger CLEANUP_LOG =
       LoggerFactory.getLogger("cleanup." + CassandraKiji.class.getName());
@@ -198,7 +200,8 @@ public final class CassandraKiji implements Kiji {
     mMetaTable = null;
     mSecurityManager = null;
 
-    mSystemTable = new CassandraSystemTable(mURI, mConf, mAdmin);
+    // TODO: Should be a method assuming that the table already exists!
+    mSystemTable = CassandraSystemTable.createAssumingTableExists(mURI, mConf, mAdmin);
 
     mRetainCount.set(1);
     final State oldState = mState.getAndSet(State.OPEN);
