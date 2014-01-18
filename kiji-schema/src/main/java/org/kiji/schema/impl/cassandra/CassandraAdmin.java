@@ -2,7 +2,6 @@ package org.kiji.schema.impl.cassandra;
 
 import com.datastax.driver.core.*;
 import com.google.common.base.Preconditions;
-import org.kiji.schema.KijiIOException;
 import org.kiji.schema.KijiURI;
 import org.kiji.schema.cassandra.KijiManagedCassandraTableName;
 import org.slf4j.Logger;
@@ -25,6 +24,16 @@ public abstract class CassandraAdmin implements Closeable {
 
   private static final Logger LOG = LoggerFactory.getLogger(CassandraAdmin.class);
 
+  private static String stripQuotesFromKeyspace(String keyspace) {
+    return keyspace.substring(1, keyspace.length()-1);
+  }
+
+  private static String stripQuotesFromTableName(String tableName) {
+    // If the table name looks like keyspace.table, then we have to strip off both!  Yikes!
+    // This would be one trivial line of Python...
+    return tableName.replace("\"", "");
+  }
+
   /** Current C* session for the given keyspace. */
   private final Session mSession;
 
@@ -32,10 +41,6 @@ public abstract class CassandraAdmin implements Closeable {
   private final KijiURI mKijiURI;
 
   public Session getSession() { return mSession; }
-
-  public String getKeyspace() {
-    return KijiManagedCassandraTableName.getCassandraKeyspace(mKijiURI);
-  }
 
   protected CassandraAdmin(Session session, KijiURI kijiURI) {
     Preconditions.checkNotNull(session);
@@ -52,7 +57,7 @@ public abstract class CassandraAdmin implements Closeable {
    * @param kijiURI The URI.
    */
   private void createKeyspaceIfMissingForURI(KijiURI kijiURI) {
-    String keyspace = KijiManagedCassandraTableName.getCassandraKeyspace(kijiURI);
+    String keyspace = KijiManagedCassandraTableName.getCassandraKeyspaceFormattedForCQL(kijiURI);
     LOG.info(String.format(
         "Creating keyspace %s (if missing) for %s.",
         keyspace,
@@ -71,13 +76,19 @@ public abstract class CassandraAdmin implements Closeable {
   }
 
   private boolean keyspaceExists(String keyspace) {
-    LOG.info("Checking whether keyspace " + keyspace + " exists.");
+    Preconditions.checkArgument(KijiManagedCassandraTableName.keyspaceNameIsFormattedForCQL(keyspace));
+
+    // Strip quotes off of keyspace
+    String noQuotesKeyspace = stripQuotesFromKeyspace(keyspace);
+    LOG.info("keyspace without quotes = " + noQuotesKeyspace);
+
+    LOG.info("Checking whether keyspace " + noQuotesKeyspace + " exists.");
     Metadata md = getSession().getCluster().getMetadata();
     LOG.info("Found these keyspaces:");
     for (KeyspaceMetadata ksm : md.getKeyspaces()) {
       LOG.info(String.format("\t%s", ksm.getName()));
     }
-    return (null != md.getKeyspace(keyspace));
+    return (null != md.getKeyspace(noQuotesKeyspace));
   }
 
   /**
@@ -89,78 +100,63 @@ public abstract class CassandraAdmin implements Closeable {
    * @param cassandraTableLayout A string with the table layout.
    */
   public CassandraTableInterface createTable(String tableName, String cassandraTableLayout) {
+    Preconditions.checkArgument(KijiManagedCassandraTableName.tableNameIsFormattedForCQL(tableName));
+
     // TODO: Keep track of all tables associated with this session
     LOG.info("Creating table " + tableName);
     mSession.execute("CREATE TABLE " + tableName + " " + cassandraTableLayout + ";");
+
     // Check that the table actually exists
     assert(tableExists(tableName));
     return CassandraTableInterface.createFromCassandraAdmin(this, tableName);
   }
 
   public CassandraTableInterface getCassandraTableInterface(String tableName) {
-    // TODO: Some code to make sure that this table actually exists!
+    Preconditions.checkArgument(KijiManagedCassandraTableName.tableNameIsFormattedForCQL(tableName));
+    assert(tableExists(tableName));
     return CassandraTableInterface.createFromCassandraAdmin(this, tableName);
   }
 
   // TODO: Add something for closing the session and all of the tables.
   public void disableTable(String tableName) { }
 
-  // TODO: Maybe have more checks here?
   public void deleteTable(String tableName) {
+    Preconditions.checkArgument(KijiManagedCassandraTableName.tableNameIsFormattedForCQL(tableName));
     // TODO: Check first that the table actually exists?
     String queryString = String.format("DROP TABLE IF EXISTS %s;", tableName);
     LOG.info("Deleting table " + tableName);
     getSession().execute(queryString);
   }
 
-  public void deleteKeyspace() {
-    String ks = getKeyspace();
-
-    // Verify that there aren't any tables left in the keyspace.
-    Collection<TableMetadata> tableMetadata = getSession().getCluster().getMetadata().getKeyspace(ks).getTables();
-
-    if (tableMetadata.size() != 0) {
-      throw new KijiIOException(String.format(
-          "Cannot delete keyspace for Kiji instance %s while there are still table present! (tables=%s)",
-          mKijiURI.getInstance(),
-          tableMetadata.toString()
-      ));
-    }
-
-    String queryString = String.format(
-        "DROP KEYSPACE %s;",
-        getKeyspace()
-    );
-    getSession().execute(queryString);
-
-    Collection<KeyspaceMetadata> keyspaceMetadata = getSession().getCluster().getMetadata().getKeyspaces();
-    for (KeyspaceMetadata ksm : keyspaceMetadata) {
-      if (ksm.getName() == ks) {
-        throw new KijiIOException(String.format("Keyspace delete for %s failed!", ks));
-      }
-    }
-  }
-
-  // TODO: Implement check for whether a table exists!
   public boolean tableExists(String tableName) {
-    LOG.info("Looking for table with name " + tableName);
+    Preconditions.checkArgument(KijiManagedCassandraTableName.tableNameIsFormattedForCQL(tableName));
     Preconditions.checkNotNull(getSession());
-    String ks = getKeyspace();
-    LOG.info("\tkeyspace = " + ks);
+
+    // Remove the quotes from the keyspace and the tablename for comparing against what we find in
+    // the C* metadata.
+    String keyspace = stripQuotesFromKeyspace(
+        KijiManagedCassandraTableName.getCassandraKeyspaceFormattedForCQL(mKijiURI)
+    );
+
+    String tableNameNoQuotes = stripQuotesFromTableName(tableName);
+
+    LOG.info("Looking for table with name " + tableNameNoQuotes);
+    LOG.info("\tkeyspace (w/o quotes) = " + keyspace);
+
     Metadata metadata = getSession().getCluster().getMetadata();
-    if (null == metadata.getKeyspace(ks)) {
-      LOG.info("\tCannot find keyspace " + ks + ", assuming table " + tableName + " is not installed");
+    if (null == metadata.getKeyspace(keyspace)) {
+      LOG.info("\tCannot find keyspace " + keyspace + ", assuming table " + tableNameNoQuotes + " is not installed");
       return false;
     }
-    Collection<TableMetadata> tableMetadata = getSession().getCluster().getMetadata().getKeyspace(ks).getTables();
+    Collection<TableMetadata> tableMetadata = getSession().getCluster().getMetadata().getKeyspace(keyspace).getTables();
     for (TableMetadata tm : tableMetadata) {
-      final String nameWithKeyspace = String.format("%s.%s", ks, tm.getName());
+      final String nameWithKeyspace = String.format("%s.%s", keyspace, tm.getName());
       LOG.info("\t" + nameWithKeyspace);
-      if (nameWithKeyspace.equals(tableName)) {
+      if (nameWithKeyspace.equals(tableNameNoQuotes)) {
         return true;
       }
     }
-    LOG.info("\tCould not find any table with name matching table " + tableName);
+    LOG.info("\tCould not find any table with name matching table " + tableNameNoQuotes);
     return false;
   }
 

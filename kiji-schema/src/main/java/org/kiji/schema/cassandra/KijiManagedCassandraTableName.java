@@ -132,7 +132,12 @@ public final class KijiManagedCassandraTableName {
    * @param type The type component of the Cassandra table name (meta, schema, system, table).
    */
   private KijiManagedCassandraTableName(String kijiInstanceName, String type) {
-    mCassandraTableName = KIJI_COMPONENT + "_" + kijiInstanceName + "." + type;
+    // mCassandraTableName = KIJI_COMPONENT + "_" + kijiInstanceName + "." + type;
+    mCassandraTableName = String.format(
+        "\"%s_%s\".\"%s\"",
+        KIJI_COMPONENT,
+        kijiInstanceName,
+        type);
     mKijiInstanceName = kijiInstanceName;
     mKijiTableName = null;
   }
@@ -145,44 +150,15 @@ public final class KijiManagedCassandraTableName {
    * @param kijiTableName The name of the user-space Kiji table.
    */
   private KijiManagedCassandraTableName(String kijiInstanceName, String type, String kijiTableName) {
-    mCassandraTableName = KIJI_COMPONENT + "_" + kijiInstanceName + "." + type + "_" + kijiTableName;
+    mCassandraTableName = String.format(
+        "\"%s_%s\".\"%s_%s\"",
+        KIJI_COMPONENT,
+        kijiInstanceName,
+        type,
+        kijiTableName);
     mKijiInstanceName = kijiInstanceName;
     mKijiTableName = kijiTableName;
   }
-
-  /**
-   * Constructs using a Cassandra table name.
-   *
-   * @param cassandraTableName The Cassandra HTable name.
-   * @return A new kiji-managed Cassandra table name.
-   * @throws NotAKijiManagedTableException If the Cassandra table is not managed by kiji.
-   */
-  /*
-  // TODO: Rewrite this to split properly across _ and . using Java regular expressions.
-  public static KijiManagedCassandraTableName get(String cassandraTableName)
-      throws NotAKijiManagedTableException {
-    // Split it into components.
-    String[] components = StringUtils.splitPreserveAllTokens(
-        cassandraTableName, Character.toString(DELIMITER), 4);
-
-    // Make sure the first component is 'kiji'.
-    if (!components[0].equals(KIJI_COMPONENT)) {
-      throw new NotAKijiManagedTableException(
-          hbaseTableName, "Doesn't start with kiji name component.");
-    }
-
-    if (components.length == 3) {
-      // It's a managed kiji meta/schema/system table.
-      return new KijiManagedCassandraTableName(components[1], components[2]);
-    } else if (components.length == 4) {
-      // It's a user-space kiji table.
-      return new KijiManagedCassandraTableName(components[1], components[2], components[3]);
-    } else {
-      // Wrong number of components... must not be a kiji table.
-      throw new NotAKijiManagedTableException(
-          hbaseTableName, "Invalid number of name components.");
-    }
-  }   */
 
   /**
    * Gets a new instance of a Kiji-managed Cassandra table that holds the Kiji meta table.
@@ -191,7 +167,7 @@ public final class KijiManagedCassandraTableName {
    * @return The name of the Cassandra table used to store the Kiji meta table.
    */
   public static KijiManagedCassandraTableName getMetaLayoutTableName(KijiURI kijiURI) {
-    return new KijiManagedCassandraTableName(kijiURI.getInstance().toLowerCase(), KIJI_META_LAYOUT_COMPONENT);
+    return new KijiManagedCassandraTableName(kijiURI.getInstance(), KIJI_META_LAYOUT_COMPONENT);
   }
 
   /**
@@ -201,7 +177,7 @@ public final class KijiManagedCassandraTableName {
    * @return The name of the Cassandra table used to store the Kiji meta table.
    */
   public static KijiManagedCassandraTableName getMetaKeyValueTableName(KijiURI kijiURI) {
-    return new KijiManagedCassandraTableName(kijiURI.getInstance().toLowerCase(), KIJI_META_KEY_VALUE_COMPONENT);
+    return new KijiManagedCassandraTableName(kijiURI.getInstance(), KIJI_META_KEY_VALUE_COMPONENT);
   }
 
   /**
@@ -211,7 +187,7 @@ public final class KijiManagedCassandraTableName {
    * @return The name of the Cassandra table used to store the Kiji schema hash table.
    */
   public static KijiManagedCassandraTableName getSchemaHashTableName(KijiURI kijiURI) {
-    return new KijiManagedCassandraTableName(kijiURI.getInstance().toLowerCase(), KIJI_SCHEMA_HASH_COMPONENT);
+    return new KijiManagedCassandraTableName(kijiURI.getInstance(), KIJI_SCHEMA_HASH_COMPONENT);
   }
 
   /**
@@ -221,7 +197,7 @@ public final class KijiManagedCassandraTableName {
    * @return The name of the Cassandra table used to store the Kiji schema IDs table.
    */
   public static KijiManagedCassandraTableName getSchemaIdTableName(KijiURI kijiURI) {
-    return new KijiManagedCassandraTableName(kijiURI.getInstance().toLowerCase(), KIJI_SCHEMA_ID_COMPONENT);
+    return new KijiManagedCassandraTableName(kijiURI.getInstance(), KIJI_SCHEMA_ID_COMPONENT);
   }
 
   /**
@@ -231,7 +207,7 @@ public final class KijiManagedCassandraTableName {
    * @return The name of the Cassandra table used to store the Kiji schema IDs counter table.
    */
   public static KijiManagedCassandraTableName getSchemaCounterTableName(KijiURI kijiURI) {
-    return new KijiManagedCassandraTableName(kijiURI.getInstance().toLowerCase(), KIJI_SCHEMA_COUNTER_COMPONENT);
+    return new KijiManagedCassandraTableName(kijiURI.getInstance(), KIJI_SCHEMA_COUNTER_COMPONENT);
   }
 
   /**
@@ -241,7 +217,7 @@ public final class KijiManagedCassandraTableName {
    * @return The name of the Cassandra table used to store the Kiji system table.
    */
   public static KijiManagedCassandraTableName getSystemTableName(KijiURI kijiURI) {
-    return new KijiManagedCassandraTableName(kijiURI.getInstance().toLowerCase(), KIJI_SYSTEM_COMPONENT);
+    return new KijiManagedCassandraTableName(kijiURI.getInstance(), KIJI_SYSTEM_COMPONENT);
   }
 
   /**
@@ -252,7 +228,7 @@ public final class KijiManagedCassandraTableName {
    * @return The name of the Cassandra table used to store the user-space Kiji table.
    */
   public static KijiManagedCassandraTableName getKijiTableName(KijiURI kijiURI, String tableName) {
-    return new KijiManagedCassandraTableName(kijiURI.getInstance().toLowerCase(), KIJI_TABLE_COMPONENT, tableName);
+    return new KijiManagedCassandraTableName(kijiURI.getInstance(), KIJI_TABLE_COMPONENT, tableName);
   }
 
   /**
@@ -265,26 +241,42 @@ public final class KijiManagedCassandraTableName {
   }
 
   /**
-   * Gets the name of the Kiji table.
-   * A user defined kiji table named "foo" in the default kiji instance will be stored in Cassandra
-   * with the KijiManaged name "kiji_default.table_foo".  This method will return only "foo".
-   *
-   * @return The name of the kiji table, or null if this is not a user-space Kiji table.
-   */
-  public String getKijiTableName() {
-    // TODO: Get rid of this annoying lower case stuff by fixing case business in C*.
-    return mKijiTableName.toLowerCase();
-  }
-
-  /**
-   * Get the name of the keyspace in C* for this Kiji instance.
+   * Get the name of the keyspace (formatted for CQL) in C* for this Kiji instance.
    *
    * @param kijiURI The name of the Kiji instance.
    * @return The name of the C* keyspace.
    */
-  public static String getCassandraKeyspace(KijiURI kijiURI) {
-    // TODO: Get rid of this annoying lower case stuff by fixing case business in C*.
-    return "kiji_" + kijiURI.getInstance().toLowerCase();
+  public static String getCassandraKeyspaceFormattedForCQL(KijiURI kijiURI) {
+    return String.format(
+        "\"%s_%s\"",
+        KIJI_COMPONENT,
+        kijiURI.getInstance());
+  }
+
+  /**
+   * Check whether a table name is formatted correctly for a CQL query.
+   *
+   * The table name should be of the form "\"keyspace\".\"table\"" or "\"table\"".
+   *
+   * @param tableName The table name to check.
+   * @return Whether the name is formatted correctly for CQL or not.
+   */
+  public static boolean tableNameIsFormattedForCQL(String tableName) {
+    // TODO: Tighten this up!
+    return (tableName.startsWith("\"") && tableName.endsWith("\""));
+  }
+
+  /**
+   * Check whether a keyspace name is formatted correctly for a CQL query.
+   *
+   * The keyspace name should be of the form "\"keyspace\".
+   *
+   * @param keyspaceName The keyspace name to check.
+   * @return Whether the name is formatted correctly for CQL or not.
+   */
+  public static boolean keyspaceNameIsFormattedForCQL(String keyspaceName) {
+    // TODO: Tighten this up!
+    return (keyspaceName.startsWith("\"") && keyspaceName.endsWith("\""));
   }
 
   /**
