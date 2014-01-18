@@ -140,7 +140,7 @@ public class CassandraTableKeyValueDatabase
    * @param uri The KijiURI of the instance for this table.
    */
   public static void install(CassandraAdmin admin, KijiURI uri) {
-    String tableName = KijiManagedCassandraTableName.getMetaKeyValueTableName(uri.getInstance()).toString();
+    String tableName = KijiManagedCassandraTableName.getMetaKeyValueTableName(uri).toString();
 
     // Standard C* table layout.  Use text key + timestamp as composite primary key to allow selection by timestamp.
     String tableDescription = String.format(

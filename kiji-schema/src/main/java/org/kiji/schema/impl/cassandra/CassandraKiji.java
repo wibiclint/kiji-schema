@@ -698,7 +698,7 @@ public final class CassandraKiji implements Kiji {
     Preconditions.checkState(state == State.OPEN,
         "Cannot delete table in Kiji instance %s in state %s.", this, state);
     // Delete from HBase.
-    String cTable = KijiManagedCassandraTableName.getKijiTableName(mURI.getInstance(), tableName).toString();
+    String cTable = KijiManagedCassandraTableName.getKijiTableName(mURI, tableName).toString();
     CassandraAdmin admin = getCassandraAdmin();
 
     admin.disableTable(cTable);

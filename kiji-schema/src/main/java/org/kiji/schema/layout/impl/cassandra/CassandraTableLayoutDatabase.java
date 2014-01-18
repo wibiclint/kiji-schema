@@ -185,7 +185,7 @@ public final class CassandraTableLayoutDatabase implements KijiTableLayoutDataba
    * @param uri The KijiURI of the instance for this table.
    */
   public static void install(CassandraAdmin admin, KijiURI uri) {
-    String tableName = KijiManagedCassandraTableName.getMetaLayoutTableName(uri.getInstance()).toString();
+    String tableName = KijiManagedCassandraTableName.getMetaLayoutTableName(uri).toString();
 
     // Standard C* table layout.  Use text key + timestamp as composite primary key to allow selection by timestamp.
 

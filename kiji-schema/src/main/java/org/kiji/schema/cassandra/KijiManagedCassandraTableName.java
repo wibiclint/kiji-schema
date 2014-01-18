@@ -26,6 +26,7 @@ import org.apache.commons.lang.StringUtils;
 
 import org.kiji.annotations.ApiAudience;
 import org.kiji.annotations.ApiStability;
+import org.kiji.schema.KijiURI;
 import org.kiji.schema.NotAKijiManagedTableException;
 
 /**
@@ -186,73 +187,72 @@ public final class KijiManagedCassandraTableName {
   /**
    * Gets a new instance of a Kiji-managed Cassandra table that holds the Kiji meta table.
    *
-   * @param kijiInstanceName The name of the Kiji instance.
+   * @param kijiURI The name of the Kiji instance.
    * @return The name of the Cassandra table used to store the Kiji meta table.
    */
-  public static KijiManagedCassandraTableName getMetaLayoutTableName(String kijiInstanceName) {
-    return new KijiManagedCassandraTableName(kijiInstanceName, KIJI_META_LAYOUT_COMPONENT);
+  public static KijiManagedCassandraTableName getMetaLayoutTableName(KijiURI kijiURI) {
+    return new KijiManagedCassandraTableName(kijiURI.getInstance().toLowerCase(), KIJI_META_LAYOUT_COMPONENT);
   }
 
   /**
    * Gets a new instance of a Kiji-managed Cassandra table that holds the Kiji user-defined key-value pairs.
    *
-   * @param kijiInstanceName The name of the Kiji instance.
+   * @param kijiURI The name of the Kiji instance.
    * @return The name of the Cassandra table used to store the Kiji meta table.
    */
-  public static KijiManagedCassandraTableName getMetaKeyValueTableName(String kijiInstanceName) {
-    return new KijiManagedCassandraTableName(kijiInstanceName, KIJI_META_KEY_VALUE_COMPONENT);
+  public static KijiManagedCassandraTableName getMetaKeyValueTableName(KijiURI kijiURI) {
+    return new KijiManagedCassandraTableName(kijiURI.getInstance().toLowerCase(), KIJI_META_KEY_VALUE_COMPONENT);
   }
 
   /**
    * Gets a new instance of a Kiji-managed Cassandra table that holds the Kiji schema hash table.
    *
-   * @param kijiInstanceName The name of the Kiji instance.
+   * @param kijiURI The name of the Kiji instance.
    * @return The name of the Cassandra table used to store the Kiji schema hash table.
    */
-  public static KijiManagedCassandraTableName getSchemaHashTableName(String kijiInstanceName) {
-    return new KijiManagedCassandraTableName(kijiInstanceName, KIJI_SCHEMA_HASH_COMPONENT);
+  public static KijiManagedCassandraTableName getSchemaHashTableName(KijiURI kijiURI) {
+    return new KijiManagedCassandraTableName(kijiURI.getInstance().toLowerCase(), KIJI_SCHEMA_HASH_COMPONENT);
   }
 
   /**
    * Gets a new instance of a Kiji-managed Cassandra table that holds the Kiji schema IDs table.
    *
-   * @param kijiInstanceName The name of the Kiji instance.
+   * @param kijiURI The name of the Kiji instance.
    * @return The name of the Cassandra table used to store the Kiji schema IDs table.
    */
-  public static KijiManagedCassandraTableName getSchemaIdTableName(String kijiInstanceName) {
-    return new KijiManagedCassandraTableName(kijiInstanceName, KIJI_SCHEMA_ID_COMPONENT);
+  public static KijiManagedCassandraTableName getSchemaIdTableName(KijiURI kijiURI) {
+    return new KijiManagedCassandraTableName(kijiURI.getInstance().toLowerCase(), KIJI_SCHEMA_ID_COMPONENT);
   }
 
   /**
    * Gets a new instance of a Kiji-managed Cassandra table that holds the Kiji schema IDs counter table.
    *
-   * @param kijiInstanceName The name of the Kiji instance.
+   * @param kijiURI The name of the Kiji instance.
    * @return The name of the Cassandra table used to store the Kiji schema IDs counter table.
    */
-  public static KijiManagedCassandraTableName getSchemaCounterTableName(String kijiInstanceName) {
-    return new KijiManagedCassandraTableName(kijiInstanceName, KIJI_SCHEMA_COUNTER_COMPONENT);
+  public static KijiManagedCassandraTableName getSchemaCounterTableName(KijiURI kijiURI) {
+    return new KijiManagedCassandraTableName(kijiURI.getInstance().toLowerCase(), KIJI_SCHEMA_COUNTER_COMPONENT);
   }
 
   /**
    * Gets a new instance of a Kiji-managed Cassandra table that holds the Kiji system table.
    *
-   * @param kijiInstanceName The name of the Kiji instance.
+   * @param kijiURI The name of the Kiji instance.
    * @return The name of the Cassandra table used to store the Kiji system table.
    */
-  public static KijiManagedCassandraTableName getSystemTableName(String kijiInstanceName) {
-    return new KijiManagedCassandraTableName(kijiInstanceName, KIJI_SYSTEM_COMPONENT);
+  public static KijiManagedCassandraTableName getSystemTableName(KijiURI kijiURI) {
+    return new KijiManagedCassandraTableName(kijiURI.getInstance().toLowerCase(), KIJI_SYSTEM_COMPONENT);
   }
 
   /**
    * Gets a new instance of a Kiji-managed Cassandra table that holds a user-space Kiji table.
    *
-   * @param kijiInstanceName The name of the Kiji instance.
-   * @param kijiTableName The name of the user-space Kiji table.
+   * @param kijiURI The name of the Kiji instance.
+   * @param tableName The name of the user-space Kiji table.
    * @return The name of the Cassandra table used to store the user-space Kiji table.
    */
-  public static KijiManagedCassandraTableName getKijiTableName(
-      String kijiInstanceName, String kijiTableName) {
-    return new KijiManagedCassandraTableName(kijiInstanceName, KIJI_TABLE_COMPONENT, kijiTableName);
+  public static KijiManagedCassandraTableName getKijiTableName(KijiURI kijiURI, String tableName) {
+    return new KijiManagedCassandraTableName(kijiURI.getInstance().toLowerCase(), KIJI_TABLE_COMPONENT, tableName);
   }
 
   /**
@@ -272,17 +272,19 @@ public final class KijiManagedCassandraTableName {
    * @return The name of the kiji table, or null if this is not a user-space Kiji table.
    */
   public String getKijiTableName() {
-    return mKijiTableName;
+    // TODO: Get rid of this annoying lower case stuff by fixing case business in C*.
+    return mKijiTableName.toLowerCase();
   }
 
   /**
    * Get the name of the keyspace in C* for this Kiji instance.
    *
-   * @param kijiInstanceName The name of the Kiji instance.
+   * @param kijiURI The name of the Kiji instance.
    * @return The name of the C* keyspace.
    */
-  public static String getCassandraKeyspaceForKijiInstance(String kijiInstanceName) {
-    return "kiji_" + kijiInstanceName;
+  public static String getCassandraKeyspace(KijiURI kijiURI) {
+    // TODO: Get rid of this annoying lower case stuff by fixing case business in C*.
+    return "kiji_" + kijiURI.getInstance().toLowerCase();
   }
 
   /**

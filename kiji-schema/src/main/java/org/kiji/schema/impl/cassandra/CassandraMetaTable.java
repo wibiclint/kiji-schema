@@ -91,7 +91,7 @@ public class CassandraMetaTable implements KijiMetaTable {
       CassandraAdmin admin)
       throws IOException {
     final String tableName =
-        KijiManagedCassandraTableName.getMetaLayoutTableName(kijiURI.getInstance()).toString();
+        KijiManagedCassandraTableName.getMetaLayoutTableName(kijiURI).toString();
     return admin.getCassandraTableInterface(tableName);
   }
 
@@ -110,7 +110,7 @@ public class CassandraMetaTable implements KijiMetaTable {
       CassandraAdmin admin)
       throws IOException {
     final String tableName =
-        KijiManagedCassandraTableName.getMetaKeyValueTableName(kijiURI.getInstance()).toString();
+        KijiManagedCassandraTableName.getMetaKeyValueTableName(kijiURI).toString();
     return admin.getCassandraTableInterface(tableName);
   }
 
@@ -376,10 +376,10 @@ public class CassandraMetaTable implements KijiMetaTable {
    */
   public static void uninstall(CassandraAdmin admin, KijiURI uri)
     throws IOException {
-    String tableName = KijiManagedCassandraTableName.getMetaKeyValueTableName(uri.getInstance()).toString();
+    String tableName = KijiManagedCassandraTableName.getMetaKeyValueTableName(uri).toString();
     admin.disableTable(tableName);
     admin.deleteTable(tableName);
-    tableName = KijiManagedCassandraTableName.getMetaLayoutTableName(uri.getInstance()).toString();
+    tableName = KijiManagedCassandraTableName.getMetaLayoutTableName(uri).toString();
     admin.disableTable(tableName);
     admin.deleteTable(tableName);
   }

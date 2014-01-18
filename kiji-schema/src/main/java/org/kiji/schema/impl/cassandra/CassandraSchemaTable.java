@@ -259,7 +259,7 @@ public class CassandraSchemaTable implements KijiSchemaTable {
       CassandraAdmin admin)
       throws IOException {
     return admin.getCassandraTableInterface(
-        KijiManagedCassandraTableName.getSchemaHashTableName(kijiURI.getInstance()).toString());
+        KijiManagedCassandraTableName.getSchemaHashTableName(kijiURI).toString());
   }
 
   /**
@@ -277,7 +277,7 @@ public class CassandraSchemaTable implements KijiSchemaTable {
       CassandraAdmin admin)
       throws IOException {
     return admin.getCassandraTableInterface(
-        KijiManagedCassandraTableName.getSchemaIdTableName(kijiURI.getInstance()).toString());
+        KijiManagedCassandraTableName.getSchemaIdTableName(kijiURI).toString());
   }
 
   /**
@@ -295,7 +295,7 @@ public class CassandraSchemaTable implements KijiSchemaTable {
       CassandraAdmin admin)
       throws IOException {
     return admin.getCassandraTableInterface(
-        KijiManagedCassandraTableName.getSchemaCounterTableName(kijiURI.getInstance()).toString());
+        KijiManagedCassandraTableName.getSchemaCounterTableName(kijiURI).toString());
   }
 
   /**
@@ -848,15 +848,15 @@ public class CassandraSchemaTable implements KijiSchemaTable {
 
     CassandraTableInterface hashTable = installHashTable(
         admin,
-        KijiManagedCassandraTableName.getSchemaHashTableName(kijiURI.getInstance()).toString());
+        KijiManagedCassandraTableName.getSchemaHashTableName(kijiURI).toString());
 
     CassandraTableInterface idTable = installIdTable(
         admin,
-        KijiManagedCassandraTableName.getSchemaIdTableName(kijiURI.getInstance()).toString());
+        KijiManagedCassandraTableName.getSchemaIdTableName(kijiURI).toString());
 
     CassandraTableInterface counterTable = installCounterTable(
         admin,
-        KijiManagedCassandraTableName.getSchemaCounterTableName(kijiURI.getInstance()).toString());
+        KijiManagedCassandraTableName.getSchemaCounterTableName(kijiURI).toString());
 
     final CassandraSchemaTable schemaTable = new CassandraSchemaTable(
         hashTable,

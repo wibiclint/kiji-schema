@@ -34,7 +34,7 @@ public abstract class CassandraAdmin implements Closeable {
   public Session getSession() { return mSession; }
 
   public String getKeyspace() {
-    return KijiManagedCassandraTableName.getCassandraKeyspaceForKijiInstance(mKijiURI.getInstance().toString());
+    return KijiManagedCassandraTableName.getCassandraKeyspace(mKijiURI);
   }
 
   protected CassandraAdmin(Session session, KijiURI kijiURI) {
@@ -52,16 +52,32 @@ public abstract class CassandraAdmin implements Closeable {
    * @param kijiURI The URI.
    */
   private void createKeyspaceIfMissingForURI(KijiURI kijiURI) {
-    String keyspace = KijiManagedCassandraTableName.getCassandraKeyspaceForKijiInstance(
-        kijiURI.getInstance().toString()
-    );
+    String keyspace = KijiManagedCassandraTableName.getCassandraKeyspace(kijiURI);
+    LOG.info(String.format(
+        "Creating keyspace %s (if missing) for %s.",
+        keyspace,
+        kijiURI));
 
     // TODO: Should check whether the keyspace is longer than 48 characters long and if so provide a Kiji error to the user.
     String queryText = "CREATE KEYSPACE IF NOT EXISTS " + keyspace +
         " WITH REPLICATION = {'class' : 'SimpleStrategy', 'replication_factor': 1}";
-    getSession().execute(queryText);
+    ResultSet resultSet = getSession().execute(queryText);
+    LOG.info(resultSet.toString());
     getSession().execute(String.format("USE %s", keyspace));
 
+    // Check that the keyspace actually exists!
+    assert(keyspaceExists(keyspace));
+
+  }
+
+  private boolean keyspaceExists(String keyspace) {
+    LOG.info("Checking whether keyspace " + keyspace + " exists.");
+    Metadata md = getSession().getCluster().getMetadata();
+    LOG.info("Found these keyspaces:");
+    for (KeyspaceMetadata ksm : md.getKeyspaces()) {
+      LOG.info(String.format("\t%s", ksm.getName()));
+    }
+    return (null != md.getKeyspace(keyspace));
   }
 
   /**
@@ -76,6 +92,8 @@ public abstract class CassandraAdmin implements Closeable {
     // TODO: Keep track of all tables associated with this session
     LOG.info("Creating table " + tableName);
     mSession.execute("CREATE TABLE " + tableName + " " + cassandraTableLayout + ";");
+    // Check that the table actually exists
+    assert(tableExists(tableName));
     return CassandraTableInterface.createFromCassandraAdmin(this, tableName);
   }
 
@@ -89,7 +107,8 @@ public abstract class CassandraAdmin implements Closeable {
 
   // TODO: Maybe have more checks here?
   public void deleteTable(String tableName) {
-    String queryString = String.format("DROP TABLE %s;", tableName);
+    // TODO: Check first that the table actually exists?
+    String queryString = String.format("DROP TABLE IF EXISTS %s;", tableName);
     LOG.info("Deleting table " + tableName);
     getSession().execute(queryString);
   }
@@ -124,24 +143,24 @@ public abstract class CassandraAdmin implements Closeable {
 
   // TODO: Implement check for whether a table exists!
   public boolean tableExists(String tableName) {
-    LOG.debug("Looking for table with name " + tableName);
+    LOG.info("Looking for table with name " + tableName);
     Preconditions.checkNotNull(getSession());
     String ks = getKeyspace();
-    LOG.debug("\tkeyspace = " + ks);
+    LOG.info("\tkeyspace = " + ks);
     Metadata metadata = getSession().getCluster().getMetadata();
     if (null == metadata.getKeyspace(ks)) {
-      LOG.debug("\tCannot find keyspace " + ks + ", assuming table " + tableName + " is not installed");
+      LOG.info("\tCannot find keyspace " + ks + ", assuming table " + tableName + " is not installed");
       return false;
     }
     Collection<TableMetadata> tableMetadata = getSession().getCluster().getMetadata().getKeyspace(ks).getTables();
     for (TableMetadata tm : tableMetadata) {
       final String nameWithKeyspace = String.format("%s.%s", ks, tm.getName());
-      LOG.debug("\t" + nameWithKeyspace);
+      LOG.info("\t" + nameWithKeyspace);
       if (nameWithKeyspace.equals(tableName)) {
         return true;
       }
     }
-    LOG.debug("\tCould not find any table with name matching table " + tableName);
+    LOG.info("\tCould not find any table with name matching table " + tableName);
     return false;
   }
 

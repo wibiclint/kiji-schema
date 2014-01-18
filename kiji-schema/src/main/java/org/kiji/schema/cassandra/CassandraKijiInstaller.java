@@ -99,6 +99,7 @@ public final class CassandraKijiInstaller {
       LOG.info(String.format("Installing Cassandra Kiji instance '%s'.", uri));
 
       CassandraAdminFactory cassandraAdminFactory = cassandraFactory.getCassandraAdminFactory(uri);
+      LOG.info("Creating CassandraAdmin for Kiji installation.");
       CassandraAdmin cassandraAdmin = cassandraAdminFactory.create(uri);
 
       // Create the keyspace

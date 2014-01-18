@@ -118,7 +118,7 @@ public class CassandraSystemTable implements KijiSystemTable {
       CassandraAdmin admin)
       throws IOException {
     final String tableName =
-        KijiManagedCassandraTableName.getSystemTableName(kijiURI.getInstance()).toString();
+        KijiManagedCassandraTableName.getSystemTableName(kijiURI).toString();
     // Check that the table already exists!
     if (!admin.tableExists(tableName)) {
       LOG.info("Cannot find table " + tableName + ", assuming Kiji not installed...");
@@ -363,7 +363,7 @@ public class CassandraSystemTable implements KijiSystemTable {
     // Install the table.  Sadly, we have to just use blobs and byte arrays here, so that we are
     // compliant with everything else in Kiji.  :(
     String systemTableName =
-        KijiManagedCassandraTableName.getSystemTableName(kijiURI.getInstance()).toString();
+        KijiManagedCassandraTableName.getSystemTableName(kijiURI).toString();
 
     // The layout of this table is straightforward - just blob to blob!
     // TODO: Any check here first for whether the table exists?

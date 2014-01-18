@@ -17,6 +17,8 @@ Open TODOs
 - TODO: Add super-unstable annotations to this API.  :)
 - TODO: Check for any case-sensitivity issues - The CQL commands that we are using to create and
   manipulate tables may need some kind of quotes or other escaping to maintain upper/lower case.
+    - Also really tighten up all of the places where we create queries and where we get actual C*
+      table and keyspace names (want to pass around URIs and not strings).
 - TODO: Do we need to make an interface for MetadataRestorer and then create HBase and C* versions?
   - Could have a static "get" method in KijiMetaTable that can get the appropriate restorer
 
