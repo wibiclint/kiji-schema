@@ -58,10 +58,7 @@ public abstract class CassandraAdmin implements Closeable {
    */
   private void createKeyspaceIfMissingForURI(KijiURI kijiURI) {
     String keyspace = KijiManagedCassandraTableName.getCassandraKeyspaceFormattedForCQL(kijiURI);
-    LOG.info(String.format(
-        "Creating keyspace %s (if missing) for %s.",
-        keyspace,
-        kijiURI));
+    LOG.info(String.format("Creating keyspace %s (if missing) for %s.", keyspace, kijiURI));
 
     // TODO: Should check whether the keyspace is longer than 48 characters long and if so provide a Kiji error to the user.
     String queryText = "CREATE KEYSPACE IF NOT EXISTS " + keyspace +
@@ -80,13 +77,13 @@ public abstract class CassandraAdmin implements Closeable {
 
     // Strip quotes off of keyspace
     String noQuotesKeyspace = stripQuotesFromKeyspace(keyspace);
-    LOG.info("keyspace without quotes = " + noQuotesKeyspace);
+    LOG.debug("keyspace without quotes = " + noQuotesKeyspace);
 
-    LOG.info("Checking whether keyspace " + noQuotesKeyspace + " exists.");
+    LOG.debug("Checking whether keyspace " + noQuotesKeyspace + " exists.");
     Metadata md = getSession().getCluster().getMetadata();
-    LOG.info("Found these keyspaces:");
+    LOG.debug("Found these keyspaces:");
     for (KeyspaceMetadata ksm : md.getKeyspaces()) {
-      LOG.info(String.format("\t%s", ksm.getName()));
+      LOG.debug(String.format("\t%s", ksm.getName()));
     }
     return (null != md.getKeyspace(noQuotesKeyspace));
   }
@@ -140,23 +137,23 @@ public abstract class CassandraAdmin implements Closeable {
 
     String tableNameNoQuotes = stripQuotesFromTableName(tableName);
 
-    LOG.info("Looking for table with name " + tableNameNoQuotes);
-    LOG.info("\tkeyspace (w/o quotes) = " + keyspace);
+    LOG.debug("Looking for table with name " + tableNameNoQuotes);
+    LOG.debug("\tkeyspace (w/o quotes) = " + keyspace);
 
     Metadata metadata = getSession().getCluster().getMetadata();
     if (null == metadata.getKeyspace(keyspace)) {
-      LOG.info("\tCannot find keyspace " + keyspace + ", assuming table " + tableNameNoQuotes + " is not installed");
+      LOG.debug("\tCannot find keyspace " + keyspace + ", assuming table " + tableNameNoQuotes + " is not installed");
       return false;
     }
     Collection<TableMetadata> tableMetadata = getSession().getCluster().getMetadata().getKeyspace(keyspace).getTables();
     for (TableMetadata tm : tableMetadata) {
       final String nameWithKeyspace = String.format("%s.%s", keyspace, tm.getName());
-      LOG.info("\t" + nameWithKeyspace);
+      LOG.debug("\t" + nameWithKeyspace);
       if (nameWithKeyspace.equals(tableNameNoQuotes)) {
         return true;
       }
     }
-    LOG.info("\tCould not find any table with name matching table " + tableNameNoQuotes);
+    LOG.debug("\tCould not find any table with name matching table " + tableNameNoQuotes);
     return false;
   }
 

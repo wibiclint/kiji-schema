@@ -111,8 +111,8 @@ public final class CassandraKijiInstaller {
       CassandraSchemaTable.install(cassandraAdmin, uri, conf, lockFactory);
 
       // Grant the current user all privileges on the instance just created, if security is enabled.
-      // TODO: Replace with factory method
-      final Kiji kiji = CassandraKiji.create(uri, conf, cassandraAdmin, lockFactory);
+      //final Kiji kiji = CassandraKijiFactory.get().open(uri, conf, cassandraAdmin, lockFactory);
+      final Kiji kiji = CassandraKijiFactory.get().open(uri, conf);
       try {
         if (kiji.isSecurityEnabled()) {
           CassandraKijiSecurityManager.installInstanceCreator(uri, conf, cassandraAdmin);

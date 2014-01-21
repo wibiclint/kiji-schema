@@ -127,7 +127,7 @@ that looks like the following:
       time timeuuid,
       value blob,
       PRIMARY KEY ( (first_row_key_field, second_row_key_field), qualifier, time)
-    ) WITH CLUSTERING ORDER BY (time DESC);
+    ) WITH CLUSTERING ORDER BY (qualifier ASC, time DESC);
 
     CREATE TABLE kiji_table_name_column_family_name_time_qual (
       first_row_key_field text,
@@ -136,7 +136,7 @@ that looks like the following:
       time timeuuid,
       value blob,
       PRIMARY KEY ( (first_row_key_field, second_row_key_field), time, qualifier)
-    ) WITH CLUSTERING ORDER BY (time DESC);
+    ) WITH CLUSTERING ORDER BY (qualifier ASC, time DESC);
 
 The two tables are identical except for the order of the composite partition keys.  The first table
 allows us to make a data request that selects a range of timestamps for a given qualifier.  The
@@ -429,6 +429,10 @@ this is related to path-size limits in Windows!  Awesome!)
 
 For integration tests, Joe recommends using a Vagrant virtual machine to set up a C* server.
 
+Note that you can run just the C* unit tests at the command line with the command:
+
+    mvn  -Dtest='*Cassandra*' test 
+
 
 
 Notes on update the meta table
@@ -488,10 +492,10 @@ anyone familiar with C* (and make debugging a lot harder).
 
 All of the synchronization / update-passing stuff related to updating table layouts, e.g., 
 
-- InnerLayoutUpdater
-- LayoutTracker
-- LayoutCapsule
-- LayoutConsumer (I'm assuming a `LayoutConsumer` is a table reader or writer)
+- `InnerLayoutUpdater`
+- `LayoutTracker`
+- `LayoutCapsule`
+- `LayoutConsumer` (I'm assuming a `LayoutConsumer` is a table reader or writer)
 
 ...can probably stay the same.  This is a pretty large portion of the code in `HBaseKijiTable.`
 
@@ -563,6 +567,113 @@ Here is a list of places where we'll have to put changes:
 - `CassandraRequestAdapter`
 - `CassandraKijiTable`
 - `CassandraKiji` (this contains a lot of the code for implementing updates to table layout)
-- `CassandraTableSchemaTranslator` (I don't know if we'll have the equivalent of
-  `ColumnNameTranslator` because the mapping from Kiji column to C* will be so different from what
-  you would get in HBase.
+- `CassandraTableLayoutUpdater` (Seems to be used for ZooKeeper to broadcast table layout updates)
+- `CassandraTableSchemaTranslator`
+  - I don't know if we'll have the equivalent of `ColumnNameTranslator` because the mapping from
+    Kiji column to C* will be so different from what you would get in HBase.
+  - This is used only within `HBaseKiji`
+
+
+Week of 2014-01-20
+==================
+
+Goals for this week:
+
+- Continue to refine the `CassandraAdmin` and `CassandraTableInterface` classes
+  - Reference counting
+  - Documentation
+- Start actually implementing C* Kiji tables
+  - Support creating tables, but not altering them
+  - Support simple reads (no row scanning)
+  - Support writing data and simple deletes (delete a row or a single cell)
+
+
+New classes and packages
+------------------------
+
+- `o.k.s.impl.cassandra.CassandraKijiTable`
+- `o.k.s.impl.cassandra.CassandraKijiReaderFactory`
+- `o.k.s.impl.cassandra.CassandraKijiWriterFactory`
+- `o.k.s.impl.cassandra.CassandraKijiTableReader`
+- `o.k.s.impl.cassandra.CassandraKijiTableReaderBuilder`
+- `o.k.s.impl.cassandra.CassandraKijiTableWriter`
+- `o.k.s.impl.cassandra.CassandraKijiTableWriter`
+- `o.k.s.impl.cassandra.CassandraDataRequestAdapter`
+
+
+How to store Cassandra table layout information?
+------------------------------------------------
+
+There does not appear to be any Cassandra analogue (at least in the DataStax Java driver) for
+HBase's `HTableDescriptor`, which contains a structured description of the layout of an HBase table.
+We can sort of replace it with `TableMetadata`, which we can generate for an existig table, but we
+cannot build or modify our own `TableMetadata` instances, and we cannot use a `TableMetadata`
+instance to update the layout of an existing table.
+
+Where to we use `HTableDescriptor` now?  (Omitting usages that are easy to replace)
+- `HBaseKiji` for modifying table layouts
+  - The table description comes from `HTableSchemaTranslator` translating a `TableLayoutDesc`
+  - Code goes through every column in the table, making updates if the new column is different from
+    the previous column
+- `HBaseKiji` for creating a new table
+  - The table description comes from `HTableSchemaTranslator` translating a `TableLayoutDesc`
+- `HTableSchemaTranslator` translates from `TableLayoutDesc` to `HTableDescriptor`
+- `HTableDescriptorComparator` compare two HTable layouts (checks to see if any layout updates are
+  actually necessary)
+
+It might be worthwhile copying the `TableMetadata` and associated code from the DataStax source,
+stripping it down a bit, and just using that.
+
+
+
+Total functionality for C* / Kiji interface
+-------------------------------------------
+
+- Creating and altering tables
+  - Given a `TableLayoutDesc`, create a C* table or set of tables
+  - Given a `TableLayoutDesc` and an existing C* table, alter the existing table to implement the
+    new layout
+- Reading data
+  - Normal "get"
+    - Given a `KijiDataRequest`, an `EntityId`, and a `KijiTableLayout`, create a C* `SELECT`
+      statement to query the database.
+    - Given the result of the query, create an instance of `KijiRowData`
+  - "Bulk get"
+    - Do the same (create query, return `KijiRowData`) given a list of `EntityId` instances
+  - scan
+    - Given a `KijiDataRequest`, a `KijiTableLayout`, and start and stop `EntityId`s, create a
+      row-scanner `SELECT` statement
+    - Return a `KijiRowScanner`
+- Writing data
+  - Given an `EntityId`, column family, column qualifier, timestamp, and value, write to the
+    database
+  - Given an `EntityId`, column family, qualifier, and amount, increment a counter by amount
+  - Given a column family and qualifier, verify that the column is a counter
+- Deleting data
+  - Given an `EntityId`, delete a row
+  - Given an `EntityId` and a timestamp, delete all values up to that timestamp
+  - Given an `EntityId`, column family, and timestamp, delete all values in that family up to the
+    timestamp
+    - Requires a row lock for a map-type family in HBase
+  - Given an `EntityId`, a family, a qualifier, and maybe a timestamp, delete values
+- Row data
+  - `KijiRowData` has lots and lots of different methods for viewing results, but most of them just
+    use `mFilteredMap` (a map from family to qualifier to timestamp to value) in different ways.
+  - `KijiRowScanner` is really just an iterator of `KijiRowData`.  Should not present any additional
+    translation difficulties.
+
+It might make sense to put all of this functionality (for now) into a `CassandraLayoutTranslator`
+object or something like that.  Keeping all of the Kiji/C* mapping code in one place would make
+iterating easier.
+
+
+Layout capsules and other such stuff
+------------------------------------
+
+`o.k.s.impl.LayoutConsumer` has a signature that expects an
+`o.k.s.impl.hbase.HBaseKijiTable.LayoutCapsule`.  We need to fix this.
+
+Probably easiest to create a new `LayoutCapsule` interface and have the
+`o.k.s.impl.hbase.HBaseKijiTable.LayoutCapsule` and
+`o.k.s.impl.cassandra.CassandraKijiTable.LayoutCapsule` both implement it.  This should be easy,
+just has a bunch of getters in it.

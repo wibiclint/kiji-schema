@@ -99,7 +99,7 @@ public final class CassandraKiji implements Kiji {
   /** Tracks the state of this Kiji instance. */
   private final AtomicReference<State> mState = new AtomicReference<State>(State.UNINITIALIZED);
 
-  /** Retain counter. When decreased to 0, the HBase Kiji may be closed and disposed of. */
+  /** Retain counter. When decreased to 0, the C* Kiji may be closed and disposed of. */
   private final AtomicInteger mRetainCount = new AtomicInteger(0);
 
   /**
@@ -139,15 +139,6 @@ public final class CassandraKiji implements Kiji {
    * The security manager for this instance, lazily initialized through {@link #getSecurityManager}.
    */
   private KijiSecurityManager mSecurityManager;
-
-  public static CassandraKiji create(
-      KijiURI kijiURI,
-      Configuration conf,
-      CassandraAdmin admin,
-      LockFactory lockFactory)
-    throws IOException {
-    return new CassandraKiji(kijiURI, conf, admin, lockFactory);
-  }
 
   /**
    * Creates a new <code>CassandraKiji</code> instance.
@@ -200,7 +191,7 @@ public final class CassandraKiji implements Kiji {
     mMetaTable = null;
     mSecurityManager = null;
 
-    // TODO: Should be a method assuming that the table already exists!
+    // System table should have already been installed - here were are just getting a pointer to it.
     mSystemTable = CassandraSystemTable.createAssumingTableExists(mURI, mConf, mAdmin);
 
     mRetainCount.set(1);
@@ -379,8 +370,8 @@ public final class CassandraKiji implements Kiji {
     Preconditions.checkState(state == State.OPEN,
         "Cannot open table in Kiji instance %s in state %s.", this, state);
     // TODO: Uncomment this line when CassandraKijiTable is ready
-    //return new CassandraKijiTable(this, tableName, mConf, mAdmin);
-    return null;
+    return new CassandraKijiTable(this, tableName, mConf, mAdmin);
+    //return null;
   }
 
   /** {@inheritDoc} */
@@ -477,13 +468,13 @@ public final class CassandraKiji implements Kiji {
     if (isSecurityEnabled()) {
       getSecurityManager().lock();
       try {
-        createTableUnchecked(tableLayout, splitKeys);
+        createTableUnchecked(tableLayout);
         getSecurityManager().applyPermissionsToNewTable(tableURI);
       } finally {
         getSecurityManager().unlock();
       }
     } else {
-      createTableUnchecked(tableLayout, splitKeys);
+      createTableUnchecked(tableLayout);
     }
   }
 
@@ -843,21 +834,26 @@ public final class CassandraKiji implements Kiji {
     return mZKClient;
   }
 
+  // Useful static members for referring to different fields in the C* tables.
+  public static String CASSANDRA_KEY_COL = "key";
+  public static String CASSANDRA_QUALIFIER_COL = "qualifier";
+  public static String CASSANDRA_VERSION_COL = "version";
+  public static String CASSANDRA_VALUE_COL = "value";
+
   /**
-   * Creates a Kiji table in an HBase instance, without checking for validation compatibility and
+   * Creates a Kiji table in a Cassandra instance, without checking for validation compatibility and
    * without applying permissions.
    *
    * @param tableLayout The initial layout of the table (with unassigned column ids).
-   * @param splitKeys The initial key boundaries between regions.  There will be splitKeys
-   *     + 1 regions created.  Pass null to specify the default single region.
    * @throws java.io.IOException on I/O error.
    * @throws org.kiji.schema.KijiAlreadyExistsException if the table already exists.
    */
   // TODO: Implement C* version
-  private void createTableUnchecked(
-      TableLayoutDesc tableLayout,
-      byte[][] splitKeys) throws IOException {
-    /*
+  private void createTableUnchecked(TableLayoutDesc tableLayout) throws IOException {
+
+    // For this first-cut attempt at creating a C* Kiji table, all of the code for going from a Kiji
+    // TableLayoutDesc to a C* table is in this method.  Later we'll refactor this!
+
     final KijiURI tableURI = KijiURI.newBuilder(mURI).withTableName(tableLayout.getName()).build();
 
     // This will validate the layout and may throw an InvalidLayoutException.
@@ -891,21 +887,42 @@ public final class CassandraKiji implements Kiji {
       }
     }
 
-    try {
-      final HTableSchemaTranslator translator = new HTableSchemaTranslator();
-      final HTableDescriptor desc =
-          translator.toHTableDescriptor(mURI.getInstance(), kijiTableLayout);
-      LOG.debug("Creating HBase table '{}'.", desc.getNameAsString());
-      if (null != splitKeys) {
-        getHBaseAdmin().createTable(desc, splitKeys);
-      } else {
-        getHBaseAdmin().createTable(desc);
-      }
-    } catch (TableExistsException tee) {
-      throw new KijiAlreadyExistsException(
-          String.format("Kiji table '%s' already exists.", tableURI), tableURI);
+    // Super-primitive right now.  Assume that max versions is always 1.
+
+    // Get a reference to the name of the Kiji table to use as a prefix for naming all of the
+    // Cassandra tables.
+    String kijiTableName = tableLayout.getName();
+
+    // Go through all of the locality groups and all of the column families
+    for (KijiTableLayout.LocalityGroupLayout.FamilyLayout cf : kijiTableLayout.getFamilies()) {
+      // Each column family in Kiji = a C* CQL table (really a column family in C*).
+      // Create the same layout for group-type and map-type families.
+      String cfName = cf.getName();
+
+      // Create a C* table name for this column family.
+      // Eventually this kind of translation will go into a library.
+      KijiManagedCassandraTableName cTableName = KijiManagedCassandraTableName.getKijiTableName(
+          mURI,
+          kijiTableName + "_" + cfName
+      );
+
+      String cassandraTableLayout = String.format(
+          "(%s blob, %s text, %s bigint, %s blob, PRIMARY KEY (%s, %s));",
+          CASSANDRA_KEY_COL,
+          CASSANDRA_QUALIFIER_COL,
+          CASSANDRA_VERSION_COL,
+          CASSANDRA_VALUE_COL,
+          CASSANDRA_KEY_COL,
+          CASSANDRA_QUALIFIER_COL
+      );
+
+      // Create the table!
+      mAdmin.createTable(cTableName.toString(), cassandraTableLayout);
     }
 
-  */
+
+    //LOG.debug("Creating HBase table '{}'.", desc.getNameAsString());
+    //throw new KijiAlreadyExistsException(String.format("Kiji table '%s' already exists.", tableURI), tableURI);
+
   }
 }

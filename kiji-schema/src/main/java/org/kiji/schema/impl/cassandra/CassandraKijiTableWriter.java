@@ -17,40 +17,23 @@
  * limitations under the License.
  */
 
-package org.kiji.schema.impl.hbase;
-
-import java.io.IOException;
-import java.util.Map;
-import java.util.NavigableMap;
-import java.util.concurrent.atomic.AtomicReference;
+package org.kiji.schema.impl.cassandra;
 
 import com.google.common.base.Objects;
 import com.google.common.base.Preconditions;
 import org.apache.hadoop.hbase.HConstants;
-import org.apache.hadoop.hbase.client.Delete;
-import org.apache.hadoop.hbase.client.Get;
-import org.apache.hadoop.hbase.client.HTableInterface;
-import org.apache.hadoop.hbase.client.Increment;
-import org.apache.hadoop.hbase.client.Put;
-import org.apache.hadoop.hbase.client.Result;
-import org.apache.hadoop.hbase.client.RowLock;
+import org.apache.hadoop.hbase.client.*;
 import org.apache.hadoop.hbase.filter.ColumnPrefixFilter;
 import org.apache.hadoop.hbase.filter.FilterList;
 import org.apache.hadoop.hbase.filter.KeyOnlyFilter;
 import org.apache.hadoop.hbase.util.Bytes;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import org.kiji.annotations.ApiAudience;
-import org.kiji.schema.DecodedCell;
-import org.kiji.schema.EntityId;
-import org.kiji.schema.KijiCell;
-import org.kiji.schema.KijiCellEncoder;
-import org.kiji.schema.KijiColumnName;
-import org.kiji.schema.KijiTableWriter;
-import org.kiji.schema.NoSuchColumnException;
+import org.kiji.schema.*;
 import org.kiji.schema.avro.SchemaType;
 import org.kiji.schema.hbase.HBaseColumnName;
+import org.kiji.schema.impl.DefaultKijiCellEncoderFactory;
+import org.kiji.schema.impl.LayoutConsumer;
+import org.kiji.schema.impl.hbase.HBaseKijiTable;
 import org.kiji.schema.impl.LayoutCapsule;
 import org.kiji.schema.layout.KijiTableLayout;
 import org.kiji.schema.layout.KijiTableLayout.LocalityGroupLayout.FamilyLayout;
@@ -58,8 +41,13 @@ import org.kiji.schema.layout.KijiTableLayout.LocalityGroupLayout.FamilyLayout.C
 import org.kiji.schema.layout.impl.CellEncoderProvider;
 import org.kiji.schema.layout.impl.ColumnNameTranslator;
 import org.kiji.schema.platform.SchemaPlatformBridge;
-import org.kiji.schema.impl.LayoutConsumer;
-import org.kiji.schema.impl.DefaultKijiCellEncoderFactory;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.io.IOException;
+import java.util.Map;
+import java.util.NavigableMap;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Makes modifications to a Kiji table by sending requests directly to HBase from the local client.
@@ -71,11 +59,11 @@ import org.kiji.schema.impl.DefaultKijiCellEncoderFactory;
  * <p> This class is not thread-safe and must be synchronized externally. </p>
  */
 @ApiAudience.Private
-public final class HBaseKijiTableWriter implements KijiTableWriter {
-  private static final Logger LOG = LoggerFactory.getLogger(HBaseKijiTableWriter.class);
+public final class CassandraKijiTableWriter implements KijiTableWriter {
+  private static final Logger LOG = LoggerFactory.getLogger(CassandraKijiTableWriter.class);
 
   /** The kiji table instance. */
-  private final HBaseKijiTable mTable;
+  private final CassandraKijiTable mTable;
 
   /** States of a writer instance. */
   private static enum State {
@@ -91,7 +79,7 @@ public final class HBaseKijiTableWriter implements KijiTableWriter {
   private final InnerLayoutUpdater mInnerLayoutUpdater = new InnerLayoutUpdater();
 
   /** Dedicated HTable connection. */
-  private final HTableInterface mHTable;
+  //private final CassandraTableInterface mCTable;
 
   /**
    * All state which should be modified atomically to reflect an update to the underlying table's
@@ -194,16 +182,17 @@ public final class HBaseKijiTableWriter implements KijiTableWriter {
    * Creates a non-buffered kiji table writer that sends modifications directly to Kiji.
    *
    * @param table A kiji table.
-   * @throws IOException on I/O error.
+   * @throws java.io.IOException on I/O error.
    */
-  public HBaseKijiTableWriter(HBaseKijiTable table) throws IOException {
+  public CassandraKijiTableWriter(CassandraKijiTable table) throws IOException {
     mTable = table;
     mTable.registerLayoutConsumer(mInnerLayoutUpdater);
     Preconditions.checkState(mWriterLayoutCapsule != null,
         "KijiTableWriter for table: %s failed to initialize.", mTable.getURI());
 
-    mHTable = table.openHTableConnection();
-    SchemaPlatformBridge.get().setAutoFlush(mHTable, true);
+    // TODO: Do we need to do something similar here?
+    //mCTable = table.openCassandraTableConnection();
+    //SchemaPlatformBridge.get().setAutoFlush(mCTable, true);
 
     // Retain the table only when everything succeeds.
     mTable.retain();
@@ -227,6 +216,8 @@ public final class HBaseKijiTableWriter implements KijiTableWriter {
     Preconditions.checkState(state == State.OPEN,
         "Cannot put cell to KijiTableWriter instance %s in state %s.", this, state);
 
+    /*
+    // TODO: Write actual implementation for writing to C* Kiji table.
     final KijiColumnName columnName = new KijiColumnName(family, qualifier);
     final WriterLayoutCapsule capsule = mWriterLayoutCapsule;
     final HBaseColumnName hbaseColumnName =
@@ -239,6 +230,7 @@ public final class HBaseKijiTableWriter implements KijiTableWriter {
     final Put put = new Put(entityId.getHBaseRowKey())
         .add(hbaseColumnName.getFamily(), hbaseColumnName.getQualifier(), timestamp, encoded);
     mHTable.put(put);
+    */
   }
 
   // ----------------------------------------------------------------------------------------------
@@ -254,6 +246,9 @@ public final class HBaseKijiTableWriter implements KijiTableWriter {
 
     verifyIsCounter(family, qualifier);
 
+    // TODO: Write actual implementation for incrementing C* Kiji counter.
+
+    /*
     // Translate the Kiji column name to an HBase column name.
     final HBaseColumnName hbaseColumnName = mWriterLayoutCapsule.getColumnNameTranslator().
         toHBaseColumnName(new KijiColumnName(family, qualifier));
@@ -274,6 +269,8 @@ public final class HBaseKijiTableWriter implements KijiTableWriter {
     final DecodedCell<Long> counter =
         new DecodedCell<Long>(null, Bytes.toLong(counterEntry.getValue()));
     return new KijiCell<Long>(family, qualifier, counterEntry.getKey(), counter);
+    */
+    return null;
   }
 
   /**
@@ -281,13 +278,16 @@ public final class HBaseKijiTableWriter implements KijiTableWriter {
    *
    * @param family A column family.
    * @param qualifier A column qualifier.
-   * @throws IOException If the column is not a counter, or it does not exist.
+   * @throws java.io.IOException If the column is not a counter, or it does not exist.
    */
   private void verifyIsCounter(String family, String qualifier) throws IOException {
+    // TODO: Write actual implementation for verifying that a column is a C* counter.
+    /*
     final KijiColumnName column = new KijiColumnName(family, qualifier);
     if (mWriterLayoutCapsule.getLayout().getCellSchema(column).getType() != SchemaType.COUNTER) {
       throw new IOException(String.format("Column '%s' is not a counter", column));
     }
+    */
   }
 
   // ----------------------------------------------------------------------------------------------
@@ -306,8 +306,11 @@ public final class HBaseKijiTableWriter implements KijiTableWriter {
     Preconditions.checkState(state == State.OPEN,
         "Cannot delete row while KijiTableWriter %s is in state %s.", this, state);
 
+    // TODO: Write actual implementation of deleting C* row.
+    /*
     final Delete delete = new Delete(entityId.getHBaseRowKey(), upToTimestamp, null);
     mHTable.delete(delete);
+    */
   }
 
   /** {@inheritDoc} */
@@ -343,6 +346,8 @@ public final class HBaseKijiTableWriter implements KijiTableWriter {
     }
 
     // The only data in this HBase family is the one Kiji family, so we can delete everything.
+    // TODO: Write actual implementation of deleting C* column family.
+    /*
     final HBaseColumnName hbaseColumnName = capsule.getColumnNameTranslator()
         .toHBaseColumnName(new KijiColumnName(family));
     final Delete delete = new Delete(entityId.getHBaseRowKey());
@@ -350,6 +355,7 @@ public final class HBaseKijiTableWriter implements KijiTableWriter {
 
     // Send the delete to the HBase HTable.
     mHTable.delete(delete);
+    */
   }
 
   /**
@@ -359,7 +365,7 @@ public final class HBaseKijiTableWriter implements KijiTableWriter {
    * @param entityId The entity (row) to delete from.
    * @param familyLayout The family layout.
    * @param upToTimestamp A timestamp.
-   * @throws IOException If there is an IO error.
+   * @throws java.io.IOException If there is an IO error.
    */
   private void deleteGroupFamily(
       EntityId entityId,
@@ -370,6 +376,8 @@ public final class HBaseKijiTableWriter implements KijiTableWriter {
     Preconditions.checkState(state == State.OPEN,
         "Cannot delete family group while KijiTableWriter %s is in state %s.", this, state);
     final String familyName = Preconditions.checkNotNull(familyLayout.getName());
+    // TODO: Write actual implementation of deleting C* group-type column family.
+    /*
     // Delete each column in the group according to the layout.
     final Delete delete = new Delete(entityId.getHBaseRowKey());
     for (ColumnLayout columnLayout : familyLayout.getColumnMap().values()) {
@@ -383,6 +391,7 @@ public final class HBaseKijiTableWriter implements KijiTableWriter {
 
     // Send the delete to the HBase HTable.
     mHTable.delete(delete);
+    */
   }
 
   /**
@@ -394,7 +403,7 @@ public final class HBaseKijiTableWriter implements KijiTableWriter {
    * @param entityId The entity (row) to delete from.
    * @param familyLayout A family layout.
    * @param upToTimestamp A timestamp.
-   * @throws IOException If there is an IO error.
+   * @throws java.io.IOException If there is an IO error.
    */
   private void deleteMapFamily(EntityId entityId, FamilyLayout familyLayout, long upToTimestamp)
       throws IOException {
@@ -413,6 +422,8 @@ public final class HBaseKijiTableWriter implements KijiTableWriter {
         .toHBaseColumnName(new KijiColumnName(familyName));
     final byte[] hbaseRow = entityId.getHBaseRowKey();
 
+    // TODO: Write actual implementation of deleting C* map-type column family.
+    /*
     // Lock the row.
     final RowLock rowLock = mHTable.lockRow(hbaseRow);
     try {
@@ -444,6 +455,7 @@ public final class HBaseKijiTableWriter implements KijiTableWriter {
       // Make sure to unlock the row!
       mHTable.unlockRow(rowLock);
     }
+    */
   }
 
   /** {@inheritDoc} */
@@ -460,11 +472,15 @@ public final class HBaseKijiTableWriter implements KijiTableWriter {
     Preconditions.checkState(state == State.OPEN,
         "Cannot delete column while KijiTableWriter %s is in state %s.", this, state);
 
+    // TODO: Write actual implementation of deleting C* column.
+
+    /*
     final HBaseColumnName hbaseColumnName = mWriterLayoutCapsule.getColumnNameTranslator()
         .toHBaseColumnName(new KijiColumnName(family, qualifier));
     final Delete delete = new Delete(entityId.getHBaseRowKey())
         .deleteColumns(hbaseColumnName.getFamily(), hbaseColumnName.getQualifier(), upToTimestamp);
     mHTable.delete(delete);
+    */
   }
 
   /** {@inheritDoc} */
@@ -481,11 +497,15 @@ public final class HBaseKijiTableWriter implements KijiTableWriter {
     Preconditions.checkState(state == State.OPEN,
         "Cannot delete cell while KijiTableWriter %s is in state %s.", this, state);
 
+    // TODO: Write actual implementation of deleting C* cell.
+
+    /*
     final HBaseColumnName hbaseColumnName = mWriterLayoutCapsule.getColumnNameTranslator()
         .toHBaseColumnName(new KijiColumnName(family, qualifier));
     final Delete delete = new Delete(entityId.getHBaseRowKey())
         .deleteColumn(hbaseColumnName.getFamily(), hbaseColumnName.getQualifier(), timestamp);
     mHTable.delete(delete);
+    */
   }
 
   // ----------------------------------------------------------------------------------------------
@@ -503,14 +523,15 @@ public final class HBaseKijiTableWriter implements KijiTableWriter {
     Preconditions.checkState(oldState == State.OPEN,
         "Cannot close KijiTableWriter instance %s in state %s.", this, oldState);
     mTable.unregisterLayoutConsumer(mInnerLayoutUpdater);
-    mHTable.close();
+    // TODO: May need a close call here for reference counting of Cassandra tables.
+    //mHTable.close();
     mTable.release();
   }
 
   /** {@inheritDoc} */
   @Override
   public String toString() {
-    return Objects.toStringHelper(HBaseKijiTableWriter.class)
+    return Objects.toStringHelper(CassandraKijiTableWriter.class)
         .add("id", System.identityHashCode(this))
         .add("table", mTable.getURI())
         .add("layout-version", mWriterLayoutCapsule.getLayout().getDesc().getLayoutId())

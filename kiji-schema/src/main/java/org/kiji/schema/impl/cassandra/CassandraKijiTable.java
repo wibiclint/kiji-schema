@@ -17,15 +17,7 @@
  * limitations under the License.
  */
 
-package org.kiji.schema.impl.hbase;
-
-import java.io.IOException;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicLong;
-import java.util.concurrent.atomic.AtomicReference;
+package org.kiji.schema.impl.cassandra;
 
 import com.google.common.base.Objects;
 import com.google.common.base.Preconditions;
@@ -36,39 +28,20 @@ import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hbase.HRegionInfo;
-import org.apache.hadoop.hbase.HRegionLocation;
 import org.apache.hadoop.hbase.TableNotFoundException;
-import org.apache.hadoop.hbase.client.HBaseAdmin;
-import org.apache.hadoop.hbase.client.HTable;
 import org.apache.hadoop.hbase.client.HTableInterface;
-import org.apache.hadoop.hbase.client.HTablePool;
 import org.apache.hadoop.hbase.mapreduce.LoadIncrementalHFiles;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.zookeeper.KeeperException;
-import org.kiji.schema.impl.HTableInterfaceFactory;
-import org.kiji.schema.impl.LayoutCapsule;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import org.kiji.annotations.ApiAudience;
-import org.kiji.schema.EntityId;
-import org.kiji.schema.EntityIdFactory;
-import org.kiji.schema.InternalKijiError;
-import org.kiji.schema.Kiji;
-import org.kiji.schema.KijiIOException;
-import org.kiji.schema.KijiReaderFactory;
-import org.kiji.schema.KijiRegion;
-import org.kiji.schema.KijiTable;
-import org.kiji.schema.KijiTableAnnotator;
-import org.kiji.schema.KijiTableNotFoundException;
-import org.kiji.schema.KijiTableReader;
-import org.kiji.schema.KijiTableWriter;
-import org.kiji.schema.KijiURI;
-import org.kiji.schema.KijiWriterFactory;
-import org.kiji.schema.RuntimeInterruptedException;
+import org.kiji.schema.*;
 import org.kiji.schema.avro.RowKeyFormat;
 import org.kiji.schema.avro.RowKeyFormat2;
-import org.kiji.schema.hbase.KijiManagedHBaseTableName;
+import org.kiji.schema.cassandra.KijiManagedCassandraTableName;
+import org.kiji.schema.impl.LayoutCapsule;
+import org.kiji.schema.impl.LayoutConsumer;
+import org.kiji.schema.impl.Versions;
+import org.kiji.schema.impl.cassandra.CassandraKijiWriterFactory;
 import org.kiji.schema.layout.KijiTableLayout;
 import org.kiji.schema.layout.impl.ColumnNameTranslator;
 import org.kiji.schema.layout.impl.ZooKeeperClient;
@@ -78,26 +51,35 @@ import org.kiji.schema.layout.impl.ZooKeeperMonitor.LayoutUpdateHandler;
 import org.kiji.schema.util.Debug;
 import org.kiji.schema.util.JvmId;
 import org.kiji.schema.util.VersionInfo;
-import org.kiji.schema.impl.LayoutConsumer;
-import org.kiji.schema.impl.Versions;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
- * <p>A KijiTable that exposes the underlying HBase implementation.</p>
+ * <p>A KijiTable that exposes the underlying Cassandra implementation.</p>
  *
  * <p>Within the internal Kiji code, we use this class so that we have
- * access to the HTable interface.  Methods that Kiji clients should
+ * access to the Cassandra interface.  Methods that Kiji clients should
  * have access to should be added to org.kiji.schema.KijiTable.</p>
  */
 @ApiAudience.Private
-public final class HBaseKijiTable implements KijiTable {
-  private static final Logger LOG = LoggerFactory.getLogger(HBaseKijiTable.class);
+public final class CassandraKijiTable implements KijiTable {
+  private static final Logger LOG = LoggerFactory.getLogger(CassandraKijiTable.class);
   private static final Logger CLEANUP_LOG =
-      LoggerFactory.getLogger("cleanup." + HBaseKijiTable.class.getName());
+      LoggerFactory.getLogger("cleanup." + CassandraKijiTable.class.getName());
 
   private static final AtomicLong TABLE_COUNTER = new AtomicLong(0);
 
   /** The kiji instance this table belongs to. */
-  private final HBaseKiji mKiji;
+  private final CassandraKiji mKiji;
 
   /** The name of this table (the Kiji name, not the HBase name). */
   private final String mName;
@@ -118,11 +100,8 @@ public final class HBaseKijiTable implements KijiTable {
   /** String representation of the call stack at the time this object is constructed. */
   private final String mConstructorStack;
 
-  /** HTableInterfaceFactory for creating new HTables associated with this KijiTable. */
-  private final HTableInterfaceFactory mHTableFactory;
-
-  /** Factory for HTableInterface, compatible with the HTablePool. */
-  private final HBaseTableInterfaceFactory mHBaseTableFactory;
+  /** CassandraAdmin object that we use for interacting with the open C* session. */
+  private final CassandraAdmin mAdmin;
 
   /** The factory for EntityIds. */
   private final EntityIdFactory mEntityIdFactory;
@@ -130,8 +109,11 @@ public final class HBaseKijiTable implements KijiTable {
   /** Retain counter. When decreased to 0, the HBase KijiTable may be closed and disposed of. */
   private final AtomicInteger mRetainCount = new AtomicInteger(0);
 
-  /** Configuration object for new HTables. */
+  /** Hadoop configuration object. */
   private final Configuration mConf;
+
+  /** Name of the Cassandra Kiji table. */
+  private final String mCassandraTableName;
 
   /** Writer factory for this table. */
   private final KijiWriterFactory mWriterFactory;
@@ -139,15 +121,9 @@ public final class HBaseKijiTable implements KijiTable {
   /** Reader factory for this table. */
   private final KijiReaderFactory mReaderFactory;
 
-  /** Pool of HTable connections. Safe for concurrent access. */
-  private final HTablePool mHTablePool;
-
-  /** Name of the HBase table backing this Kiji table. */
-  private final String mHBaseTableName;
-
   /** Unique identifier for this KijiTable instance as a live Kiji client. */
   private final String mKijiClientId =
-      String.format("%s;HBaseKijiTable@%s", JvmId.get(), TABLE_COUNTER.getAndIncrement());
+      String.format("%s;CassandraKijiTable@%s", JvmId.get(), TABLE_COUNTER.getAndIncrement());
 
   /** Monitor for the layout of this table. */
   private final ZooKeeperMonitor mLayoutMonitor;
@@ -180,7 +156,7 @@ public final class HBaseKijiTable implements KijiTable {
   /**
    * Set of outstanding layout consumers associated with this table.  Updating the layout of this
    * table requires calling
-   * {@link LayoutConsumer#update(org.kiji.schema.impl.LayoutCapsule)} on all
+   * {@link org.kiji.schema.impl.LayoutConsumer#update(org.kiji.schema.impl.LayoutCapsule)} on all
    * registered consumers.
    */
   private final Set<LayoutConsumer> mLayoutConsumers = new HashSet<LayoutConsumer>();
@@ -194,7 +170,7 @@ public final class HBaseKijiTable implements KijiTable {
    * readers and writers need to be able to override CellSpecs.  Does not include EntityIdFactory
    * because currently there are no valid table layout updates that modify the row key encoding.
    */
-  public static final class HBaseLayoutCapsule implements LayoutCapsule {
+  public static final class CassandraLayoutCapsule implements LayoutCapsule {
     private final KijiTableLayout mLayout;
     private final ColumnNameTranslator mTranslator;
     private final KijiTable mTable;
@@ -206,7 +182,7 @@ public final class HBaseKijiTable implements KijiTable {
      * @param translator the ColumnNameTranslator for the given layout.
      * @param table the KijiTable to which this capsule is associated.
      */
-    private HBaseLayoutCapsule(
+    private CassandraLayoutCapsule(
         final KijiTableLayout layout,
         final ColumnNameTranslator translator,
         final KijiTable table) {
@@ -269,7 +245,7 @@ public final class HBaseKijiTable implements KijiTable {
           newLayoutId, newLayout.getDesc().getLayoutId());
 
       mLayoutCapsule =
-          new HBaseLayoutCapsule(newLayout, new ColumnNameTranslator(newLayout), HBaseKijiTable.this);
+          new CassandraLayoutCapsule(newLayout, new ColumnNameTranslator(newLayout), CassandraKijiTable.this);
 
       // Propagates the new layout to all consumers:
       synchronized (mLayoutConsumers) {
@@ -316,34 +292,36 @@ public final class HBaseKijiTable implements KijiTable {
   }
 
   /**
-   * Construct an opened Kiji table stored in HBase.
+   * Construct an opened Kiji table stored in Cassandra.
    *
    * @param kiji The Kiji instance.
    * @param name The name of the Kiji user-space table to open.
    * @param conf The Hadoop configuration object.
-   * @param htableFactory A factory that creates HTable objects.
+   * @param admin The C* admin object.
    *
-   * @throws IOException On an HBase error.
+   * @throws java.io.IOException On a C* error.
    *     <p> Throws KijiTableNotFoundException if the table does not exist. </p>
    */
-  HBaseKijiTable(
-      HBaseKiji kiji,
+  CassandraKijiTable(
+      CassandraKiji kiji,
       String name,
       Configuration conf,
-      HTableInterfaceFactory htableFactory)
+      CassandraAdmin admin)
       throws IOException {
 
     mConstructorStack = CLEANUP_LOG.isDebugEnabled() ? Debug.getStackTrace() : null;
 
     mKiji = kiji;
     mName = name;
-    mHTableFactory = htableFactory;
+    mAdmin = admin;
     mConf = conf;
     mTableURI = KijiURI.newBuilder(mKiji.getURI()).withTableName(mName).build();
     LOG.debug("Opening Kiji table '{}' with client version '{}'.",
         mTableURI, VersionInfo.getSoftwareVersion());
-    mHBaseTableName =
-        KijiManagedHBaseTableName.getKijiTableName(mTableURI.getInstance(), mName).toString();
+    mCassandraTableName =
+        KijiManagedCassandraTableName.getKijiTableName(
+            mTableURI,
+            mName).toString();
 
     if (!mKiji.getTableNames().contains(mName)) {
       throw new KijiTableNotFoundException(mTableURI);
@@ -368,16 +346,13 @@ public final class HBaseKijiTable implements KijiTable {
           .setSchemaTable(mKiji.getSchemaTable());
       mLayoutMonitor = null;
       mLayoutTracker = null;
-      mLayoutCapsule = new HBaseLayoutCapsule(layout, new ColumnNameTranslator(layout), this);
+      mLayoutCapsule = new CassandraLayoutCapsule(layout, new ColumnNameTranslator(layout), this);
     }
 
-    mWriterFactory = new HBaseKijiWriterFactory(this);
-    mReaderFactory = new HBaseKijiReaderFactory(this);
+    mWriterFactory = new CassandraKijiWriterFactory(this);
+    mReaderFactory = new CassandraKijiReaderFactory(this);
 
     mEntityIdFactory = createEntityIdFactory(mLayoutCapsule);
-
-    mHBaseTableFactory = new HBaseTableInterfaceFactory();
-    mHTablePool = new HTablePool(mConf, Integer.MAX_VALUE, mHBaseTableFactory);
 
     // Retain the Kiji instance only if open succeeds:
     mKiji.retain();
@@ -394,7 +369,7 @@ public final class HBaseKijiTable implements KijiTable {
    *
    * @param zkClient ZooKeeperClient to use.
    * @return a new table layout monitor.
-   * @throws IOException on ZooKeeper error (wrapped KeeperException).
+   * @throws java.io.IOException on ZooKeeper error (wrapped KeeperException).
    */
   private static ZooKeeperMonitor createLayoutMonitor(ZooKeeperClient zkClient)
       throws IOException {
@@ -466,7 +441,7 @@ public final class HBaseKijiTable implements KijiTable {
    * completed a table layout update.  Sends the first update immediately before returning.
    *
    * @param consumer the LayoutConsumer to be registered.
-   * @throws IOException in case of an error updating the LayoutConsumer.
+   * @throws java.io.IOException in case of an error updating the LayoutConsumer.
    */
   public void registerLayoutConsumer(LayoutConsumer consumer) throws IOException {
     final State state = mState.get();
@@ -496,7 +471,7 @@ public final class HBaseKijiTable implements KijiTable {
   /**
    * <p>
    * Get the set of registered layout consumers.  All layout consumers should be updated using
-   * {@link LayoutConsumer#update(org.kiji.schema.impl.LayoutCapsule)} before this
+   * {@link org.kiji.schema.impl.LayoutConsumer#update(org.kiji.schema.impl.LayoutCapsule)} before this
    * table reports that it has successfully update its layout.
    * </p>
    * <p>
@@ -519,14 +494,14 @@ public final class HBaseKijiTable implements KijiTable {
    * This method is package private for testing purposes only.  It should not be used externally.
    *
    * @param layout the new KijiTableLayout with which to update consumers.
-   * @throws IOException in case of an error updating LayoutConsumers.
+   * @throws java.io.IOException in case of an error updating LayoutConsumers.
    */
   void updateLayoutConsumers(KijiTableLayout layout) throws IOException {
     final State state = mState.get();
     Preconditions.checkState(state == State.OPEN,
         "Cannot update layout consumers for a KijiTable in state %s.", state);
     layout.setSchemaTable(mKiji.getSchemaTable());
-    final LayoutCapsule capsule = new HBaseLayoutCapsule(layout, new ColumnNameTranslator(layout), this);
+    final LayoutCapsule capsule = new CassandraLayoutCapsule(layout, new ColumnNameTranslator(layout), this);
     synchronized (mLayoutConsumers) {
       for (LayoutConsumer consumer : mLayoutConsumers) {
         consumer.update(capsule);
@@ -545,14 +520,16 @@ public final class HBaseKijiTable implements KijiTable {
    * </p>
    *
    * @return A new HTable associated with this KijiTable.
-   * @throws IOException in case of an error.
+   * @throws java.io.IOException in case of an error.
    */
+  /*
   public HTableInterface openHTableConnection() throws IOException {
     final State state = mState.get();
     Preconditions.checkState(state == State.OPEN,
         "Cannot open an HTable connection for a KijiTable in state %s.", state);
     return mHTablePool.getTable(mHBaseTableName);
   }
+  */
 
   /**
    * {@inheritDoc}
@@ -590,7 +567,7 @@ public final class HBaseKijiTable implements KijiTable {
     Preconditions.checkState(state == State.OPEN,
         "Cannot open a table reader on a KijiTable in state %s.", state);
     try {
-      return HBaseKijiTableReader.create(this);
+      return CassandraKijiTableReader.create(this);
     } catch (IOException ioe) {
       throw new KijiIOException(ioe);
     }
@@ -603,7 +580,7 @@ public final class HBaseKijiTable implements KijiTable {
     Preconditions.checkState(state == State.OPEN,
         "Cannot open a table writer on a KijiTable in state %s.", state);
     try {
-      return new HBaseKijiTableWriter(this);
+      return new CassandraKijiTableWriter(this);
     } catch (IOException ioe) {
       throw new KijiIOException(ioe);
     }
@@ -628,47 +605,18 @@ public final class HBaseKijiTable implements KijiTable {
   }
 
   /**
-   * Return the regions in this table as a list.
+   * Does not really make sense for a C* implementation.
    *
-   * <p>This method was copied from HFileOutputFormat of 0.90.1-cdh3u0 and modified to
-   * return KijiRegion instead of ImmutableBytesWritable.</p>
-   *
-   * @return An ordered list of the table regions.
-   * @throws IOException on I/O error.
+   * @return An empty list.
+   * @throws java.io.IOException on I/O error.
    */
   @Override
   public List<KijiRegion> getRegions() throws IOException {
     final State state = mState.get();
     Preconditions.checkState(state == State.OPEN,
         "Cannot get the regions for a KijiTable in state %s.", state);
-    final HBaseAdmin hbaseAdmin = ((HBaseKiji) getKiji()).getHBaseAdmin();
-    final HTableInterface htable = mHTableFactory.create(mConf,  mHBaseTableName);
-    try {
-      final List<HRegionInfo> regions = hbaseAdmin.getTableRegions(htable.getTableName());
-      final List<KijiRegion> result = Lists.newArrayList();
-
-      // If we can get the concrete HTable, we can get location information.
-      if (htable instanceof HTable) {
-        LOG.debug("Casting HTableInterface to an HTable.");
-        final HTable concreteHBaseTable = (HTable) htable;
-        for (HRegionInfo region: regions) {
-          List<HRegionLocation> hLocations =
-              concreteHBaseTable.getRegionsInRange(region.getStartKey(), region.getEndKey());
-          result.add(new HBaseKijiRegion(region, hLocations));
-        }
-      } else {
-        LOG.warn("Unable to cast HTableInterface {} to an HTable.  "
-            + "Creating Kiji regions without location info.", getURI());
-        for (HRegionInfo region: regions) {
-          result.add(new HBaseKijiRegion(region));
-        }
-      }
-
-      return result;
-
-    } finally {
-      htable.close();
-    }
+    final List<KijiRegion> regions = new ArrayList<KijiRegion>();
+    return regions;
   }
 
   /** {@inheritDoc} */
@@ -677,13 +625,15 @@ public final class HBaseKijiTable implements KijiTable {
     final State state = mState.get();
     Preconditions.checkState(state == State.OPEN,
         "Cannot get the TableAnnotator for a table in state: %s.", state);
-    return new HBaseKijiTableAnnotator(this);
+    //return new HBaseKijiTableAnnotator(this);
+    // TODO: Implement C* KijiTableAnnotator.
+    return null;
   }
 
   /**
    * Releases the resources used by this table.
    *
-   * @throws IOException on I/O error.
+   * @throws java.io.IOException on I/O error.
    */
   private void closeResources() throws IOException {
     final State oldState = mState.getAndSet(State.CLOSED);
@@ -704,8 +654,9 @@ public final class HBaseKijiTable implements KijiTable {
       mLayoutMonitor.close();
     }
 
-    LOG.debug("Closing HBaseKijiTable '{}'.", mTableURI);
-    mHTablePool.close();
+    // TODO: May need to close something here for C*.
+    //LOG.debug("Closing HBaseKijiTable '{}'.", mTableURI);
+    //mHTablePool.close();
 
     mKiji.release();
     LOG.debug("HBaseKijiTable '{}' closed.", mTableURI);
@@ -774,7 +725,7 @@ public final class HBaseKijiTable implements KijiTable {
   /** {@inheritDoc} */
   @Override
   public String toString() {
-    return Objects.toStringHelper(HBaseKijiTable.class)
+    return Objects.toStringHelper(CassandraKijiTable.class)
         .add("id", System.identityHashCode(this))
         .add("uri", mTableURI)
         .add("retain_counter", mRetainCount.get())
@@ -791,14 +742,14 @@ public final class HBaseKijiTable implements KijiTable {
    * @param kijiTable The Kiji table to downcast to an HBaseKijiTable.
    * @return The given Kiji table as an HBaseKijiTable.
    */
-  public static HBaseKijiTable downcast(KijiTable kijiTable) {
-    if (!(kijiTable instanceof HBaseKijiTable)) {
+  public static CassandraKijiTable downcast(KijiTable kijiTable) {
+    if (!(kijiTable instanceof CassandraKijiTable)) {
       // This should really never happen.  Something is seriously
       // wrong with Kiji code if we get here.
       throw new InternalKijiError(
           "Found a KijiTable object that was not an instance of HBaseKijiTable.");
     }
-    return (HBaseKijiTable) kijiTable;
+    return (CassandraKijiTable) kijiTable;
   }
 
   /**
@@ -819,9 +770,10 @@ public final class HBaseKijiTable implements KijiTable {
    * Loads partitioned HFiles directly into the regions of this Kiji table.
    *
    * @param hfilePath Path of the HFiles to load.
-   * @throws IOException on I/O error.
+   * @throws java.io.IOException on I/O error.
    */
   public void bulkLoad(Path hfilePath) throws IOException {
+    /*
     final LoadIncrementalHFiles loader = createHFileLoader(mConf);
     try {
       // LoadIncrementalHFiles.doBulkLoad() requires an HTable instance, not an HTableInterface:
@@ -852,32 +804,8 @@ public final class HBaseKijiTable implements KijiTable {
     } catch (TableNotFoundException tnfe) {
       throw new InternalKijiError(tnfe);
     }
+    */
+    // TODO: Implement C* version of bulk load (maybe with SSTable?).
   }
 
-  /**
-   * Factory for HTableInterface, implementing the HBase factory interface.
-   *
-   * <p> The only purpose of this factory is to provide HTableInterface for HTablePool. </p>
-   * <p> Wraps a Kiji HTableInterfaceFactory into an HBase HTableInterfaceFactory. </p>
-   * <p> The HBase factory is not allowed to throw I/O Exception, and must wrap them. </p>
-   */
-  private final class HBaseTableInterfaceFactory
-      implements org.apache.hadoop.hbase.client.HTableInterfaceFactory {
-    /** {@inheritDoc} */
-    @Override
-    public HTableInterface createHTableInterface(Configuration conf, byte[] tableName) {
-      try {
-        LOG.debug("Creating new connection for Kiji table {}", mTableURI);
-        return mHTableFactory.create(conf, Bytes.toString(tableName));
-      } catch (IOException ioe) {
-        throw new KijiIOException(ioe);
-      }
-    }
-
-    /** {@inheritDoc} */
-    @Override
-    public void releaseHTableInterface(HTableInterface table) throws IOException {
-      table.close();
-    }
-  }
 }

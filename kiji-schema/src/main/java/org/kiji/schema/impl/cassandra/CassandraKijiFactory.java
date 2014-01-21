@@ -59,7 +59,6 @@ public final class CassandraKijiFactory implements KijiFactory {
   /** {@inheritDoc} */
   @Override
   public Kiji open(KijiURI uri, Configuration conf) throws IOException {
-    final HBaseFactory hbaseFactory = HBaseFactory.Provider.get();
     final Configuration confCopy = new Configuration(conf);
     CassandraFactory cassandraFactory = CassandraFactory.Provider.get();
     CassandraAdminFactory adminFactory = cassandraFactory.getCassandraAdminFactory(uri);
@@ -68,7 +67,7 @@ public final class CassandraKijiFactory implements KijiFactory {
         uri,
         confCopy,
         admin,
-        hbaseFactory.getLockFactory(uri, confCopy));
+        cassandraFactory.getLockFactory(uri, confCopy));
   }
 
   /** {@inheritDoc} */
