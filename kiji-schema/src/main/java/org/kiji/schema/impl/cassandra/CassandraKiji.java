@@ -907,13 +907,16 @@ public final class CassandraKiji implements Kiji {
       );
 
       String cassandraTableLayout = String.format(
-          "(%s blob, %s text, %s bigint, %s blob, PRIMARY KEY (%s, %s));",
+          "(%s blob, %s text, %s bigint, %s blob, PRIMARY KEY (%s, %s, %s)) WITH CLUSTERING ORDER BY (%s ASC, %s DESC);",
           CASSANDRA_KEY_COL,
           CASSANDRA_QUALIFIER_COL,
           CASSANDRA_VERSION_COL,
           CASSANDRA_VALUE_COL,
           CASSANDRA_KEY_COL,
-          CASSANDRA_QUALIFIER_COL
+          CASSANDRA_QUALIFIER_COL,
+          CASSANDRA_VERSION_COL,
+          CASSANDRA_QUALIFIER_COL,
+          CASSANDRA_VERSION_COL
       );
 
       // Create the table!
@@ -925,4 +928,6 @@ public final class CassandraKiji implements Kiji {
     //throw new KijiAlreadyExistsException(String.format("Kiji table '%s' already exists.", tableURI), tableURI);
 
   }
+
+
 }

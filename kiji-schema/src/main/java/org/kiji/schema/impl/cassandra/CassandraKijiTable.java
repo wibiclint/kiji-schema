@@ -807,5 +807,14 @@ public final class CassandraKijiTable implements KijiTable {
     */
     // TODO: Implement C* version of bulk load (maybe with SSTable?).
   }
-
+  /**
+   * Getter method for this instances C* admin.
+   *
+   * Necessary now so that readers and writers can execute CQL commands.
+   *
+   * @return The C* admin object for this table.
+   */
+  public CassandraAdmin getAdmin() {
+    return mAdmin;
+  }
 }

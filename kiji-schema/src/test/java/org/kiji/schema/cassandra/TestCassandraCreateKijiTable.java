@@ -24,12 +24,14 @@ import org.apache.hadoop.hbase.HBaseConfiguration;
 import org.junit.Test;
 import org.kiji.schema.*;
 import org.kiji.schema.KijiDataRequestBuilder.ColumnsDef;
+import org.kiji.schema.impl.cassandra.CassandraKijiRowData;
 import org.kiji.schema.layout.KijiTableLayouts;
 import org.kiji.schema.util.VersionInfo;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.Iterator;
+import java.util.NavigableMap;
 
 import static org.junit.Assert.*;
 
@@ -54,67 +56,36 @@ public class TestCassandraCreateKijiTable extends CassandraKijiClientTest {
 
       kiji.createTable(KijiTableLayouts.getLayout(KijiTableLayouts.SIMPLE));
 
+      final KijiTable table = kiji.openTable("table");
+      try {
+
+        final KijiTableWriter writer = table.openTableWriter();
+        try {
+          writer.put(table.getEntityId("row1"), "family", "column", 0L, "Value at timestamp 0.");
+          writer.put(table.getEntityId("row1"), "family", "column", 1L, "Value at timestamp 1.");
+        } finally {
+          writer.close();
+        }
+
+        final KijiTableReader reader = table.openTableReader();
+        try {
+          final KijiDataRequest dataRequest = KijiDataRequest.builder()
+              .addColumns(ColumnsDef.create().add("family", "column"))
+              .build();
+          final KijiRowData rowData = reader.get(table.getEntityId("row1"), dataRequest);
+          //CassandraKijiRowData crd = (CassandraKijiRowData) rowData;
+          //NavigableMap<String, NavigableMap<String, NavigableMap<Long, byte[]>>> byteMap = crd.getMap();
+          String s = rowData.getValue("family", "column", 0L).toString();
+          assertEquals(s, "Value at timestamp 0.");
+        } finally {
+          reader.close();
+        }
+      } finally {
+        table.release();
+      }
 
     } finally {
       //kiji.release();
     }
   }
-    /*
-      final KijiTable table = kiji.openTable("table");
-      try {
-        {
-          final KijiTableReader reader = table.openTableReader();
-          try {
-            final KijiDataRequest dataRequest = KijiDataRequest.builder()
-                .addColumns(ColumnsDef.create().addFamily("family"))
-                .build();
-            final KijiRowScanner scanner = reader.getScanner(dataRequest);
-            try {
-              assertFalse(scanner.iterator().hasNext());
-            } finally {
-              scanner.close();
-            }
-          } finally {
-            reader.close();
-          }
-        }
-
-        {
-          final KijiTableWriter writer = table.openTableWriter();
-          try {
-            writer.put(table.getEntityId("row1"), "family", "column", "the string value");
-          } finally {
-            writer.close();
-          }
-        }
-
-        {
-          final KijiTableReader reader = table.openTableReader();
-          try {
-            final KijiDataRequest dataRequest = KijiDataRequest.builder()
-                .addColumns(ColumnsDef.create().addFamily("family"))
-                .build();
-            final KijiRowScanner scanner = reader.getScanner(dataRequest);
-            try {
-              final Iterator<KijiRowData> it = scanner.iterator();
-              assertTrue(it.hasNext());
-              KijiRowData row = it.next();
-              assertEquals("the string value",
-                  row.getMostRecentValue("family", "column").toString());
-              assertFalse(it.hasNext());
-            } finally {
-              scanner.close();
-            }
-          } finally {
-            reader.close();
-          }
-        }
-      } finally {
-        table.release();
-      }
-    } finally {
-      kiji.release();
-    }
-  }
-  */
 }

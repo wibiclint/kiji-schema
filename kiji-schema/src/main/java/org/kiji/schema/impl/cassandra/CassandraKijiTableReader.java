@@ -19,6 +19,10 @@
 
 package org.kiji.schema.impl.cassandra;
 
+import com.datastax.driver.core.ResultSet;
+import com.datastax.driver.core.Session;
+import com.datastax.driver.core.Statement;
+import com.datastax.driver.core.PreparedStatement;
 import com.google.common.base.Objects;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Maps;
@@ -31,6 +35,7 @@ import org.apache.hadoop.hbase.client.Scan;
 import org.kiji.annotations.ApiAudience;
 import org.kiji.schema.*;
 import org.kiji.schema.KijiTableReaderBuilder.OnDecoderCacheMiss;
+import org.kiji.schema.cassandra.KijiManagedCassandraTableName;
 import org.kiji.schema.filter.KijiRowFilter;
 import org.kiji.schema.filter.KijiRowFilterApplicator;
 import org.kiji.schema.hbase.HBaseScanOptions;
@@ -47,6 +52,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.nio.ByteBuffer;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -343,27 +349,46 @@ public final class CassandraKijiTableReader implements KijiTableReader {
     final KijiTableLayout tableLayout = capsule.getLayout();
     validateRequestAgainstLayout(dataRequest, tableLayout);
 
-    // Construct an HBase Get to send to the HTable.
-    CassandraDataRequestAdapter hbaseRequestAdapter =
-        new CassandraDataRequestAdapter(dataRequest, capsule.getColumnNameTranslator());
-    /*
-    Get hbaseGet;
-    try {
-      hbaseGet = hbaseRequestAdapter.toGet(entityId, tableLayout);
-    } catch (InvalidLayoutException e) {
-      // The table layout should never be invalid at this point, since we got it from a valid
-      // opened table.  If it is, there's something seriously wrong.
-      throw new InternalKijiError(e);
-    }
-    // Send the HTable Get.
-    final Result result = hbaseGet.hasFamilies() ? doHBaseGet(hbaseGet) : new Result();
+    Session session = mTable.getAdmin().getSession();
 
+    // Keep track of all of the results coming back from Cassandra
+    ArrayList<ResultSet> results = new ArrayList<ResultSet>();
+
+    ByteBuffer entityIdByteBuffer = CassandraByteUtil.bytesToByteBuffer(entityId.getHBaseRowKey());
+
+    // Ignore everything for now except for column families and qualifiers.
+    // For now, to keep things simple, we have a separate request for each column (even if there
+    // are multiple columns of interest in the same column family / C* table).
+    for (KijiDataRequest.Column column : dataRequest.getColumns()) {
+      // Get the Kiji family and qualifier
+      String family = column.getFamily();
+      String qualifier = column.getQualifier();
+
+      // Get the Cassandra table name for this column family
+      String cassandraTableName = KijiManagedCassandraTableName.getKijiTableName(
+          mTable.getURI(),
+          mTable.getName() + "_" + family).toString();
+
+      // Select this column in the C* family for this qualifier.
+      // Eventually, this column will to have escaped quotes around it (to handle upper and lower case)
+      String queryString = String.format(
+          "SELECT * FROM %s WHERE %s=? AND %s=?",
+          cassandraTableName,
+          CassandraKiji.CASSANDRA_KEY_COL,
+          CassandraKiji.CASSANDRA_QUALIFIER_COL
+      );
+
+      PreparedStatement preparedStatement = session.prepare(queryString);
+
+      ResultSet res = session.execute(preparedStatement.bind(entityIdByteBuffer, qualifier));
+
+      results.add(res);
+    }
+
+    // Now we create a KijiRowData from all of these results.
     // Parse the result.
     return new CassandraKijiRowData(
-        mTable, dataRequest, entityId, result, capsule.getCellDecoderProvider());
-        */
-    // TODO: Implement in C*.
-    return null;
+        mTable, dataRequest, entityId, results, capsule.getCellDecoderProvider());
   }
 
   /** {@inheritDoc} */

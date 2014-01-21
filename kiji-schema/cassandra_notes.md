@@ -12,8 +12,10 @@ Open TODOs
 - TODO: Get unit tests working for new C* meta, system, schema tables
 - TODO: Figure out how we want to organize the unit tests for Kiji-specific stuff
 - TODO: Double check that all rows with timestamps are ordered by DESC
-- TODO: I think the methods in `KijiManagedCassandraTableName` could be a little bit more explicit
-  about whether they are returning names in the Kiji namespace or in the C* namespace.
+- TODO: Clean up / expand `KijiManagedCassandraTableName`
+  - Make the methods in `KijiManagedCassandraTableName` more explicit about whether they are
+    returning names in the Kiji namespace or in the C* namespace.
+  - Add a richer set of methods for creating C* table names per Kiji column family
 - TODO: Add super-unstable annotations to this API.  :)
 - TODO: Check for any case-sensitivity issues - The CQL commands that we are using to create and
   manipulate tables may need some kind of quotes or other escaping to maintain upper/lower case.
@@ -599,6 +601,7 @@ New classes and packages
 - `o.k.s.impl.cassandra.CassandraKijiTableWriter`
 - `o.k.s.impl.cassandra.CassandraKijiTableWriter`
 - `o.k.s.impl.cassandra.CassandraDataRequestAdapter`
+- `o.k.s.impl.cassandra.CassandraKijiRowData`
 
 
 How to store Cassandra table layout information?
@@ -677,3 +680,22 @@ Probably easiest to create a new `LayoutCapsule` interface and have the
 `o.k.s.impl.hbase.HBaseKijiTable.LayoutCapsule` and
 `o.k.s.impl.cassandra.CassandraKijiTable.LayoutCapsule` both implement it.  This should be easy,
 just has a bunch of getters in it.
+
+
+Implementing reads
+------------------
+
+Reads are tricky for the C* Kiji because we do not have a 1:1 correspondence between C* tables and
+Kiji tables.  For each Kiji read, we'll need to have one C* read per colum family.  How does this
+change affect the code?  One proposal:
+
+- `CasasndraDataRequestAdapter` creates a list of Cassandra `Statement`s for each `DataRequest`
+  (either a get or a scan)
+- The `CassandraKijiTableReader` or `CassandraRowScanner` issues those statements to a Cassandra
+  `Session` and get back a list of Cassandra `ResultSet`s
+- Combine those result sets into one or more `KijiRowData` instances
+- We need to think a little bit about how to prepare these query statements only once, even across
+  multiple `CassandraDataRequestAdapter` instances.
+- TODO: Need to be sure that we properly handle different column families having qualifiers with the
+  same name
+

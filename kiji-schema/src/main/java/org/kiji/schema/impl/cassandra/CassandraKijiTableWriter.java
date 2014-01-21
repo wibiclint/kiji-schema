@@ -19,6 +19,8 @@
 
 package org.kiji.schema.impl.cassandra;
 
+import com.datastax.driver.core.Session;
+import com.datastax.driver.core.PreparedStatement;
 import com.google.common.base.Objects;
 import com.google.common.base.Preconditions;
 import org.apache.hadoop.hbase.HConstants;
@@ -30,6 +32,7 @@ import org.apache.hadoop.hbase.util.Bytes;
 import org.kiji.annotations.ApiAudience;
 import org.kiji.schema.*;
 import org.kiji.schema.avro.SchemaType;
+import org.kiji.schema.cassandra.KijiManagedCassandraTableName;
 import org.kiji.schema.hbase.HBaseColumnName;
 import org.kiji.schema.impl.DefaultKijiCellEncoderFactory;
 import org.kiji.schema.impl.LayoutConsumer;
@@ -45,6 +48,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.nio.ByteBuffer;
 import java.util.Map;
 import java.util.NavigableMap;
 import java.util.concurrent.atomic.AtomicReference;
@@ -64,6 +68,9 @@ public final class CassandraKijiTableWriter implements KijiTableWriter {
 
   /** The kiji table instance. */
   private final CassandraKijiTable mTable;
+
+  /** C* Admin instance, used for executing CQL commands. */
+  private final CassandraAdmin mAdmin;
 
   /** States of a writer instance. */
   private static enum State {
@@ -193,6 +200,7 @@ public final class CassandraKijiTableWriter implements KijiTableWriter {
     // TODO: Do we need to do something similar here?
     //mCTable = table.openCassandraTableConnection();
     //SchemaPlatformBridge.get().setAutoFlush(mCTable, true);
+    mAdmin = mTable.getAdmin();
 
     // Retain the table only when everything succeeds.
     mTable.retain();
@@ -216,21 +224,47 @@ public final class CassandraKijiTableWriter implements KijiTableWriter {
     Preconditions.checkState(state == State.OPEN,
         "Cannot put cell to KijiTableWriter instance %s in state %s.", this, state);
 
-    /*
-    // TODO: Write actual implementation for writing to C* Kiji table.
-    final KijiColumnName columnName = new KijiColumnName(family, qualifier);
-    final WriterLayoutCapsule capsule = mWriterLayoutCapsule;
-    final HBaseColumnName hbaseColumnName =
-        capsule.getColumnNameTranslator().toHBaseColumnName(columnName);
+    // TODO: Refactor Kiji/C* mapping code to common place.
 
+    // TODO: Implement column name translations (not present now).
+
+    // Encode the value to write into the table as a ByteBuffer for C*.
+    final WriterLayoutCapsule capsule = mWriterLayoutCapsule;
     final KijiCellEncoder cellEncoder =
         capsule.getCellEncoderProvider().getEncoder(family, qualifier);
     final byte[] encoded = cellEncoder.encode(value);
+    final ByteBuffer encodedByteBuffer = CassandraByteUtil.bytesToByteBuffer(encoded);
 
-    final Put put = new Put(entityId.getHBaseRowKey())
-        .add(hbaseColumnName.getFamily(), hbaseColumnName.getQualifier(), timestamp, encoded);
-    mHTable.put(put);
-    */
+    // Encode the EntityId as a ByteBuffer for C*.
+    final ByteBuffer rowKey = CassandraByteUtil.bytesToByteBuffer(entityId.getHBaseRowKey());
+
+    // Get a reference to the full name of the C* table for this column.
+    // TODO: Refactor this name-creation code somewhere cleaner.
+    KijiManagedCassandraTableName cTableName = KijiManagedCassandraTableName.getKijiTableName(
+        mTable.getURI(),
+        mTable.getName() + "_" + family
+    );
+
+
+    // Create the CQL statement to insert data.
+    String queryText = String.format(
+        "INSERT INTO %s (%s, %s, %s, %s) VALUES (?, ?, ?, ?);",
+        cTableName.toString(),
+        CassandraKiji.CASSANDRA_KEY_COL,
+        CassandraKiji.CASSANDRA_QUALIFIER_COL,
+        CassandraKiji.CASSANDRA_VERSION_COL,
+        CassandraKiji.CASSANDRA_VALUE_COL);
+    LOG.info(queryText);
+
+    Session session = mAdmin.getSession();
+
+    PreparedStatement preparedStatement = session.prepare(queryText);
+    session.execute(preparedStatement.bind(
+        rowKey,
+        qualifier,
+        timestamp,
+        encodedByteBuffer
+    ));
   }
 
   // ----------------------------------------------------------------------------------------------
