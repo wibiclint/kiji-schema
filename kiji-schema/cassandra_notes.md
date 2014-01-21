@@ -23,6 +23,7 @@ Open TODOs
       table and keyspace names (want to pass around URIs and not strings).
 - TODO: Do we need to make an interface for MetadataRestorer and then create HBase and C* versions?
   - Could have a static "get" method in KijiMetaTable that can get the appropriate restorer
+- TODO: Add the column name translation business (I've been skipping that for now).
 
 
 Open questions
@@ -45,144 +46,137 @@ Open questions
   (Scala's traits would be perfect for this, since we could make the interfaces into traits and put
   the common code there...)
 - How do we want to implement permissions?
-- Do we want to offer any kind of reduced Kiji functionality for users that have Cassandra set up,
-  but don't have ZooKeeper installed?
+- Currently we have one Cassandra table per Kiji column family.  Is this an issue?
+  - If necessary, we can still perform atomic writes to a Kiji row by using a batch Cassandra
+    statement to perform multiple writes together.
+- Do we need to support a second table layout that better supports scans?  What if I want to scan
+  all of the values of a particular fully-qualified column for all entity IDs?  I'd like to have a
+  different primary key orders (e.g., `PRIMARY KEY (qualifier, key, time)`).
+  - This would also allow us to support scans with start and stop entity IDs.  If we use entity IDs
+    as partition keys, then we cannot implement a scan over an entity ID range (since the order of
+    the rows is not meaningful after the partition keys go through the `RandomPartitioner` or
+    `Murmur3Partitioner`.
 
 
-Note about Java 7
-=================
+Usage notes
+===========
 
 Cassandra 2.x requires JDK 7.  The following error indicates that you are using JDK 6:
 
     java.lang.UnsupportedClassVersionError: org/apache/cassandra/service/EmbeddedCassandraService : Unsupported major.minor version 51.0
 
+To test with a Bento Box, I do the following:
+
+- Symlink the KijiSchema JAR in the BentoBox lib directory to point to my local kiji-schema build
+- I set my KIJI_CLASSPATH to be whatever Maven was using to build KijiSchema (yikes!) using `mvn
+  dependency:build-classpath` to print out the classpath.
 
 
 
 Mapping Kiji to Cassandra
 =========================
 
-Below is an early draft of a way to translate Kiji tables into Cassandra.
+Below we describe the current plan for implementing Kiji tables in Cassandra.
 
 
 Kiji table
 ----------
 
-A Kiji table corresponds to a group of C* tables (previously known as C* "column families"), all of
-which share the same row key.
+A Kiji table corresponds to a set of Cassandra tables.  There is one C* table per Kiji column
+family.
 
 
 Locality groups
 ---------------
 
-For now, we can skip implementing locality groups.  I'm not sure how to implement these later on.
-As far as I can tell, we have pretty good control over how data within a single C* table is
-structured (by using compound primary keys and composite partition keys), but beyond that I am nto
-sure what we can do.
+**OPEN ITEM.**
 
-### Whether to store locality group information in memory or on disk
+We do not currently implement locality groups.  I am not sure how we can support data locality
+between column families later on (although we do have a lot of control over how data is located
+within a table).  Below are details about how we implement (or plan to implement) various features
+of locality groups:
 
-In a talk from the C* Summit EU 2013, one of the speakers [describes how to ensure that Cassandra
-keeps some tables in
-memory](http://www.slideshare.net/planetcassandra/c-summit-eu-2013-playlists-at-spotify-using-cassandra-to-store-version-controlled-objects)
+#### Whether to store locality group information in memory or on disk
+
+In a talk from the C* Summit EU 2013, one of the speakers
+[describes how to ensure that Cassandra keeps some tables in memory]
+(http://www.slideshare.net/planetcassandra/c-summit-eu-2013-playlists-at-spotify-using-cassandra-to-store-version-controlled-objects)
 (see slide 32/37).  The bottom line from his talk was that Cassandra's row cache did not work.
 Maybe this is fixed in Cassandra 2.x.
 
-### Data retention lifetime
+#### Data retention lifetime
 
 In Kiji, we specify TTL at the locality-group level.  CQL allows users to specify a TTL when
 inserting data into a table.  We can allow users of C* Kiji to specify TTL for locality groups as
-they do now and propagate that information down to every insert we perform.
+they do now and propagate that information down to every insert we perform.  We could also support
+more fine-grained TTL specifications (down to the column level).
 
-### Maximum number of versions to keep
+#### Maximum number of versions to keep
 
-I'm not sure of a simple way to implement this in Cassandra.  We could have a counter for every
-fully-qualified column that keeps track of the total number of versions, and, once we have the max
-number of versions for the fully-qualified column, we could delete an older version for every new
-version that we add (in practice we'd probably want to have a threshold for how many stale values we
-leave in the table before we clean up).
+**OPEN ITEM.**
 
-See the section below with CQL for implementing column families for a note about what to do if the
-max number of versions is one.
+Note that supporting a maximum version of one is trivial.  Below in the section on C* table layouts
+we describe how, but in short we modify the primary key specification from:
 
-### Type of compression
+    PRIMARY KEY (key, qualifier, time)
+
+to just:
+
+    PRIMARY KEY (key, qualifier)
+
+This way, only the most-recently-inserted value for a column will exist in the table.
+
+I am not sure of a good way to implement a more flexible maximum number of versions in Cassandra.
+Perhaps we can keep a per-column counter that stores the total number of versions we have and
+whenever it exceeds a certain threshold (e.g., double the number we are supposed to keep) we can do
+a batch delete.
+
+#### Type of compression
 
 CQL allows you to specify `LZ4`, `Snappy`, and `DEFALTE.`  The DataStax CQL documentation has a lot
 of details about the compression options.
 
-### Bloom filter settings
+#### Bloom filter settings
 
 CQL allows you to set the `bloom_filter_fp_chance` property for a table to tune the chance of
 getting a false positive from your bloom filter.
 
 
-Map-type families
------------------
+Column families
+---------------
 
-We can implement map-type families in the same way in C*.  For every family, we have *two* C* tables
-that looks like the following:
+We can implement map- and group-type families with Cassandra tables of this form:
 
-    CREATE TABLE kiji_table_name_column_family_name_qual_time (
-      first_row_key_field text,
-      second_row_key_field int,
+    CREATE TABLE kiji_table_name_column_family_name (
+      key blob,
       qualifier text,
-      time timeuuid,
+      time long,
       value blob,
-      PRIMARY KEY ( (first_row_key_field, second_row_key_field), qualifier, time)
+      PRIMARY KEY (key, qualifier, time)
     ) WITH CLUSTERING ORDER BY (qualifier ASC, time DESC);
 
-    CREATE TABLE kiji_table_name_column_family_name_time_qual (
-      first_row_key_field text,
-      second_row_key_field int,
-      qualifier text,
-      time timeuuid,
-      value blob,
-      PRIMARY KEY ( (first_row_key_field, second_row_key_field), time, qualifier)
-    ) WITH CLUSTERING ORDER BY (qualifier ASC, time DESC);
+If the max number of versions for a locality group is one, then we can modify the primary key
+specification to remove `time`.  By removing the timestamp from the primary key, insertions for a
+given row key and qualifier will always overwrite previous insertions, so we will have only one
+version in the table at any time.
 
-The two tables are identical except for the order of the composite partition keys.  The first table
-allows us to make a data request that selects a range of timestamps for a given qualifier.  The
-second table allows ut o make a data request for the latest version of every qualifier.
+Note in this table structure, we can perform queries where we specify the key and qualifier and a
+range for times, but we cannot perform queries where we specify the key and time and a range for
+qualifiers.  If we want to support the latter type of queries, then we can create a second copy of
+the table for the column family, but change the primary key order:
 
-To begin with, we likely want to implement only one of these tables.  Having two tables like this
-means that we'll have to use batch commands for writes to ensure that the two views of the same
-table stay in-sync.
+    PRIMARY KEY (key, time, qualifier)
 
-Note that this example shows how to use Cassandra's compound row keys.
-
-If the max number of versions for a locality group is one, then we can use a single C* table per
-column family in the locality group, and we can remove the timestamp from the composite partition
-key.  By removing the timestamp from the partition key, insertions for a given row key and qualifier
-will always overwrite previous insertions, so we will have only one version in the table at any
-time.
+The implementation shown above uses a straight `blob` as the entity Id, which means that we can
+reuse all of the current Kiji code for entity IDs.  We could try to do something fancier, like
+storing entity IDs somehow in Cassandra's partition keys, but this would require rewriting more of
+the code (but it would make the databases more comprehensible with non-Kiji C* tools).
 
 
-Group-type families
--------------------
-
-We can likely use the map-type family implementation described above for group-type families.  In an
-ideal world, we would be able to do some optimizations for group-type families such that we add
-dedicated Cassandra table columns for every qualifier in the group-type family.  Doing so would
-allow us to map directly between primitive types in Kiji and Cassandra without using Avro and blobs.
-
-
-Row keys
+Counters
 --------
 
-Currently we limit the fields in row keys to strings, ints, and longs.  We can pretty easily
-implement Kiji row keys by using Cassandra's compound row keys.
-
-### Using null in row keys
-
-I am pretty sure that we cannot do this if we use Cassandra's compound row keys.  I believe that an
-insert has to specify a value for every field in the row key.
-
-
-Kiji cell schemas
------------------
-
-I'd like to not support any of the legacy cell schemas (`INLINE`, `CLASS`) and support only
-`COUNTER` and `AVRO`.
+Cassandra counters must go into their own tables.
 
 
 CQL collections
@@ -201,7 +195,7 @@ Other stuff we may want to expose
 - Compaction strategies
 - Caching
 
-
+---------------------------------------------------------
 
 Week of 2014-01-06
 ==================
@@ -278,28 +272,18 @@ could possibly add a lightweight way of implementing the C* / HBase bridge funct
 or HBase URI and then proceed appropriately).
 
 
-Testing
--------
-
-For now I am using the BentoBox instead of testing with unit tests.  To do so I had to do the
-following:
-
-- Symlink the KijiSchema JAR in the BentoBox lib directory to point to my local kiji-schema build
-- I set my KIJI_CLASSPATH to be whatever Maven was using to build KijiSchema (yikes!) using `mvn
-  dependency:build-classpath` to print out the classpath.
-
 
 Notes on updating system, schema, and meta tables
 -------------------------------------------------
 
-### The system table
+#### The system table
 
 Updating the system table looks pretty straightforward.  We just need to create a table with keys
 and values as blobs and convert between blobs and byte arrays and we can reuse all of the rest of
 the code.
 
 
-### The schema tables
+#### The schema tables
 
 The schema tables, one of which stores schemas by IDs, the other of which stores by hashes, are also
 pretty straightforward and we can reuse almost all of the code.  A few notes:
@@ -313,7 +297,7 @@ pretty straightforward and we can reuse almost all of the code.  A few notes:
   batch block.
 
 
-### The meta table
+#### The meta table
 
 The meta table stores `KijiTableLayout` information for each user table.
 
@@ -325,7 +309,7 @@ records)
 used for beyond "column annotations."
 
 
-### Common notes for all of the tables
+#### Common notes for all of the tables
 
 All three of the tables have the following common methods:
 
@@ -437,8 +421,8 @@ Note that you can run just the C* unit tests at the command line with the comman
 
 
 
-Notes on update the meta table
-------------------------------
+Notes on updating the meta table
+--------------------------------
 
 (I did not finish the meta table updates last week.)
 
@@ -472,7 +456,7 @@ Notes on support for creating C*-backed Kiji tables
 
 Summary of stuff that we'll have to change:
 
-### Table layout descriptions
+#### Table layout descriptions
 
 The current table layout (stored in `TableLayoutDesc` Avro records) has a lot of HBase-specific
 stuff.  We may want to make a separate description for C*-backed Kiji tables.
@@ -483,14 +467,14 @@ between Kiji tables and C* tables is not as straightforward as that between Kiji
 so we may need to make big changes in how we handle the Kiji / C* translation.
 
 
-### Entity ID factory
+#### Entity ID factory
 
 We don't have to do all of the hashing, etc. within Kiji anymore.  We could do so, and just make
 every entity ID a C* blob, but doing so would really reduce the readability of the C* table to
 anyone familiar with C* (and make debugging a lot harder).
 
 
-### Updating table layouts
+#### Updating table layouts
 
 All of the synchronization / update-passing stuff related to updating table layouts, e.g., 
 
@@ -628,7 +612,6 @@ It might be worthwhile copying the `TableMetadata` and associated code from the 
 stripping it down a bit, and just using that.
 
 
-
 Total functionality for C* / Kiji interface
 -------------------------------------------
 
@@ -682,20 +665,89 @@ Probably easiest to create a new `LayoutCapsule` interface and have the
 just has a bunch of getters in it.
 
 
-Implementing reads
-------------------
+Implementing gets
+-----------------
 
 Reads are tricky for the C* Kiji because we do not have a 1:1 correspondence between C* tables and
 Kiji tables.  For each Kiji read, we'll need to have one C* read per colum family.  How does this
 change affect the code?  One proposal:
 
-- `CasasndraDataRequestAdapter` creates a list of Cassandra `Statement`s for each `DataRequest`
-  (either a get or a scan)
-- The `CassandraKijiTableReader` or `CassandraRowScanner` issues those statements to a Cassandra
-  `Session` and get back a list of Cassandra `ResultSet`s
-- Combine those result sets into one or more `KijiRowData` instances
+- `CassandraDataRequestAdapter` creates a list of Cassandra `Statement`s for each `DataRequest`
+- The `CassandraKijiTableReader` issues those statements to a Cassandra `Session` and get back a
+  list of Cassandra `ResultSet`s
+- Combine those result sets into a `KijiRowData` instance
 - We need to think a little bit about how to prepare these query statements only once, even across
   multiple `CassandraDataRequestAdapter` instances.
-- TODO: Need to be sure that we properly handle different column families having qualifiers with the
-  same name
+
+If everything fits into memory, then this works out great.  But what do we do about paging?
+
+We will get back on DataStax `ResultSet` per query.  We can think of each `ResultSet` as being
+potentially almost bottomless, since we could be querying a column family with lots and lots and
+lots of qualifiers and versions.
+
+If we are not using paging, then we can assume that everything fits into main memory and so we can
+go through every `Row` in every `ResultSet` for a given get request and use the results to fully
+populate the big nested `NavigableMap` in `KijiRowData`.
+
+
+Implementing a row scanner
+--------------------------
+
+A row scanner provides an interable interface to a multi-row read from a Kiji table.  The results of
+the multi-row read are *not* guaranteed to fit into main memory (that is kind of the point of the
+row scanner!).
+
+To implement a row scanner, we need to know that all of the `Row` objects in all of the `ResultSet`
+objects that we get back from all of the various queries we perform on a C* table are grouped by
+entity ID -- this is fine because our entity ID is our Cassandra partiion key.  The algorithm for a
+row scanner therefore looks something like this:
+
+    Perform a bunch of Cassandra queries
+    Get back on ResultSet object per query (per fully-qualified column or per column family)
+    do:
+      create an empty KijiRowData
+      eid = the earliest entity ID from all of the ResultSet objects
+      for (each resultSet in all ResultSets)
+        add all data for eid to the current KijiRowData
+        (stop when you get to a new eid)
+      emit the KijiRowData
+    while we still have data left in the ResultSet objects
+
+The tricky part is that we need a way to tell when we have gotten to the end of the data for a given
+entity ID for a `ResultSet`, likely when we are using the `ResultSet` as an `Iterator<Row>`.  To
+find that we've gotten the last piece of data for an entity ID, we'll have to read a piece of data
+with the new entity ID, which means we will have pulled that data off of the iterator.  So we'll
+need to know how to save the first `Row` of data for each `ResultSet` for each entity ID.  (Note:
+Google's `common.collect` has a `PeekingIterator`, awesome!!!!!)
+
+We can share the code that reads through a bunch of `ResultSet`s while the eids are the same and
+creates a `KijiRowData` instance between the functions for gets and row scanners.  We could probably
+even implement a get under the hood with a row scanner, since the underlying implementations won't
+be very different now.
+
+What if you want to mix paging with a row scanner?  What if a user is going through every row in his
+table, and fetching data from one column family with a small amount of information, and another with
+a potentially HUGE amount of information.  He uses paging on the second family, and, depending on
+the contents of the first family, may or may not wish to page through all of the data in the second.
+Can we supporting this use model without paging in the background through *all* of the data for the
+second family?  We can certainly support this functionality if we do our own manual paging, instead
+of using the paging that the DataStax driver allows.
+
+
+
+DataStax driver paging
+----------------------
+
+Paging of results from the DataStax Java driver should happen automatically.  At most, we should
+have to set the fetch size by using the `setFetchSize` method in class `Statement`.  There are also
+methods like `getAvailableWithoutFetching`, `isFullyFetched`, and `fetchMoreResults` that we can use
+to have more manual control over paging.
+
+There is a little bit more information in
+[this blog post](http://www.datastax.com/dev/blog/client-side-improvements-in-cassandra-2-0)
+about Cassandra 2.0.
+
+The API documentation for `fetchMoreResults` also has some example code (`fetchMoreResults` can be
+used to prefetch more data).
+
 

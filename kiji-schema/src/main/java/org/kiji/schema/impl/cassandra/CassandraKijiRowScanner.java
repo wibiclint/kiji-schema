@@ -19,21 +19,23 @@
 
 package org.kiji.schema.impl.cassandra;
 
+import com.datastax.driver.core.PreparedStatement;
+import com.datastax.driver.core.ResultSet;
 import com.datastax.driver.core.Row;
 import com.datastax.driver.core.Session;
 import com.google.common.base.Preconditions;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.kiji.annotations.ApiAudience;
 import org.kiji.schema.*;
+import org.kiji.schema.cassandra.KijiManagedCassandraTableName;
 import org.kiji.schema.layout.impl.CellDecoderProvider;
 import org.kiji.schema.util.Debug;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
-import java.util.Arrays;
-import java.util.Iterator;
-import java.util.NoSuchElementException;
+import java.nio.ByteBuffer;
+import java.util.*;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
@@ -73,8 +75,9 @@ public class CassandraKijiRowScanner implements KijiRowScanner {
   /** For debugging finalize(). */
   private String mConstructorStack = "";
 
-  /** Iterator over results coming back from Cassandra. */
-  private Iterator<Row> mRowIterator;
+  /** The KijiRowIterator backing this scanner. */
+  //private final KijiRowIterator kijiRowIterator;
+
 
   // -----------------------------------------------------------------------------------------------
 
@@ -168,12 +171,15 @@ public class CassandraKijiRowScanner implements KijiRowScanner {
     mCellDecoderProvider = options.getCellDecoderProvider();
     mEntityIdFactory = EntityIdFactory.getFactory(mTable.getLayout());
 
-    // TODO: Actually fetch the results from C*.
-    //mRowIterator =
-
     final State oldState = mState.getAndSet(State.OPEN);
     Preconditions.checkState(oldState == State.UNINITIALIZED,
         "Cannot open KijiRowScanner instance in state %s.", oldState);
+
+    // Turn the data request into a bunch of Cassandra queries.
+    // Get back a set of ResultSet objects, one per C* query.
+    //List<ResultSet> resultSets = queryCassandraTables();
+
+    // Use the ResultSet objects to create a KijiRowIterator.
   }
 
   /** {@inheritDoc} */

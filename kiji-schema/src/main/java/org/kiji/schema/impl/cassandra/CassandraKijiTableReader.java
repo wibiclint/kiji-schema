@@ -349,41 +349,10 @@ public final class CassandraKijiTableReader implements KijiTableReader {
     final KijiTableLayout tableLayout = capsule.getLayout();
     validateRequestAgainstLayout(dataRequest, tableLayout);
 
-    Session session = mTable.getAdmin().getSession();
+    // TODO: Insert column-name translator here.
+    CassandraDataRequestAdapter adapter = new CassandraDataRequestAdapter(dataRequest, null);
 
-    // Keep track of all of the results coming back from Cassandra
-    ArrayList<ResultSet> results = new ArrayList<ResultSet>();
-
-    ByteBuffer entityIdByteBuffer = CassandraByteUtil.bytesToByteBuffer(entityId.getHBaseRowKey());
-
-    // Ignore everything for now except for column families and qualifiers.
-    // For now, to keep things simple, we have a separate request for each column (even if there
-    // are multiple columns of interest in the same column family / C* table).
-    for (KijiDataRequest.Column column : dataRequest.getColumns()) {
-      // Get the Kiji family and qualifier
-      String family = column.getFamily();
-      String qualifier = column.getQualifier();
-
-      // Get the Cassandra table name for this column family
-      String cassandraTableName = KijiManagedCassandraTableName.getKijiTableName(
-          mTable.getURI(),
-          mTable.getName() + "_" + family).toString();
-
-      // Select this column in the C* family for this qualifier.
-      // Eventually, this column will to have escaped quotes around it (to handle upper and lower case)
-      String queryString = String.format(
-          "SELECT * FROM %s WHERE %s=? AND %s=?",
-          cassandraTableName,
-          CassandraKiji.CASSANDRA_KEY_COL,
-          CassandraKiji.CASSANDRA_QUALIFIER_COL
-      );
-
-      PreparedStatement preparedStatement = session.prepare(queryString);
-
-      ResultSet res = session.execute(preparedStatement.bind(entityIdByteBuffer, qualifier));
-
-      results.add(res);
-    }
+    List<ResultSet> results = adapter.doGet(mTable, entityId, tableLayout);
 
     // Now we create a KijiRowData from all of these results.
     // Parse the result.
