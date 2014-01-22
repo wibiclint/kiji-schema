@@ -72,11 +72,25 @@ public class TestCassandraCreateKijiTable extends CassandraKijiClientTest {
           final KijiDataRequest dataRequest = KijiDataRequest.builder()
               .addColumns(ColumnsDef.create().add("family", "column"))
               .build();
+
+          // Try this as a get.
           final KijiRowData rowData = reader.get(table.getEntityId("row1"), dataRequest);
-          //CassandraKijiRowData crd = (CassandraKijiRowData) rowData;
-          //NavigableMap<String, NavigableMap<String, NavigableMap<Long, byte[]>>> byteMap = crd.getMap();
           String s = rowData.getValue("family", "column", 0L).toString();
           assertEquals(s, "Value at timestamp 0.");
+
+          // Try this as a scan.
+          final KijiRowScanner rowScanner = reader.getScanner(dataRequest);
+
+          // Should be just one row, with two versions.
+          int rowCounter = 0;
+          for (KijiRowData kijiRowData : rowScanner) {
+            LOG.info("Read from scanner! " + kijiRowData.toString());
+            // Should see two versions for qualifier "column".
+            assertEquals("Value at timestamp 0.", kijiRowData.getValue("family", "column", 0L).toString());
+            assertEquals("Value at timestamp 1.", kijiRowData.getValue("family", "column", 1L).toString());
+            rowCounter++;
+          }
+          assertEquals(1, rowCounter);
         } finally {
           reader.close();
         }

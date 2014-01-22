@@ -62,7 +62,7 @@ public final class CassandraKijiRowData implements KijiRowData {
   private final KijiTableLayout mTableLayout;
 
   /** The Cassandra result providing the data of this object. */
-  private Collection<ResultSet> mResults;
+  private Collection<Row> mRows;
 
   /** Provider for cell decoders. */
   private final CellDecoderProvider mDecoderProvider;
@@ -101,7 +101,7 @@ public final class CassandraKijiRowData implements KijiRowData {
    * @param table Kiji table containing this row.
    * @param dataRequest Data requested for this row.
    * @param entityId This row entity ID.
-   * @param results Cassandra result containing the requested cells (and potentially more).
+   * @param rows Cassandra result containing the requested cells (and potentially more).
    * @param decoderProvider Provider for cell decoders.
    *     Null means the row creates its own provider for cell decoders (not recommended).
    * @throws java.io.IOException on I/O error.
@@ -110,14 +110,14 @@ public final class CassandraKijiRowData implements KijiRowData {
       CassandraKijiTable table,
       KijiDataRequest dataRequest,
       EntityId entityId,
-      Collection<ResultSet> results,
+      Collection<Row> rows,
       CellDecoderProvider decoderProvider)
       throws IOException {
     mTable = table;
     mTableLayout = table.getLayout();
     mDataRequest = dataRequest;
     mEntityId = entityId;
-    mResults = results;
+    mRows = rows;
     mDecoderProvider = (decoderProvider != null) ? decoderProvider : createCellProvider(table);
   }
 
@@ -193,50 +193,48 @@ public final class CassandraKijiRowData implements KijiRowData {
     String tablePrefix = "table_" + kijiTableName + "_";
 
     // Go through every column in the result set and add the data to the filtered map.
-    for (ResultSet resultSet : mResults) {
+    for (Row row : mRows) {
       // Get the name of the Cassandra table (Kiji column family) for this result.
-      String cassandraTableName = resultSet.getColumnDefinitions().getTable(0);
+      String cassandraTableName = row.getColumnDefinitions().getTable(0);
       LOG.info("C* table name = " + cassandraTableName);
 
       assert(cassandraTableName.startsWith(tablePrefix)) : cassandraTableName;
       String family = cassandraTableName.substring(tablePrefix.length());
       LOG.info("Column family = " + family);
 
-      for (Row row : resultSet.all()) {
-        // Get the Cassandra key (entity Id), qualifier, timestamp, and value.
-        ByteBuffer eidByteBuffer = row.getBytes(CassandraKiji.CASSANDRA_KEY_COL);
-        String qualifier = row.getString(CassandraKiji.CASSANDRA_QUALIFIER_COL);
-        Long timestamp = row.getLong(CassandraKiji.CASSANDRA_VERSION_COL);
-        ByteBuffer value = row.getBytes(CassandraKiji.CASSANDRA_VALUE_COL);
+      // Get the Cassandra key (entity Id), qualifier, timestamp, and value.
+      ByteBuffer eidByteBuffer = row.getBytes(CassandraKiji.CASSANDRA_KEY_COL);
+      String qualifier = row.getString(CassandraKiji.CASSANDRA_QUALIFIER_COL);
+      Long timestamp = row.getLong(CassandraKiji.CASSANDRA_VERSION_COL);
+      ByteBuffer value = row.getBytes(CassandraKiji.CASSANDRA_VALUE_COL);
 
-        LOG.info("Got back data from table for qualifier " + qualifier + " and timestamp " + timestamp);
+      LOG.info("Got back data from table for qualifier " + qualifier + " and timestamp " + timestamp);
 
-        // Insert this data into the map.
+      // Insert this data into the map.
 
-        // Get a reference to the map for the family.
-        NavigableMap<String, NavigableMap<Long, byte[]>> familyMap;
-        if (mFilteredMap.containsKey(family)) {
-          familyMap = mFilteredMap.get(family);
-        } else {
-          familyMap = new TreeMap<String, NavigableMap<Long, byte[]>>();
-          mFilteredMap.put(family, familyMap);
-        }
-
-        // Get a reference to the map for the qualifier.
-        NavigableMap<Long, byte[]> qualifierMap;
-        if (familyMap.containsKey(qualifier)) {
-          qualifierMap = familyMap.get(qualifier);
-        } else {
-          qualifierMap = new TreeMap<Long, byte[]>();
-          familyMap.put(qualifier, qualifierMap);
-        }
-
-        // Should not already have an entry for this timestamp!
-        assert(!qualifierMap.containsKey(timestamp));
-
-        // Finally insert the data into the map!
-        qualifierMap.put(timestamp, CassandraByteUtil.byteBuffertoBytes(value));
+      // Get a reference to the map for the family.
+      NavigableMap<String, NavigableMap<Long, byte[]>> familyMap;
+      if (mFilteredMap.containsKey(family)) {
+        familyMap = mFilteredMap.get(family);
+      } else {
+        familyMap = new TreeMap<String, NavigableMap<Long, byte[]>>();
+        mFilteredMap.put(family, familyMap);
       }
+
+      // Get a reference to the map for the qualifier.
+      NavigableMap<Long, byte[]> qualifierMap;
+      if (familyMap.containsKey(qualifier)) {
+        qualifierMap = familyMap.get(qualifier);
+      } else {
+        qualifierMap = new TreeMap<Long, byte[]>();
+        familyMap.put(qualifier, qualifierMap);
+      }
+
+      // Should not already have an entry for this timestamp!
+      assert(!qualifierMap.containsKey(timestamp));
+
+      // Finally insert the data into the map!
+      qualifierMap.put(timestamp, CassandraByteUtil.byteBuffertoBytes(value));
     }
     return mFilteredMap;
   }

@@ -56,6 +56,10 @@ Open questions
     as partition keys, then we cannot implement a scan over an entity ID range (since the order of
     the rows is not meaningful after the partition keys go through the `RandomPartitioner` or
     `Murmur3Partitioner`.
+- The current Cassandra implementation of `KijiRowScanner` will break if some column families have
+  no data for some entity IDs.  I'm not sure how to support row scanning if some column families
+  have no data for a given entity ID *without* being able to make any assumptions about the entity
+  ID ordering for results.
 
 
 Usage notes

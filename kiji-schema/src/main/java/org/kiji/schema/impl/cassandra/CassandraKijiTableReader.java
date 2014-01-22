@@ -19,10 +19,7 @@
 
 package org.kiji.schema.impl.cassandra;
 
-import com.datastax.driver.core.ResultSet;
-import com.datastax.driver.core.Session;
-import com.datastax.driver.core.Statement;
-import com.datastax.driver.core.PreparedStatement;
+import com.datastax.driver.core.*;
 import com.google.common.base.Objects;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Maps;
@@ -354,10 +351,18 @@ public final class CassandraKijiTableReader implements KijiTableReader {
 
     List<ResultSet> results = adapter.doGet(mTable, entityId, tableLayout);
 
+    HashSet<Row> allRows = new HashSet<Row>();
+
+    for (ResultSet res : results) {
+      for (Row row : res.all()) {
+        allRows.add(row);
+      }
+    }
+
     // Now we create a KijiRowData from all of these results.
     // Parse the result.
     return new CassandraKijiRowData(
-        mTable, dataRequest, entityId, results, capsule.getCellDecoderProvider());
+        mTable, dataRequest, entityId, allRows, capsule.getCellDecoderProvider());
   }
 
   /** {@inheritDoc} */
@@ -413,49 +418,19 @@ public final class CassandraKijiTableReader implements KijiTableReader {
     Preconditions.checkState(state == State.OPEN,
         "Cannot get scanner from KijiTableReader instance %s in state %s.", this, state);
 
-    /*
-    try {
-      EntityId startRow = kijiScannerOptions.getStartRow();
-      EntityId stopRow = kijiScannerOptions.getStopRow();
-      KijiRowFilter rowFilter = kijiScannerOptions.getKijiRowFilter();
-      HBaseScanOptions scanOptions = kijiScannerOptions.getHBaseScanOptions();
+    final ReaderLayoutCapsule capsule = mReaderLayoutCapsule;
+    // Make sure the request validates against the layout of the table.
+    final KijiTableLayout tableLayout = capsule.getLayout();
+    validateRequestAgainstLayout(dataRequest, tableLayout);
 
-      final ReaderLayoutCapsule capsule = mReaderLayoutCapsule;
-      final HBaseDataRequestAdapter dataRequestAdapter =
-          new HBaseDataRequestAdapter(dataRequest, capsule.getColumnNameTranslator());
-      final KijiTableLayout tableLayout = capsule.getLayout();
-      validateRequestAgainstLayout(dataRequest, tableLayout);
-      final Scan scan = dataRequestAdapter.toScan(tableLayout, scanOptions);
+    // TODO: Insert column-name translator here.
+    CassandraDataRequestAdapter adapter = new CassandraDataRequestAdapter(dataRequest, null);
 
-      if (null != startRow) {
-        scan.setStartRow(startRow.getHBaseRowKey());
-      }
-      if (null != stopRow) {
-        scan.setStopRow(stopRow.getHBaseRowKey());
-      }
-      scan.setCaching(kijiScannerOptions.getRowCaching());
+    List<ResultSet> results = adapter.doScan(mTable, tableLayout, kijiScannerOptions);
 
-      if (null != rowFilter) {
-        final KijiRowFilterApplicator applicator = KijiRowFilterApplicator.create(
-            rowFilter, tableLayout, mTable.getKiji().getSchemaTable());
-        applicator.applyTo(scan);
-      }
-
-      return new CassandraKijiRowScanner(new CassandraKijiRowScanner.Options()
-          .withDataRequest(dataRequest)
-          .withTable(mTable)
-          .withScan(scan)
-          .withCellDecoderProvider(capsule.getCellDecoderProvider())
-          .withReopenScannerOnTimeout(kijiScannerOptions.getReopenScannerOnTimeout()));
-    } catch (InvalidLayoutException e) {
-      // The table layout should never be invalid at this point, since we got it from a valid
-      // opened table.  If it is, there's something seriously wrong.
-      throw new InternalKijiError(e);
-    }
-    */
-
-    // TODO: Implement in C*.
-    return null;
+    // Now we create a KijiRowData from all of these results.
+    // Parse the result.
+    return new CassandraKijiRowScanner(mTable, dataRequest, capsule.getCellDecoderProvider(), results);
   }
 
   /** {@inheritDoc} */

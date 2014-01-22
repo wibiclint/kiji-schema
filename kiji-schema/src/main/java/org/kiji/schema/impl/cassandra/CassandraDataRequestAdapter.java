@@ -106,12 +106,21 @@ public class CassandraDataRequestAdapter {
       KijiTableLayout kijiTableLayout
   ) throws IOException {
 
+    // TODO: Refactor this method to get rid of "if entityID == null" blocks.
+
+    boolean bIsScan = (null == entityId);
+
     Session session = table.getAdmin().getSession();
 
     // Keep track of all of the results coming back from Cassandra
     ArrayList<ResultSet> results = new ArrayList<ResultSet>();
 
-    ByteBuffer entityIdByteBuffer = CassandraByteUtil.bytesToByteBuffer(entityId.getHBaseRowKey());
+    ByteBuffer entityIdByteBuffer;
+    if (bIsScan) {
+      entityIdByteBuffer = null;
+    } else {
+      entityIdByteBuffer = CassandraByteUtil.bytesToByteBuffer(entityId.getHBaseRowKey());
+    }
 
     // Ignore everything for now except for column families and qualifiers.
     // For now, to keep things simple, we have a separate request for each column (even if there
@@ -130,19 +139,22 @@ public class CassandraDataRequestAdapter {
       // (Right now a data request that asks for "info:foo" and "info:bar" would trigger two
       // separate session.execute(statement) commands.
 
-      if (null == entityId) {
+      if (bIsScan) {
         // Select this column in the C* family for this qualifier.
         // Eventually, this column will to have escaped quotes around it (to handle upper and lower case)
         String queryString = String.format(
-            "SELECT * FROM %s WHERE %s=%s ALLOW FILTERING",
+            "SELECT * FROM %s WHERE %s=? ALLOW FILTERING",
             cassandraTableName,
-            CassandraKiji.CASSANDRA_QUALIFIER_COL,
-            qualifier
+            CassandraKiji.CASSANDRA_QUALIFIER_COL
         );
-        ResultSet res = session.execute(queryString);
+        LOG.info("Preparing query string " + queryString);
+
+        PreparedStatement preparedStatement = session.prepare(queryString);
+        ResultSet res = session.execute(preparedStatement.bind(qualifier));
         results.add(res);
 
       } else {
+        assert(entityId != null);
 
         // Select this column in the C* family for this qualifier.
         // Eventually, this column will to have escaped quotes around it (to handle upper and lower case)
@@ -152,11 +164,10 @@ public class CassandraDataRequestAdapter {
             CassandraKiji.CASSANDRA_KEY_COL,
             CassandraKiji.CASSANDRA_QUALIFIER_COL
         );
+        LOG.info("Preparing query string " + queryString);
 
         PreparedStatement preparedStatement = session.prepare(queryString);
-
         ResultSet res = session.execute(preparedStatement.bind(entityIdByteBuffer, qualifier));
-
         results.add(res);
       }
     }

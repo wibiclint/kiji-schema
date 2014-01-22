@@ -19,11 +19,11 @@
 
 package org.kiji.schema.impl.cassandra;
 
-import com.datastax.driver.core.PreparedStatement;
 import com.datastax.driver.core.ResultSet;
 import com.datastax.driver.core.Row;
-import com.datastax.driver.core.Session;
 import com.google.common.base.Preconditions;
+import com.google.common.collect.PeekingIterator;
+import com.google.common.collect.Iterators;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.kiji.annotations.ApiAudience;
 import org.kiji.schema.*;
@@ -75,117 +75,55 @@ public class CassandraKijiRowScanner implements KijiRowScanner {
   /** For debugging finalize(). */
   private String mConstructorStack = "";
 
-  /** The KijiRowIterator backing this scanner. */
-  //private final KijiRowIterator kijiRowIterator;
+  /** List of results returned from C* queries. */
+  private List<PeekingIterator<Row>> mRowIterators;
 
-
-  // -----------------------------------------------------------------------------------------------
-
-  /**
-   * A class to encapsulate the various options the CassandraKijiRowScanner constructor requires.
-   */
-  public static class Options {
-    private KijiDataRequest mDataRequest;
-    private CassandraKijiTable mTable;
-    private CellDecoderProvider mCellDecoderProvider;
-
-    /**
-     * Sets the data request used to generate the KijiRowScanner.
-     *
-     * @param dataRequest A data request.
-     * @return This options instance.
-     */
-    public Options withDataRequest(KijiDataRequest dataRequest) {
-      mDataRequest = dataRequest;
-      return this;
-    }
-
-    /**
-     * Sets the table being scanned.
-     *
-     * @param table The table being scanned.
-     * @return This options instance.
-     */
-    public Options withTable(CassandraKijiTable table) {
-      mTable = table;
-      return this;
-    }
-
-    /**
-     * Sets a provider for cell decoders.
-     *
-     * @param cellDecoderProvider Provider for cell decoders.
-     * @return This options instance.
-     */
-    public Options withCellDecoderProvider(CellDecoderProvider cellDecoderProvider) {
-      mCellDecoderProvider = cellDecoderProvider;
-      return this;
-    }
-
-    /**
-     * Gets the data request.
-     *
-     * @return The data request.
-     */
-    public KijiDataRequest getDataRequest() {
-      return mDataRequest;
-    }
-
-    /**
-     * Gets the table being scanned.
-     *
-     * @return The Kiji table.
-     */
-    public CassandraKijiTable getTable() {
-      return mTable;
-    }
-
-    /**
-     * Gets the provider for cell decoders.
-     *
-     * @return the provider for cell decoders.
-     */
-    public CellDecoderProvider getCellDecoderProvider() {
-      return mCellDecoderProvider;
-    }
-
-  }
-
-  // -----------------------------------------------------------------------------------------------
+  KijiRowData mNextRow;
 
   /**
-   * Creates a new <code>KijiRowScanner</code> instance.
    *
-   * @param options The options for this scanner.
-   * @throws java.io.IOException on I/O error.
+   * @param table
+   * @param dataRequest
+   * @param cellDecoderProvider
+   * @param resultSets
+   * @throws IOException
    */
-  public CassandraKijiRowScanner(Options options) throws IOException {
+  public CassandraKijiRowScanner(
+      CassandraKijiTable table,
+      KijiDataRequest dataRequest,
+      CellDecoderProvider cellDecoderProvider,
+      List<ResultSet> resultSets
+    ) throws IOException {
+
     if (CLEANUP_LOG.isDebugEnabled()) {
       mConstructorStack = Debug.getStackTrace();
     }
 
-    mDataRequest = options.getDataRequest();
-    mTable = options.getTable();
+    mDataRequest = dataRequest;
+    mTable = table;
     mAdmin = mTable.getAdmin();
-
-    mCellDecoderProvider = options.getCellDecoderProvider();
+    mCellDecoderProvider = cellDecoderProvider;
     mEntityIdFactory = EntityIdFactory.getFactory(mTable.getLayout());
 
     final State oldState = mState.getAndSet(State.OPEN);
     Preconditions.checkState(oldState == State.UNINITIALIZED,
         "Cannot open KijiRowScanner instance in state %s.", oldState);
 
-    // Turn the data request into a bunch of Cassandra queries.
-    // Get back a set of ResultSet objects, one per C* query.
-    //List<ResultSet> resultSets = queryCassandraTables();
+    // Create the row iterators from the C* results.
+    mRowIterators = new ArrayList<PeekingIterator<Row>>();
 
-    // Use the ResultSet objects to create a KijiRowIterator.
+    for (ResultSet resultSet : resultSets) {
+      Iterator<Row> rowIterator = resultSet.iterator();
+      mRowIterators.add(Iterators.peekingIterator(rowIterator));
+    }
+
+    mNextRow = getNextRow();
   }
 
   /** {@inheritDoc} */
   @Override
-  public KijiRowIterator iterator() {
-    return new KijiRowIterator();
+  public CassandraKijiRowIterator iterator() {
+    return new CassandraKijiRowIterator();
   }
 
   /** {@inheritDoc} */
@@ -213,47 +151,105 @@ public class CassandraKijiRowScanner implements KijiRowScanner {
     super.finalize();
   }
 
+  /**
+   * Get the a KijiRowData for the next row.  If we are out of data, then return null.
+   * @return The next KijiRowData for this scanner, or null if we are out of data.
+   */
+  private KijiRowData getNextRow() {
+    // TODO: Support some columns not having any data for some entity IDs.
+    // TODO: Keep a set of already-seen entity IDs to make sure that we don't hit one twice (sanity check).
+    // (E-mail thread started with Joe about this.)
+
+    LOG.info("Getting next row for CassandraKijiRowScanner.");
+
+    ByteBuffer currentEntityIdBlob = null;
+
+    // Make sure that all of the current Row iterators have the same entity ID at their heads.
+    for (PeekingIterator<Row> iterator : mRowIterators) {
+      Row row = iterator.peek();
+
+      // No more data for this iterator.
+      if (row == null) {
+        continue;
+      }
+
+      ByteBuffer entityIdBlob = row.getBytes(CassandraKiji.CASSANDRA_KEY_COL);
+      if (null == currentEntityIdBlob) {
+        currentEntityIdBlob = entityIdBlob;
+      } else {
+        assert(currentEntityIdBlob.equals(entityIdBlob)) :
+            "No support yet for column families missing data for a given entity ID during a scan.";
+      }
+    }
+
+    if (null == currentEntityIdBlob) {
+      LOG.info("No more data, returning null for next value.");
+      // No more data anywhere!
+      return null;
+    }
+
+
+    // Get a big set of Row objects for the given entity ID.
+    HashSet<Row> rowsThisEntityId = new HashSet<Row>();
+
+    LOG.info("Still data left for another row!");
+    assert (null != currentEntityIdBlob);
+
+    for (PeekingIterator<Row> iterator : mRowIterators) {
+
+      // Add all of the rows for this iterator until the entity ID changes.
+      while (
+          iterator.peek() != null &&
+          currentEntityIdBlob.equals(iterator.peek().getBytes(CassandraKiji.CASSANDRA_KEY_COL))
+      ) {
+        Row row = iterator.next();
+        // If this assertion fails, something is screwy with the peeking iterator.
+        assert(row.getBytes(CassandraKiji.CASSANDRA_KEY_COL).equals(currentEntityIdBlob));
+        rowsThisEntityId.add(row);
+      }
+    }
+
+    // Actually create the entity ID from the ByteBuffer.
+    byte[] eidBytes = CassandraByteUtil.byteBuffertoBytes(currentEntityIdBlob);
+    EntityId eid = mEntityIdFactory.getEntityIdFromHBaseRowKey(eidBytes);
+
+    // Now create a KijiRowData with all of these rows.
+    try {
+      return new CassandraKijiRowData(mTable, mDataRequest, eid, rowsThisEntityId, mCellDecoderProvider);
+    } catch (IOException ioe) {
+      // TODO: I'm not sure how to handle an exception here...
+      System.err.println("Error creating KijiRowData");
+      return null;
+    }
+  }
+
   // -----------------------------------------------------------------------------------------------
 
   /** Wraps a Kiji row scanner into a Java iterator. */
   // TODO: Implement this class!
-  private class KijiRowIterator implements Iterator<KijiRowData> {
+  private class CassandraKijiRowIterator implements Iterator<KijiRowData> {
     /** {@inheritDoc} */
     @Override
     public boolean hasNext() {
       final State state = mState.get();
       Preconditions.checkState(state == State.OPEN,
           "Cannot check has next on KijiRowScanner instance in state %s.", state);
-      //return (mNextResult != null);
-      return false;
+      return (mNextRow != null);
     }
 
     /** {@inheritDoc} */
     @Override
     public KijiRowData next() {
-      /*
       final State state = mState.get();
       Preconditions.checkState(state == State.OPEN,
           "Cannot get next on KijiRowScanner instance in state %s.", state);
-      if (mNextResult == null) {
+      if (mNextRow == null) {
         // Comply with the Iterator interface:
         throw new NoSuchElementException();
       }
-      final Result result = mNextResult;
-      mLastReturnedKey = result.getRow();
-
-      // Prefetch the next row for hasNext():
-      mNextResult = getNextResult();
-
-      // Decode the Cassandra result into a KijiRowData:
-      try {
-        final EntityId entityId = mEntityIdFactory.getEntityIdFromCassandraRowKey(result.getRow());
-        return new CassandraKijiRowData(mTable, mDataRequest, entityId, result, mCellDecoderProvider);
-      } catch (IOException ioe) {
-        throw new KijiIOException(ioe);
-      }
-      */
-      return null;
+      final KijiRowData data = mNextRow;
+      mNextRow = getNextRow();
+      return data;
     }
 
     /** {@inheritDoc} */
