@@ -120,7 +120,7 @@ public final class CassandraKijiURI extends KijiURI {
     super(zookeeperQuorum, zookeeperClientPort, instanceName, tableName, columnNames);
     mCassandraNodes = ImmutableList.copyOf(cassandraNodes);
     mCassandraNodesNormalized = ImmutableSortedSet.copyOf(mCassandraNodes).asList();
-    mCassandraClientPort = zookeeperClientPort;
+    mCassandraClientPort = cassandraClientPort;
   }
 
   private static Iterable<String> parseZookeeperQuorum(URI uri) {
@@ -139,10 +139,10 @@ public final class CassandraKijiURI extends KijiURI {
     // Grab the Cassandra hosts and port.
     if (pathWithCassandraInfo.length < 3) {
       throw new KijiURIException(uri.toString(),
-          "Invalid path, expecting at least '/cassandra-hosts/cassandra-port/kiji-instance'");
+          "Invalid path, expecting at least '/cassandra-hosts/cassandra-port'");
     }
 
-    String hosts = pathWithCassandraInfo[0];
+    String hosts = pathWithCassandraInfo[1];
 
     // Check for ( and )
     if (hosts.startsWith("(")) {
@@ -162,30 +162,29 @@ public final class CassandraKijiURI extends KijiURI {
     // Grab the Cassandra hosts and port.
     if (pathWithCassandraInfo.length < 3) {
       throw new KijiURIException(uri.toString(),
-          "Invalid path, expecting at least '/cassandra-hosts/cassandra-port/kiji-instance'");
+          "Invalid path, expecting at least '/cassandra-hosts/cassandra-port/'");
     }
     try {
-      return Integer.parseInt(pathWithCassandraInfo[1]);
+      return Integer.parseInt(pathWithCassandraInfo[2]);
     } catch (NumberFormatException nfe) {
       throw new KijiURIException(uri.toString(),
-          "Could not parse Cassandra client port '" + pathWithCassandraInfo[1] + "'");
+          "Could not parse Cassandra client port '" + pathWithCassandraInfo[2] + "'");
     }
   }
 
   private static String parseInstanceName(URI uri) {
     final String[] pathWithCassandraInfo = new File(uri.getPath()).toString().split("/");
     // Copy the Kiji parts of the path
-    final String[] path = Arrays.copyOfRange(pathWithCassandraInfo, 2, pathWithCassandraInfo.length);
+    final String[] path = Arrays.copyOfRange(pathWithCassandraInfo, 3, pathWithCassandraInfo.length);
 
-    if (path.length > 4) {
+    if (path.length > 3) {
       throw new KijiURIException(uri.toString(),
           "Invalid path, expecting '/kiji-instance/table-name/(column1, column2, ...)'");
     }
-    Preconditions.checkState((path.length == 0) || path[0].isEmpty());
     // Instance name:
     String instanceName;
-    if (path.length >= 2) {
-      instanceName = (path[1].equals(UNSET_URI_STRING)) ? null: path[1];
+    if (path.length >= 1) {
+      instanceName = (path[0].equals(UNSET_URI_STRING)) ? null: path[0];
     } else {
       instanceName = null;
     }
@@ -196,18 +195,17 @@ public final class CassandraKijiURI extends KijiURI {
 
     final String[] pathWithCassandraInfo = new File(uri.getPath()).toString().split("/");
     // Copy the Kiji parts of the path
-    final String[] path = Arrays.copyOfRange(pathWithCassandraInfo, 2, pathWithCassandraInfo.length);
+    final String[] path = Arrays.copyOfRange(pathWithCassandraInfo, 3, pathWithCassandraInfo.length);
 
-    if (path.length > 4) {
+    if (path.length > 3) {
       throw new KijiURIException(uri.toString(),
           "Invalid path, expecting '/kiji-instance/table-name/(column1, column2, ...)'");
     }
-    Preconditions.checkState((path.length == 0) || path[0].isEmpty());
 
     // Table name:
     String tableName;
-    if (path.length >= 3) {
-      tableName = (path[2].equals(UNSET_URI_STRING)) ? null : path[2];
+    if (path.length >= 2) {
+      tableName = (path[1].equals(UNSET_URI_STRING)) ? null : path[1];
     } else {
       tableName = null;
     }
@@ -217,18 +215,17 @@ public final class CassandraKijiURI extends KijiURI {
   private static Iterable<KijiColumnName> parseColumnNames(URI uri) {
     final String[] pathWithCassandraInfo = new File(uri.getPath()).toString().split("/");
     // Copy the Kiji parts of the path
-    final String[] path = Arrays.copyOfRange(pathWithCassandraInfo, 2, pathWithCassandraInfo.length);
+    final String[] path = Arrays.copyOfRange(pathWithCassandraInfo, 3, pathWithCassandraInfo.length);
 
-    if (path.length > 4) {
+    if (path.length > 3) {
       throw new KijiURIException(uri.toString(),
           "Invalid path, expecting '/kiji-instance/table-name/(column1, column2, ...)'");
     }
-    Preconditions.checkState((path.length == 0) || path[0].isEmpty());
     // Columns:
     final ImmutableList.Builder<KijiColumnName> builder = ImmutableList.builder();
-    if (path.length >= 4) {
-      if (!path[3].equals(UNSET_URI_STRING)) {
-        String[] split = path[3].split(",");
+    if (path.length >= 3) {
+      if (!path[2].equals(UNSET_URI_STRING)) {
+        String[] split = path[2].split(",");
         for (String name : split) {
           builder.add(new KijiColumnName(name));
         }
@@ -468,7 +465,7 @@ public final class CassandraKijiURI extends KijiURI {
    */
   public static CassandraKijiURIBuilder newBuilder(String uri) {
     if (!uri.startsWith("kiji-cassandra://")) {
-      uri = String.format("%s/%s/", KConstants.DEFAULT_HBASE_URI, uri);
+      uri = String.format("%s/%s/", KConstants.DEFAULT_CASSANDRA_URI, uri);
     }
     try {
       return newBuilder(new CassandraKijiURI(new URI(uri)));

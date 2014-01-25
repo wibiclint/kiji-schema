@@ -32,6 +32,9 @@ public final class KConstants {
   /** Default Kiji URI, pointing to the default HBase cluster. */
   public static final String DEFAULT_HBASE_URI = "kiji://.env";
 
+  /** Default Cassandra URI. */
+  public static final String DEFAULT_CASSANDRA_URI = "kiji-cassandra://.env/localhost/9160";
+
   /** Default Kiji URI with instance specified as 'default'. */
   public static final String DEFAULT_INSTANCE_URI =
       String.format("%s/%s", DEFAULT_HBASE_URI, DEFAULT_INSTANCE_NAME);
