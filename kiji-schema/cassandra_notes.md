@@ -60,6 +60,8 @@ Open questions
   no data for some entity IDs.  I'm not sure how to support row scanning if some column families
   have no data for a given entity ID *without* being able to make any assumptions about the entity
   ID ordering for results.
+- Can we represent our Cassandra Kiji URIs more efficiently?  Is there any standard environment
+  variable that contains a list of C* hosts and ports (so that a user could specify .env)?
 
 
 Usage notes
@@ -199,6 +201,47 @@ Other stuff we may want to expose
 - Compaction strategies
 - Caching
 
+
+Alternative implementation of Kiji in Cassandra
+-----------------------------------------------
+#### One C* table per Kiji locality group
+
+This matches the Kiji HBase implementation more closely and might actually make more sense than what
+we did (I just didn't think about it until I was pretty far into the implementation).  We could
+modify the table layout slightly such that we add a column to the primary key to use for identifying
+a column family:
+
+    CREATE TABLE kiji_table_name (
+      key blob,
+      family text,
+      qualifier text,
+      time long,
+      value blob,
+      PRIMARY KEY (key, qualifier, time)
+    ) WITH CLUSTERING ORDER BY (family ASC, qualifier ASC, time DESC);
+
+A locality group in Kiji is meant to contain data that is read together, as is a table in Cassanrda.
+
+
+#### One Cassandra table per Kiji table
+
+We could have one monolithic Cassandra table per Kiji table:
+
+    CREATE TABLE kiji_table_name (
+      key blob,
+      family text,
+      qualifier text,
+      time long,
+      value blob,
+      PRIMARY KEY (key, qualifier, time)
+    ) WITH CLUSTERING ORDER BY (family ASC, qualifier ASC, time DESC);
+
+In such an implementation, however, scans over an entire table for a single column family could get
+very expensive, as we'd have to turn on `ALLOW FILTERING` and do a lot of seeks to skip over big
+chunks of data of unknown size.
+
+
+
 ---------------------------------------------------------
 
 Week of 2014-01-06
@@ -262,19 +305,38 @@ code between HBase and C*?  e.g., we could do
     KijiFoo [interface] -> AbstractKijiFoo [abstract class] -> HBaseKijiFoo / CassandraKijiFoo
 
 
-What to do about URIs?
-----------------------
+Choosing at run-time between Cassandra and HBase implementations of Kiji components
+-----------------------------------------------------------------------------------
 
-For now, let's assume that the host is 127.0.0.1 and ignore the Zookeeper part of the URI.  In the
-future, I *think* we could have URIs look the same, but have what is now the Zookeeper information
-become instead the information (host name, port) for a bunch of Cassandra nodes in the network in
-question.
+One way to implement the run-time choice between creating or references Cassandra or HBase Kiji
+implementations is to have the two use different URIs.  A current Kiji URI looks like:
 
-We could also temporarily make C* URIs look like: `kiji-cassandra/.env/default`.  By doing so, we
-could possibly add a lightweight way of implementing the C* / HBase bridge functionality internally
-(e.g., any time you are trying to get a `KijiTable` instance, you check the URI to see if it is a C*
-or HBase URI and then proceed appropriately).
+    kiji://(zkHost,zkHost):zkPort/instance
 
+Now, in addition to ZooKeeper hosts, we need to have to allow the user to specify contact points and
+a port.  For now, we'll use the following format:
+
+    kiji-cassandra://(zkHost,zkHost):zkPort/(cassandraHost,cassandraHost)/cassandraPort/instance
+
+We shall assume that URIs that don't explicitly start with `kiji-cassandra://` are HBase URIs.
+
+We want to provide an interface to the user in which he can can use the same code to open HBase- or
+Cassandra-backed `Kiji` instances, `KijiTable`s, etc., selecting between the two implementations
+just by changing the URI.
+
+The point of entry for most anything a user would want to do with KijiSchema is the creation of a
+`Kiji` instance.  Currently, there are two ways to get a `Kiji` instance:
+
+- `Kiji.Factory.get().open(kijiURI, ...)`
+- `Kiji.Factory.open(kijiURI, ...)`
+
+The former method call we shall have continue to return an `HBaseKijiFactory`, since there is no URI
+information present at the time we generate the factory.
+
+The second method call shall do the following:
+
+- Look at the URI to determine whether the factory is HBase- or Cassandra-backed
+- Then use the highest-priority `HBaseKijiFactory` or `CassandraKijiFactory` available
 
 
 Notes on updating system, schema, and meta tables
@@ -590,6 +652,7 @@ New classes and packages
 - `o.k.s.impl.cassandra.CassandraKijiTableWriter`
 - `o.k.s.impl.cassandra.CassandraDataRequestAdapter`
 - `o.k.s.impl.cassandra.CassandraKijiRowData`
+- `o.k.s.CassandraKijiURI
 
 
 How to store Cassandra table layout information?
@@ -753,5 +816,22 @@ about Cassandra 2.0.
 
 The API documentation for `fetchMoreResults` also has some example code (`fetchMoreResults` can be
 used to prefetch more data).
+
+
+Functionality needed for the phonebook tutorial
+-----------------------------------------------
+
+- Add C*-specific URIs
+- The DDL shell may need to be modified to call C* code (need to check)
+- Delete a Kiji instance
+- `AddEntry.java` - Requires doing puts
+- `Lookup.java` - Requires doing gets
+- `StandalonePhonebookImporter` - Also just does puts
+- `PhonebookImporter` - Use KijiMR, not ready yet
+- `AddressFieldExtractor` - Appears to be deprecated, calls a method `getMostRecentValue` that I
+  don't think exists anymore
+- `IncrementTalkTime` - Uses counters, but generally seems deprecated for KijiMR stuff.
+- `DeleteEntry` - Calls delete.
+
 
 
