@@ -85,6 +85,9 @@ public final class CassandraKijiURI extends KijiURI {
   /** Default Cassandra port. */
   public static final int DEFAULT_CASSANDRA_CLIENT_PORT = 9160;
 
+  /** Default Cassandra host. */
+  public static final String DEFAULT_CASSANDRA_HOST = "127.0.0.1";
+
   /**
    * Ordered list of Cassandra cluster host names or IP addresses.
    * Preserves user ordering. Never null.
@@ -297,7 +300,10 @@ public final class CassandraKijiURI extends KijiURI {
      */
     private CassandraKijiURIBuilder() {
       super();
-      // TODO:  Assign defaults for Cassandra nodes, ports
+      // Assign defaults for Cassandra nodes, ports
+      mCassandraNodes = ImmutableList.copyOf(new String[] {DEFAULT_CASSANDRA_HOST});
+      mCassandraClientPort = DEFAULT_CASSANDRA_CLIENT_PORT;
+
     }
 
     /**
@@ -446,7 +452,7 @@ public final class CassandraKijiURI extends KijiURI {
     return new CassandraKijiURIBuilder(
         uri.getZookeeperQuorumOrdered(),
         uri.getZookeeperClientPort(),
-        uri.getCassandraNodes(),
+        uri.getCassandraNodesOrdered(),
         uri.getCassandraClientPort(),
         uri.getInstance(),
         uri.getTable(),
@@ -498,6 +504,29 @@ public final class CassandraKijiURI extends KijiURI {
   /** @return Cassandra client port. */
   public int getCassandraClientPort() {
     return mCassandraClientPort;
+  }
+
+  /**
+   * Resolve the path relative to this KijiURI. Returns a new instance.
+   *
+   * @param path The path to resolve.
+   * @return The resolved KijiURI.
+   * @throws KijiURIException If this KijiURI is malformed.
+   */
+  public CassandraKijiURI resolve(String path) {
+    try {
+      // Without the "./", URI will assume a path containing a colon
+      // is a new URI, for example "family:column".
+      URI uri = new URI(toString()).resolve(String.format("./%s", path));
+      return new CassandraKijiURI(uri);
+    } catch (URISyntaxException e) {
+      throw new RuntimeException(
+          String.format("CassandraKijiURI was incorrectly constructed (should never happen): %s",
+              this.toString()));
+    } catch (IllegalArgumentException e) {
+      throw new KijiURIException(this.toString(),
+          String.format("Path can not be resolved: %s", path));
+    }
   }
 
   /**

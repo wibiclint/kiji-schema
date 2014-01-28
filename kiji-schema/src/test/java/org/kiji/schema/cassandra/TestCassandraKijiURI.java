@@ -23,7 +23,6 @@ import org.junit.Test;
 import org.kiji.schema.KConstants;
 import org.kiji.schema.KijiColumnName;
 import org.kiji.schema.CassandraKijiURI;
-import org.kiji.schema.CassandraKijiURI;
 import org.kiji.schema.KijiURIException;
 
 import java.util.Arrays;
@@ -260,7 +259,6 @@ public class TestCassandraKijiURI {
     assertEquals(1234, uri.getZookeeperClientPort());
     assertEquals(null, uri.getInstance());
   }
-  /*
 
   @Test
   public void testBasicResolution() {
@@ -271,80 +269,99 @@ public class TestCassandraKijiURI {
 
   @Test
   public void testResolution() {
-    final CassandraKijiURI uri = CassandraKijiURI.newBuilder("kiji-cassandra://zkhost:1234/.unset").build();
+    final CassandraKijiURI uri = CassandraKijiURI.newBuilder("kiji-cassandra://zkhost:1234/chost/5678/.unset").build();
     final CassandraKijiURI resolved = uri.resolve("testinstance");
     assertEquals("testinstance", resolved.getInstance());
   }
 
   @Test
   public void testResolutionColumn() {
-    final CassandraKijiURI uri = CassandraKijiURI.newBuilder("kiji-cassandra://zkhost/instance/table").build();
+    final CassandraKijiURI uri = CassandraKijiURI.newBuilder("kiji-cassandra://zkhost/chost/5678/instance/table").build();
     final CassandraKijiURI resolved = uri.resolve("col");
     assertEquals("col", resolved.getColumns().get(0).getName());
   }
 
   @Test
   public void testInvalidResolution() {
-    final CassandraKijiURI uri = CassandraKijiURI.newBuilder("kiji-cassandra://zkhost:1234").build();
+    final CassandraKijiURI uri = CassandraKijiURI.newBuilder("kiji-cassandra://zkhost:1234/chost/5678").build();
     try {
       uri.resolve("instance/table/col/extra");
       fail("An exception should have been thrown.");
     } catch (KijiURIException kurie) {
-      assertEquals("Invalid Kiji URI: 'kiji-cassandra://zkhost:1234/instance/table/col/extra' : Invalid path,"
+      assertEquals("Invalid Kiji URI: 'kiji-cassandra://zkhost:1234/chost/5678/instance/table/col/extra' : Invalid path,"
           + " expecting '/kiji-instance/table-name/(column1, column2, ...)'", kurie.getMessage());
     }
   }
 
   @Test
   public void testToString() {
-    String uri = "kiji-cassandra://(zkhost1,zkhost2):1234/instance/table/col/";
+    String uri = "kiji-cassandra://(zkhost1,zkhost2):1234/chost/5678/instance/table/col/";
     assertEquals(uri, CassandraKijiURI.newBuilder(uri).build().toString());
-    uri = "kiji-cassandra://zkhost1:1234/instance/table/col/";
+    uri = "kiji-cassandra://zkhost1:1234/chost/5678/instance/table/col/";
     assertEquals(uri, CassandraKijiURI.newBuilder(uri).build().toString());
-    uri = "kiji-cassandra://zkhost:1234/instance/table/col1,col2/";
+    uri = "kiji-cassandra://zkhost:1234/chost/5678/instance/table/col1,col2/";
     assertEquals(uri, CassandraKijiURI.newBuilder(uri).build().toString());
-    uri = "kiji-cassandra://zkhost:1234/.unset/table/col/";
+    uri = "kiji-cassandra://zkhost:1234/chost/5678/.unset/table/col/";
     assertEquals(uri, CassandraKijiURI.newBuilder(uri).build().toString());
   }
 
   @Test
   public void testNormalizedQuorum() {
-    CassandraKijiURI uri = CassandraKijiURI.newBuilder("kiji-cassandra://(zkhost1,zkhost2):1234/instance/table/col/").build();
+    CassandraKijiURI uri = CassandraKijiURI.newBuilder("kiji-cassandra://(zkhost1,zkhost2):1234/chost/5678/instance/table/col/").build();
     CassandraKijiURI reversedQuorumUri =
-        CassandraKijiURI.newBuilder("kiji-cassandra://(zkhost2,zkhost1):1234/instance/table/col/").build();
+        CassandraKijiURI.newBuilder("kiji-cassandra://(zkhost2,zkhost1):1234/chost/5678/instance/table/col/").build();
     assertEquals(uri.toString(), reversedQuorumUri.toString());
     assertEquals(uri.getZookeeperQuorum(), reversedQuorumUri.getZookeeperQuorum());
   }
 
   @Test
+  public void testNormalizedCassandraNodes() {
+    CassandraKijiURI uri = CassandraKijiURI.newBuilder("kiji-cassandra://zkhost:1234/(chost1,chost2)/5678/instance/table/col/").build();
+    CassandraKijiURI reversedUri = CassandraKijiURI.newBuilder("kiji-cassandra://zkhost:1234/(chost2,chost1)/5678/instance/table/col/").build();
+    assertEquals(uri.toString(), reversedUri.toString());
+    assertEquals(uri.getCassandraNodes(), reversedUri.getCassandraNodes());
+  }
+
+  @Test
   public void testNormalizedColumns() {
-    CassandraKijiURI uri = CassandraKijiURI.newBuilder("kiji-cassandra://(zkhost1,zkhost2):1234/instance/table/col/").build();
+    CassandraKijiURI uri = CassandraKijiURI.newBuilder("kiji-cassandra://(zkhost1,zkhost2):1234/chost/5678/instance/table/col/").build();
     CassandraKijiURI reversedColumnURI =
-        CassandraKijiURI.newBuilder("kiji-cassandra://(zkhost2,zkhost1):1234/instance/table/col/").build();
+        CassandraKijiURI.newBuilder("kiji-cassandra://(zkhost2,zkhost1):1234/chost/5678/instance/table/col/").build();
     assertEquals(uri.toString(), reversedColumnURI.toString());
     assertEquals(uri.getColumns(), reversedColumnURI.getColumns());
   }
 
   @Test
   public void testOrderedQuorum() {
-    CassandraKijiURI uri = CassandraKijiURI.newBuilder("kiji-cassandra://(zkhost1,zkhost2):1234/instance/table/col/").build();
+    CassandraKijiURI uri = CassandraKijiURI.newBuilder("kiji-cassandra://(zkhost1,zkhost2):1234/chost/5678/instance/table/col/").build();
     CassandraKijiURI reversedQuorumUri =
-        CassandraKijiURI.newBuilder("kiji-cassandra://(zkhost2,zkhost1):1234/instance/table/col/").build();
+        CassandraKijiURI.newBuilder("kiji-cassandra://(zkhost2,zkhost1):1234/chost/5678/instance/table/col/").build();
     assertFalse(uri.getZookeeperQuorumOrdered()
         .equals(reversedQuorumUri.getZookeeperQuorumOrdered()));
     assertFalse(uri.toOrderedString().equals(reversedQuorumUri.toOrderedString()));
   }
 
   @Test
+  public void testOrderedCassandraNodes() {
+    String revString =  "kiji-cassandra://zkhost:1234/(chost2,chost1)/5678/instance/table/col/";
+    String ordString =  "kiji-cassandra://zkhost:1234/(chost1,chost2)/5678/instance/table/col/";
+    CassandraKijiURI revUri = CassandraKijiURI.newBuilder(revString).build();
+
+    // "toString" should ignore the user-defined ordering.
+    assertEquals(ordString, revUri.toString());
+
+    // "toOrderedString" should maintain the user-defined ordering.
+
+  }
+  @Test
   public void testOrderedColumns() {
     CassandraKijiURI uri =
-        CassandraKijiURI.newBuilder("kiji-cassandra://(zkhost1,zkhost2):1234/instance/table/col1,col2/").build();
+        CassandraKijiURI.newBuilder("kiji-cassandra://(zkhost1,zkhost2):1234/chost/5678/instance/table/col1,col2/").build();
     CassandraKijiURI reversedColumnURI =
-        CassandraKijiURI.newBuilder("kiji-cassandra://(zkhost1,zkhost2):1234/instance/table/col2,col1/").build();
+        CassandraKijiURI.newBuilder("kiji-cassandra://(zkhost1,zkhost2):1234/chost/5678/instance/table/col2,col1/").build();
     assertFalse(uri.toOrderedString().equals(reversedColumnURI.toOrderedString()));
     assertFalse(uri.getColumnsOrdered().equals(reversedColumnURI.getColumnsOrdered()));
   }
-  */
 
   /**
    * Tests that CassandraKijiURI.newBuilder().build() builds a URI for the default Kiji instance URI.
@@ -352,7 +369,6 @@ public class TestCassandraKijiURI {
    * The default Kiji instance URI is environment specific. Hence, this cannot test for explicit
    * values of the ZooKeeper quorum of of the ZooKeeper client port.
    */
-  /*
   @Test
   public void testCassandraKijiURIBuilderDefault() {
     CassandraKijiURI uri = CassandraKijiURI.newBuilder().build();
@@ -365,14 +381,14 @@ public class TestCassandraKijiURI {
 
   @Test
   public void testCassandraKijiURIBuilderFromInstance() {
-    final CassandraKijiURI uri = CassandraKijiURI.newBuilder("kiji-cassandra://zkhost:1234/.unset/table").build();
+    final CassandraKijiURI uri = CassandraKijiURI.newBuilder("kiji-cassandra://zkhost:1234/chost/5678/.unset/table").build();
     CassandraKijiURI built = CassandraKijiURI.newBuilder(uri).build();
     assertEquals(uri, built);
   }
 
   @Test
   public void testCassandraKijiURIBuilderWithInstance() {
-    final CassandraKijiURI uri = CassandraKijiURI.newBuilder("kiji-cassandra://zkhost:1234/instance1/table").build();
+    final CassandraKijiURI uri = CassandraKijiURI.newBuilder("kiji-cassandra://zkhost:1234/chost/5678/instance1/table").build();
     assertEquals("instance1", uri.getInstance());
     final CassandraKijiURI modified =
         CassandraKijiURI.newBuilder(uri).withInstanceName("instance2").build();
@@ -382,7 +398,7 @@ public class TestCassandraKijiURI {
 
   @Test
   public void testSetColumn() {
-    CassandraKijiURI uri = CassandraKijiURI.newBuilder("kiji-cassandra://zkhost/instance/table/").build();
+    CassandraKijiURI uri = CassandraKijiURI.newBuilder("kiji-cassandra://zkhost/chost/5678/instance/table/").build();
     assertTrue(uri.getColumns().isEmpty());
     uri =
         CassandraKijiURI.newBuilder(uri).withColumnNames(Arrays.asList("testcol1", "testcol2"))
@@ -392,7 +408,7 @@ public class TestCassandraKijiURI {
 
   @Test
   public void testSetZookeeperQuorum() {
-    final CassandraKijiURI uri = CassandraKijiURI.newBuilder("kiji-cassandra://zkhost/instance/table/col").build();
+    final CassandraKijiURI uri = CassandraKijiURI.newBuilder("kiji-cassandra://zkhost/chost/5678/instance/table/col").build();
     final CassandraKijiURI modified = CassandraKijiURI.newBuilder(uri)
         .withZookeeperQuorum(new String[] {"zkhost1", "zkhost2"}).build();
     assertEquals(2, modified.getZookeeperQuorum().size());
@@ -402,24 +418,23 @@ public class TestCassandraKijiURI {
 
   @Test
   public void testTrailingUnset() {
-    final CassandraKijiURI uri = CassandraKijiURI.newBuilder("kiji-cassandra://zkhost/.unset/table/.unset").build();
+    final CassandraKijiURI uri = CassandraKijiURI.newBuilder("kiji-cassandra://zkhost/chost/5678/.unset/table/.unset").build();
     CassandraKijiURI result = CassandraKijiURI.newBuilder(uri).withTableName(".unset").build();
-    assertEquals("kiji-cassandra://zkhost:2181/", result.toString());
+    assertEquals("kiji-cassandra://zkhost:2181/chost/5678/", result.toString());
   }
 
   @Test
   public void testEscapedMapColumnQualifier() {
-    final CassandraKijiURI uri = CassandraKijiURI.newBuilder("kiji-cassandra://zkhost/instance/table/map:one%20two").build();
+    final CassandraKijiURI uri = CassandraKijiURI.newBuilder("kiji-cassandra://zkhost/chost/5678/instance/table/map:one%20two").build();
     assertEquals("map:one two", uri.getColumns().get(0).getName());
   }
 
   @Test
   public void testConstructedUriIsEscaped() {
     // SCHEMA-6. Column qualifier must be URL-encoded in CassandraKijiURI.
-    final CassandraKijiURI uri = CassandraKijiURI.newBuilder("kiji-cassandra://zkhost/instance/table/")
+    final CassandraKijiURI uri = CassandraKijiURI.newBuilder("kiji-cassandra://zkhost/chost/5678/instance/table/")
         .addColumnName(new KijiColumnName("map:one two")).build();
-    assertEquals("kiji-cassandra://zkhost:2181/instance/table/map:one%20two/", uri.toString());
+    assertEquals("kiji-cassandra://zkhost:2181/chost/5678/instance/table/map:one%20two/", uri.toString());
   }
-  */
 }
 

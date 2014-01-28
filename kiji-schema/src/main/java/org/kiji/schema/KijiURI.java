@@ -608,8 +608,8 @@ public class KijiURI {
   /**
    * Returns a string representation of this URI.
    *
-   * @param preserveOrdering Whether to preserve ordering of lsits in fields.
-   * @return A string reprresentation of this URI.
+   * @param preserveOrdering Whether to preserve ordering of lists in fields.
+   * @return A string representation of this URI.
    */
   private String toString(boolean preserveOrdering) {
     // Remove trailing unset fields.
