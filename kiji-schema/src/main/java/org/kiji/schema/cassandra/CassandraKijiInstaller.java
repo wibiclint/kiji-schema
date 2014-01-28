@@ -171,7 +171,9 @@ public final class CassandraKijiInstaller {
         ResourceUtils.closeOrLog(admin);
       }
 
-      // Actually delete the keyspace.
+      // Assert that there are no tables left and delete the keyspace.
+      assert(admin.keyspaceIsEmpty());
+      admin.deleteKeyspace();
 
     } finally {
       kiji.release();

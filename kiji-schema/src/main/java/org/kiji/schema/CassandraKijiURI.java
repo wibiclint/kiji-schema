@@ -588,4 +588,9 @@ public final class CassandraKijiURI extends KijiURI {
         cNodes,
         getCassandraClientPort());
   }
+
+  /**
+   * {@inheritDoc}
+   */
+  public boolean isCassandra() { return true; }
 }

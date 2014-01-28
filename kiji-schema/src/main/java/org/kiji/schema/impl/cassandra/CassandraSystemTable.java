@@ -390,12 +390,10 @@ public class CassandraSystemTable implements KijiSystemTable {
   public static void uninstall(CassandraAdmin admin, KijiURI kijiURI)
       throws IOException {
     // TODO: Does this actually need to do anything beyond dropping the table?
-    /*
     final String tableName =
-        KijiManagedHBaseTableName.getSystemTableName(kijiURI.getInstance()).toString();
+        KijiManagedCassandraTableName.getSystemTableName(kijiURI).toString();
     admin.disableTable(tableName);
     admin.deleteTable(tableName);
-    */
   }
 
   /** {@inheritDoc} */

@@ -8,6 +8,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.Closeable;
+import java.util.ArrayList;
 import java.util.Collection;
 
 /**
@@ -114,8 +115,13 @@ public abstract class CassandraAdmin implements Closeable {
     return CassandraTableInterface.createFromCassandraAdmin(this, tableName);
   }
 
-  // TODO: Add something for closing the session and all of the tables.
+  // TODO: Add something for disabling this table.
   public void disableTable(String tableName) { }
+
+  // TODO: Just return true for now since we aren't disabling any Cassandra tables yet.
+  public boolean isTableEnabled(String tableName) {
+    return true;
+  }
 
   public void deleteTable(String tableName) {
     Preconditions.checkArgument(KijiManagedCassandraTableName.tableNameIsFormattedForCQL(tableName));
@@ -123,6 +129,20 @@ public abstract class CassandraAdmin implements Closeable {
     String queryString = String.format("DROP TABLE IF EXISTS %s;", tableName);
     LOG.info("Deleting table " + tableName);
     getSession().execute(queryString);
+  }
+
+  public boolean keyspaceIsEmpty() {
+    String keyspace = KijiManagedCassandraTableName.getCassandraKeyspaceFormattedForCQL(mKijiURI);
+    Collection<TableMetadata> tables =
+        getSession().getCluster().getMetadata().getKeyspace(keyspace).getTables();
+    return (tables.isEmpty());
+  }
+
+  public void deleteKeyspace() {
+    String keyspace = KijiManagedCassandraTableName.getCassandraKeyspaceFormattedForCQL(mKijiURI);
+    String queryString = "DROP KEYSPACE " + keyspace;
+    getSession().execute(queryString);
+    assert (!keyspaceExists(keyspace));
   }
 
   public boolean tableExists(String tableName) {

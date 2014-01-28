@@ -30,6 +30,8 @@ import org.kiji.annotations.ApiStability;
 import org.kiji.annotations.Inheritance;
 import org.kiji.delegation.Lookups;
 import org.kiji.schema.avro.TableLayoutDesc;
+import org.kiji.schema.impl.cassandra.CassandraKijiFactory;
+import org.kiji.schema.impl.hbase.HBaseKijiFactory;
 import org.kiji.schema.layout.KijiTableLayout;
 import org.kiji.schema.security.KijiSecurityManager;
 import org.kiji.schema.util.ReferenceCountable;
@@ -93,19 +95,37 @@ public interface Kiji extends KijiTableFactory, ReferenceCountable<Kiji> {
   /**
    * Provider for the default Kiji factory.
    *
-   * Ensures that there is only one KijiFactory instance.
+   * Ensures that there is only one HBase-backed and one Cassandra-backed KijiFactory instance.
    */
   public static final class Factory {
-    /** KijiFactory instance. */
-    private static KijiFactory mInstance;
+    /** HBase KijiFactory instance. */
+    private static KijiFactory mHBaseInstance;
 
-    /** @return the default KijiFactory. */
+    /** Cassandra KijiFactory instance. */
+    private static CassandraKijiFactory mCassandraInstance;
+
+    /** @return the default HBaseKijiFactory. */
     public static KijiFactory get() {
       synchronized (Kiji.Factory.class) {
-        if (null == mInstance) {
-          mInstance = Lookups.getPriority(KijiFactory.class).lookup();
+        if (null == mHBaseInstance) {
+          mHBaseInstance = Lookups.getPriority(KijiFactory.class).lookup();
+          assert(null != mHBaseInstance);
         }
-        return mInstance;
+        return mHBaseInstance;
+      }
+    }
+
+    /**
+     * Return a singleton instance of a CassandraKijiFactory.
+     * @return The C* Kiji factory.
+     */
+    private static CassandraKijiFactory getCassandra() {
+      synchronized (Kiji.Factory.class) {
+        if (null == mCassandraInstance) {
+          // No need for any Provider business here yet.
+          mCassandraInstance = CassandraKijiFactory.get();
+        }
+        return mCassandraInstance;
       }
     }
 
@@ -120,7 +140,11 @@ public interface Kiji extends KijiTableFactory, ReferenceCountable<Kiji> {
      * @throws IOException on I/O error.
      */
     public static Kiji open(KijiURI uri) throws IOException {
-      return get().open(uri);
+      if (uri.isCassandra()) {
+        return getCassandra().open(uri);
+      } else {
+        return get().open(uri);
+      }
     }
 
     /**
@@ -135,7 +159,11 @@ public interface Kiji extends KijiTableFactory, ReferenceCountable<Kiji> {
      * @throws IOException on I/O error.
      */
     public static Kiji open(KijiURI uri, Configuration conf) throws IOException {
-      return get().open(uri, conf);
+      if (uri.isCassandra()) {
+        return getCassandra().open(uri, conf);
+      } else {
+        return get().open(uri, conf);
+      }
     }
 
     /** Utility class may not be instantiated. */

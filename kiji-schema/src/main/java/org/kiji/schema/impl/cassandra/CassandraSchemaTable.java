@@ -35,9 +35,6 @@ import org.apache.avro.specific.SpecificDatumWriter;
 import org.apache.commons.io.output.ByteArrayOutputStream;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hbase.HConstants;
-import org.apache.hadoop.hbase.KeyValue;
-import org.apache.hadoop.hbase.io.hfile.Compression;
-import org.apache.hadoop.hbase.util.Bytes;
 import org.kiji.annotations.ApiAudience;
 import org.kiji.schema.KijiSchemaTable;
 import org.kiji.schema.KijiURI;
@@ -45,11 +42,7 @@ import org.kiji.schema.avro.MD5Hash;
 import org.kiji.schema.avro.SchemaTableBackup;
 import org.kiji.schema.avro.SchemaTableEntry;
 import org.kiji.schema.cassandra.KijiManagedCassandraTableName;
-import org.kiji.schema.hbase.KijiManagedHBaseTableName;
-import org.kiji.schema.impl.HTableInterfaceFactory;
-import org.kiji.schema.platform.SchemaPlatformBridge;
 import org.kiji.schema.util.*;
-import org.kiji.schema.util.ByteStreamArray.EncodingException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -59,8 +52,6 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicReference;
-
-import static org.kiji.schema.util.ByteStreamArray.longToVarInt64;
 
 /**
  * <p>
@@ -878,19 +869,12 @@ public class CassandraSchemaTable implements KijiSchemaTable {
    * @param tableName Name of the table to delete.
    */
   private static void deleteTable(CassandraAdmin admin, String tableName) {
-    // TODO: Replace with actual C* code
-    /*
-    try {
-      if (admin.tableExists(tableName)) {
-        if (admin.isTableEnabled(tableName)) {
-          admin.disableTable(tableName);
-        }
-        admin.deleteTable(tableName);
+    if (admin.tableExists(tableName)) {
+      if (admin.isTableEnabled(tableName)) {
+        admin.disableTable(tableName);
       }
-    } catch (IOException ioe) {
-      LOG.error(String.format("Unable to delete table '%s': %s", tableName, ioe.toString()));
+      admin.deleteTable(tableName);
     }
-    */
   }
 
   /**
@@ -901,17 +885,18 @@ public class CassandraSchemaTable implements KijiSchemaTable {
    * @throws java.io.IOException If there is an error.
    */
   public static void uninstall(CassandraAdmin admin, KijiURI kijiURI)
-  // TODO: Replace with actual C* code
       throws IOException {
-    /*
     final String hashTableName =
-        KijiManagedHBaseTableName.getSchemaHashTableName(kijiURI.getInstance()).toString();
+        KijiManagedCassandraTableName.getSchemaHashTableName(kijiURI).toString();
     deleteTable(admin, hashTableName);
 
     final String idTableName =
-        KijiManagedHBaseTableName.getSchemaIdTableName(kijiURI.getInstance()).toString();
+        KijiManagedCassandraTableName.getSchemaIdTableName(kijiURI).toString();
     deleteTable(admin, idTableName);
-    */
+
+    final String counterTableName =
+        KijiManagedCassandraTableName.getSchemaCounterTableName(kijiURI).toString();
+    deleteTable(admin, counterTableName);
   }
 
   /** {@inheritDoc} */

@@ -497,6 +497,9 @@ public class KijiURI {
    * @throws KijiURIException If the uri is invalid.
    */
   public static KijiURIBuilder newBuilder(String uri) {
+    if (uri.startsWith("kiji-cassandra://")) {
+      return CassandraKijiURI.newBuilder(uri);
+    }
     if (!uri.startsWith("kiji://")) {
       uri = String.format("%s/%s/", KConstants.DEFAULT_HBASE_URI, uri);
     }
@@ -739,4 +742,10 @@ public class KijiURI {
       throw new KijiURIException(e.getMessage());
     }
   }
+
+  /**
+   * Indicate whether this is a URI for a Cassandra-backed Kiji instance.
+   * @return Whether this is a C* URI.
+   */
+  public boolean isCassandra() { return false; }
 }
