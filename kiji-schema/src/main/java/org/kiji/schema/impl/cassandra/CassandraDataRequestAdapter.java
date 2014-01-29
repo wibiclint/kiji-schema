@@ -133,7 +133,7 @@ public class CassandraDataRequestAdapter {
       // Get the Cassandra table name for this column family
       String cassandraTableName = KijiManagedCassandraTableName.getKijiTableName(
           table.getURI(),
-          table.getName() + "_" + family).toString();
+          table.getName()).toString();
 
       // TODO: Optimize these queries such that we need only one RPC per column family.
       // (Right now a data request that asks for "info:foo" and "info:bar" would trigger two
@@ -143,14 +143,15 @@ public class CassandraDataRequestAdapter {
         // Select this column in the C* family for this qualifier.
         // Eventually, this column will to have escaped quotes around it (to handle upper and lower case)
         String queryString = String.format(
-            "SELECT * FROM %s WHERE %s=? ALLOW FILTERING",
+            "SELECT * FROM %s WHERE %s=? AND %s=? ALLOW FILTERING",
             cassandraTableName,
+            CassandraKiji.CASSANDRA_FAMILY_COL,
             CassandraKiji.CASSANDRA_QUALIFIER_COL
         );
         LOG.info("Preparing query string " + queryString);
 
         PreparedStatement preparedStatement = session.prepare(queryString);
-        ResultSet res = session.execute(preparedStatement.bind(qualifier));
+        ResultSet res = session.execute(preparedStatement.bind(family, qualifier));
         results.add(res);
 
       } else {
@@ -159,15 +160,16 @@ public class CassandraDataRequestAdapter {
         // Select this column in the C* family for this qualifier.
         // Eventually, this column will to have escaped quotes around it (to handle upper and lower case)
         String queryString = String.format(
-            "SELECT * FROM %s WHERE %s=? AND %s=?",
+            "SELECT * FROM %s WHERE %s=? AND %s=? AND %s=?",
             cassandraTableName,
             CassandraKiji.CASSANDRA_KEY_COL,
+            CassandraKiji.CASSANDRA_FAMILY_COL,
             CassandraKiji.CASSANDRA_QUALIFIER_COL
         );
         LOG.info("Preparing query string " + queryString);
 
         PreparedStatement preparedStatement = session.prepare(queryString);
-        ResultSet res = session.execute(preparedStatement.bind(entityIdByteBuffer, qualifier));
+        ResultSet res = session.execute(preparedStatement.bind(entityIdByteBuffer, family, qualifier));
         results.add(res);
       }
     }

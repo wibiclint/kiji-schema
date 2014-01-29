@@ -226,7 +226,6 @@ public class CassandraKijiRowScanner implements KijiRowScanner {
   // -----------------------------------------------------------------------------------------------
 
   /** Wraps a Kiji row scanner into a Java iterator. */
-  // TODO: Implement this class!
   private class CassandraKijiRowIterator implements Iterator<KijiRowData> {
     /** {@inheritDoc} */
     @Override

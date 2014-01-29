@@ -182,33 +182,17 @@ public final class CassandraKijiRowData implements KijiRowData {
 
     mFilteredMap = new TreeMap<String, NavigableMap<String, NavigableMap<Long, byte[]>>>();
 
-    // Get the name of the Kiji table for this query.  For every result we got back from Cassandra,
-    // we can get the name of the column family by removing the prefix for the Kiji table.
-    String kijiTableName = mTable.getName();
-    LOG.info("Kiji table name = " + kijiTableName);
-
-    // This is the part of the C* table name that specifies the Kiji table name.
-    // (The C* table name will also indicate the Kiji column family name, since there is on C* table
-    // per Kiji column family.)
-    String tablePrefix = "table_" + kijiTableName + "_";
-
     // Go through every column in the result set and add the data to the filtered map.
     for (Row row : mRows) {
-      // Get the name of the Cassandra table (Kiji column family) for this result.
-      String cassandraTableName = row.getColumnDefinitions().getTable(0);
-      LOG.info("C* table name = " + cassandraTableName);
-
-      assert(cassandraTableName.startsWith(tablePrefix)) : cassandraTableName;
-      String family = cassandraTableName.substring(tablePrefix.length());
-      LOG.info("Column family = " + family);
 
       // Get the Cassandra key (entity Id), qualifier, timestamp, and value.
       ByteBuffer eidByteBuffer = row.getBytes(CassandraKiji.CASSANDRA_KEY_COL);
+      String family = row.getString(CassandraKiji.CASSANDRA_FAMILY_COL);
       String qualifier = row.getString(CassandraKiji.CASSANDRA_QUALIFIER_COL);
       Long timestamp = row.getLong(CassandraKiji.CASSANDRA_VERSION_COL);
       ByteBuffer value = row.getBytes(CassandraKiji.CASSANDRA_VALUE_COL);
 
-      LOG.info("Got back data from table for qualifier " + qualifier + " and timestamp " + timestamp);
+      //LOG.info("Got back data from table for qualifier " + qualifier + " and timestamp " + timestamp);
 
       // Insert this data into the map.
 

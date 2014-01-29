@@ -242,15 +242,16 @@ public final class CassandraKijiTableWriter implements KijiTableWriter {
     // TODO: Refactor this name-creation code somewhere cleaner.
     KijiManagedCassandraTableName cTableName = KijiManagedCassandraTableName.getKijiTableName(
         mTable.getURI(),
-        mTable.getName() + "_" + family
+        mTable.getName()
     );
 
 
     // Create the CQL statement to insert data.
     String queryText = String.format(
-        "INSERT INTO %s (%s, %s, %s, %s) VALUES (?, ?, ?, ?);",
+        "INSERT INTO %s (%s, %s, %s, %s, %s) VALUES (?, ?, ?, ?, ?);",
         cTableName.toString(),
         CassandraKiji.CASSANDRA_KEY_COL,
+        CassandraKiji.CASSANDRA_FAMILY_COL,
         CassandraKiji.CASSANDRA_QUALIFIER_COL,
         CassandraKiji.CASSANDRA_VERSION_COL,
         CassandraKiji.CASSANDRA_VALUE_COL);
@@ -261,6 +262,7 @@ public final class CassandraKijiTableWriter implements KijiTableWriter {
     PreparedStatement preparedStatement = session.prepare(queryText);
     session.execute(preparedStatement.bind(
         rowKey,
+        family,
         qualifier,
         timestamp,
         encodedByteBuffer

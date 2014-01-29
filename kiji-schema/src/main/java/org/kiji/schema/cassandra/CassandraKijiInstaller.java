@@ -102,9 +102,6 @@ public final class CassandraKijiInstaller {
       LOG.info("Creating CassandraAdmin for Kiji installation.");
       CassandraAdmin cassandraAdmin = cassandraAdminFactory.create(uri);
 
-      // Create the keyspace
-
-
       // Install the system, meta, and schema tables.
       CassandraSystemTable.install(cassandraAdmin, uri, conf, properties);
       CassandraMetaTable.install(cassandraAdmin, uri);

@@ -683,12 +683,11 @@ public final class CassandraKiji implements Kiji {
 
   /** {@inheritDoc} */
   @Override
-  // TODO: Implement C* version
   public void deleteTable(String tableName) throws IOException {
     final State state = mState.get();
     Preconditions.checkState(state == State.OPEN,
         "Cannot delete table in Kiji instance %s in state %s.", this, state);
-    // Delete from HBase.
+    // Delete from Cassandra.
     String cTable = KijiManagedCassandraTableName.getKijiTableName(mURI, tableName).toString();
     CassandraAdmin admin = getCassandraAdmin();
 
@@ -836,6 +835,7 @@ public final class CassandraKiji implements Kiji {
 
   // Useful static members for referring to different fields in the C* tables.
   public static String CASSANDRA_KEY_COL = "key";
+  public static String CASSANDRA_FAMILY_COL = "family";
   public static String CASSANDRA_QUALIFIER_COL = "qualifier";
   public static String CASSANDRA_VERSION_COL = "version";
   public static String CASSANDRA_VALUE_COL = "value";
@@ -848,7 +848,6 @@ public final class CassandraKiji implements Kiji {
    * @throws java.io.IOException on I/O error.
    * @throws org.kiji.schema.KijiAlreadyExistsException if the table already exists.
    */
-  // TODO: Implement C* version
   private void createTableUnchecked(TableLayoutDesc tableLayout) throws IOException {
 
     // For this first-cut attempt at creating a C* Kiji table, all of the code for going from a Kiji
@@ -889,40 +888,33 @@ public final class CassandraKiji implements Kiji {
 
     // Super-primitive right now.  Assume that max versions is always 1.
 
-    // Get a reference to the name of the Kiji table to use as a prefix for naming all of the
-    // Cassandra tables.
+    // Get a reference to the name of the Kiji table.
     String kijiTableName = tableLayout.getName();
 
-    // Go through all of the locality groups and all of the column families
-    for (KijiTableLayout.LocalityGroupLayout.FamilyLayout cf : kijiTableLayout.getFamilies()) {
-      // Each column family in Kiji = a C* CQL table (really a column family in C*).
-      // Create the same layout for group-type and map-type families.
-      String cfName = cf.getName();
+    // Create a C* table name for this Kiji table.
+    KijiManagedCassandraTableName cTableName = KijiManagedCassandraTableName.getKijiTableName(
+        mURI,
+        kijiTableName
+    );
 
-      // Create a C* table name for this column family.
-      // Eventually this kind of translation will go into a library.
-      KijiManagedCassandraTableName cTableName = KijiManagedCassandraTableName.getKijiTableName(
-          mURI,
-          kijiTableName + "_" + cfName
-      );
+    String cassandraTableLayout = String.format(
+        "(%s blob, %s text, %s text, %s bigint, %s blob, PRIMARY KEY (%s, %s, %s, %s)) WITH CLUSTERING ORDER BY (%s ASC, %s ASC, %s DESC);",
+        CASSANDRA_KEY_COL,
+        CASSANDRA_FAMILY_COL,
+        CASSANDRA_QUALIFIER_COL,
+        CASSANDRA_VERSION_COL,
+        CASSANDRA_VALUE_COL,
+        CASSANDRA_KEY_COL,
+        CASSANDRA_FAMILY_COL,
+        CASSANDRA_QUALIFIER_COL,
+        CASSANDRA_VERSION_COL,
+        CASSANDRA_FAMILY_COL,
+        CASSANDRA_QUALIFIER_COL,
+        CASSANDRA_VERSION_COL
+    );
 
-      String cassandraTableLayout = String.format(
-          "(%s blob, %s text, %s bigint, %s blob, PRIMARY KEY (%s, %s, %s)) WITH CLUSTERING ORDER BY (%s ASC, %s DESC);",
-          CASSANDRA_KEY_COL,
-          CASSANDRA_QUALIFIER_COL,
-          CASSANDRA_VERSION_COL,
-          CASSANDRA_VALUE_COL,
-          CASSANDRA_KEY_COL,
-          CASSANDRA_QUALIFIER_COL,
-          CASSANDRA_VERSION_COL,
-          CASSANDRA_QUALIFIER_COL,
-          CASSANDRA_VERSION_COL
-      );
-
-      // Create the table!
-      mAdmin.createTable(cTableName.toString(), cassandraTableLayout);
-    }
-
+    // Create the table!
+    mAdmin.createTable(cTableName.toString(), cassandraTableLayout);
 
     //LOG.debug("Creating HBase table '{}'.", desc.getNameAsString());
     //throw new KijiAlreadyExistsException(String.format("Kiji table '%s' already exists.", tableURI), tableURI);

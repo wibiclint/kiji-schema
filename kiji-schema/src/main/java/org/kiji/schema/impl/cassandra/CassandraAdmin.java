@@ -132,13 +132,19 @@ public abstract class CassandraAdmin implements Closeable {
   }
 
   public boolean keyspaceIsEmpty() {
+    Preconditions.checkNotNull(getSession());
+    Preconditions.checkNotNull(getSession().getCluster());
+    Preconditions.checkNotNull(getSession().getCluster().getMetadata());
     String keyspace = KijiManagedCassandraTableName.getCassandraKeyspaceFormattedForCQL(mKijiURI);
+    String noQuotesKeyspace = stripQuotesFromKeyspace(keyspace);
+    Preconditions.checkNotNull(getSession().getCluster().getMetadata().getKeyspace(noQuotesKeyspace));
     Collection<TableMetadata> tables =
-        getSession().getCluster().getMetadata().getKeyspace(keyspace).getTables();
+        getSession().getCluster().getMetadata().getKeyspace(noQuotesKeyspace).getTables();
     return (tables.isEmpty());
   }
 
   public void deleteKeyspace() {
+    // TODO: Track whether keyspace exists and assert appropriate keyspace state in all methods.
     String keyspace = KijiManagedCassandraTableName.getCassandraKeyspaceFormattedForCQL(mKijiURI);
     String queryString = "DROP KEYSPACE " + keyspace;
     getSession().execute(queryString);
