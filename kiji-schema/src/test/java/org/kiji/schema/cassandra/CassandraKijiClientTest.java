@@ -29,9 +29,8 @@ import org.junit.Before;
 import org.junit.Rule;
 import org.junit.rules.TestName;
 import org.kiji.checkin.CheckinUtils;
+import org.kiji.schema.CassandraKijiURI;
 import org.kiji.schema.Kiji;
-import org.kiji.schema.KijiInstaller;
-import org.kiji.schema.KijiURI;
 import org.kiji.schema.impl.cassandra.CassandraKijiFactory;
 import org.kiji.schema.util.TestingFileUtils;
 import org.slf4j.Logger;
@@ -133,16 +132,24 @@ public class CassandraKijiClientTest {
    *
    * @return the KijiURI of a test HBase instance.
    */
-  public KijiURI createTestCassandraURI() {
+  public CassandraKijiURI createTestCassandraURI() {
     final long fakeCassandraCounter = mFakeCassandraInstanceCounter.getAndIncrement();
-    final String testName =
-        String.format("%s_%s", getClass().getSimpleName(), mTestName.getMethodName());
+    final String testName = String.format(
+        "%s_%s",
+        getClass().getSimpleName(),
+        mTestName.getMethodName()
+    );
+
+    // Goes into the ZooKeeper section of the URI.
     final String cassandraAddress =
         (CASSANDRA_ADDRESS != null)
         ? CASSANDRA_ADDRESS
         : String.format(".fake.%s-%d", testName, fakeCassandraCounter);
-    KijiURI uri = KijiURI.newBuilder(String.format("kiji://%s", cassandraAddress)).build();
-    LOG.debug("Created test Cassandra URI: " + uri);
+
+    CassandraKijiURI uri = CassandraKijiURI
+        .newBuilder(String.format("kiji-cassandra://%s/localhost/9042", cassandraAddress))
+        .build();
+    LOG.info("Created test Cassandra URI: " + uri);
     return uri;
   }
 
@@ -163,18 +170,18 @@ public class CassandraKijiClientTest {
 
     final String instanceName = String.format("%s_%d",  mTestName.getMethodName(), mKijiInstanceCounter.getAndIncrement());
 
-    LOG.debug("Creating a test Kiji instance.  Calling Kiji instance " + instanceName);
+    LOG.info("Creating a test Kiji instance.  Calling Kiji instance " + instanceName);
 
     //final String instanceName = String.format("%s_%s_%d",
         //getClass().getSimpleName(),
         //mTestName.getMethodName(),
         //mKijiInstanceCounter.getAndIncrement());
 
-    final KijiURI kijiURI = createTestCassandraURI();
-    final KijiURI uri = KijiURI.newBuilder(kijiURI).withInstanceName(instanceName).build();
-    LOG.info("Installing fake C* instance " + uri);
-    CassandraKijiInstaller.get().install(uri, mConf);
-    final Kiji kiji = CassandraKijiFactory.get().open(uri, mConf);
+    final CassandraKijiURI kijiURI = createTestCassandraURI();
+    final CassandraKijiURI instanceURI = CassandraKijiURI.newBuilder(kijiURI).withInstanceName(instanceName).build();
+    LOG.info("Installing fake C* instance " + instanceURI);
+    CassandraKijiInstaller.get().install(instanceURI, mConf);
+    final Kiji kiji = CassandraKijiFactory.get().open(instanceURI, mConf);
 
     mAllKijis.add(kiji);
     return kiji;

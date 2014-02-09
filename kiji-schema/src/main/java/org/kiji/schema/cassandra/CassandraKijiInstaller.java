@@ -93,6 +93,11 @@ public final class CassandraKijiInstaller {
           "Kiji URI '%s' does not specify a Kiji instance name", uri));
     }
 
+    if (!uri.isCassandra()) {
+      throw new KijiInvalidNameException(String.format(
+          "Kiji URI '%s' is not a valid Cassandra-Kiji URI", uri));
+    }
+
     final LockFactory lockFactory = cassandraFactory.getLockFactory(uri, conf);
 
     try {

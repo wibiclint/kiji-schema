@@ -60,8 +60,6 @@ public final class CassandraKijiWriterFactory implements KijiWriterFactory {
   /** {@inheritDoc} */
   @Override
   public KijiBufferedWriter openBufferedWriter() throws IOException {
-    //return new HBaseKijiBufferedWriter(mTable);
-    // TODO: Implement C* buffered writer.
-    return null;
+    return new CassandraKijiBufferedWriter(mTable);
   }
 }

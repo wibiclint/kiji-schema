@@ -4,18 +4,15 @@ Notes about Cassandra development, refactoring, etc.
 Open TODOs
 ==========
 
+- TODO: Remove any dependency on cassandra-unit or verify that cassandra-unit has a license we can
+  use
 - TODO: Update copyrights, check for any stale HBase comments
 - TODO: See whether we can make some of the constructors for system, meta, schema tables private.
 - TODO: Add constructor methods for the C* meta, system, schema tables that match those for HBase
-- TODO: Optimize all of the get/put value code for the meta, system, schema tables such that we
-  generate a prepared statement only once (in the constructor)
-- TODO: Get unit tests working for new C* meta, system, schema tables
-- TODO: Figure out how we want to organize the unit tests for Kiji-specific stuff
 - TODO: Double check that all rows with timestamps are ordered by DESC
 - TODO: Clean up / expand `KijiManagedCassandraTableName`
   - Make the methods in `KijiManagedCassandraTableName` more explicit about whether they are
     returning names in the Kiji namespace or in the C* namespace.
-  - Add a richer set of methods for creating C* table names per Kiji column family
 - TODO: Add super-unstable annotations to this API.  :)
 - TODO: Check for any case-sensitivity issues - The CQL commands that we are using to create and
   manipulate tables may need some kind of quotes or other escaping to maintain upper/lower case.
@@ -24,6 +21,9 @@ Open TODOs
 - TODO: Do we need to make an interface for MetadataRestorer and then create HBase and C* versions?
   - Could have a static "get" method in KijiMetaTable that can get the appropriate restorer
 - TODO: Add the column name translation business (I've been skipping that for now).
+- TODO: Add support for counters
+- TODO: Figure out what to do about hashing entity IDs.  Right now we are really hashing twice
+  (once in Kiji, once in Cassandra).
 
 
 Open questions
@@ -652,7 +652,7 @@ New classes and packages
 - `o.k.s.impl.cassandra.CassandraKijiTableWriter`
 - `o.k.s.impl.cassandra.CassandraDataRequestAdapter`
 - `o.k.s.impl.cassandra.CassandraKijiRowData`
-- `o.k.s.CassandraKijiURI
+- `o.k.s.CassandraKijiURI`
 
 
 How to store Cassandra table layout information?
@@ -834,4 +834,8 @@ Functionality needed for the phonebook tutorial
 - `DeleteEntry` - Calls delete.
 
 
+Prepared statements for different tables.
+-----------------------------------------
 
+For now, I am putting a Map from tableURI-to-prepared statements for reading, writing, etc. into
+`CassandraAdmin`

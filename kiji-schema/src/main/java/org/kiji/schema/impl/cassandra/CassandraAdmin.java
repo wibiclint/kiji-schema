@@ -185,5 +185,7 @@ public abstract class CassandraAdmin implements Closeable {
 
   // TODO: Implement close method
   public void close() {
+    // Cannot close this right now without wreaking havoc in the unit tests.
+    //getSession().shutdown();
   }
 }

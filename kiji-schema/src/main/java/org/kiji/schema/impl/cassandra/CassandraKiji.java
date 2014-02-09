@@ -916,6 +916,15 @@ public final class CassandraKiji implements Kiji {
     // Create the table!
     mAdmin.createTable(cTableName.toString(), cassandraTableLayout);
 
+    // Add a secondary index on the timestamp.
+    String query = String.format(
+        "CREATE INDEX ON %s (%s)",
+        cTableName.toString(),
+        CASSANDRA_VERSION_COL
+    );
+
+    mAdmin.getSession().execute(query);
+
     //LOG.debug("Creating HBase table '{}'.", desc.getNameAsString());
     //throw new KijiAlreadyExistsException(String.format("Kiji table '%s' already exists.", tableURI), tableURI);
 

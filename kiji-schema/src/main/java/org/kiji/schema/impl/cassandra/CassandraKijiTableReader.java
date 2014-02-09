@@ -365,6 +365,38 @@ public final class CassandraKijiTableReader implements KijiTableReader {
         mTable, dataRequest, entityId, allRows, capsule.getCellDecoderProvider());
   }
 
+  // TODO: Clean this up, possibly refactor.
+  /**
+   * Necessary for KijiMR in record reader to get KijiRowData from a Cassandra Row.
+   *
+   * @param dataRequest
+   * @param row
+   * @return
+   * @throws IOException
+   */
+  public KijiRowData getRowDataFromCassandraRow(KijiDataRequest dataRequest, Row row) throws IOException {
+    final ReaderLayoutCapsule capsule = mReaderLayoutCapsule;
+    // Make sure the request validates against the layout of the table.
+    final KijiTableLayout tableLayout = capsule.getLayout();
+    validateRequestAgainstLayout(dataRequest, tableLayout);
+
+    // TODO: Insert column-name translator here.
+
+    HashSet<Row> allRows = new HashSet<Row>();
+    allRows.add(row);
+
+    // Figure out the entity ID from the row.
+    ByteBuffer currentEntityIdBlob = row.getBytes(CassandraKiji.CASSANDRA_KEY_COL);
+    byte[] eidBytes = CassandraByteUtil.byteBuffertoBytes(currentEntityIdBlob);
+    EntityIdFactory entityIdFactory = EntityIdFactory.getFactory(mTable.getLayout());
+    EntityId entityId = entityIdFactory.getEntityIdFromHBaseRowKey(eidBytes);
+
+    // Now we create a KijiRowData from all of these results.
+    // Parse the result.
+    return new CassandraKijiRowData(
+        mTable, dataRequest, entityId, allRows, capsule.getCellDecoderProvider());
+  }
+
   /** {@inheritDoc} */
   @Override
   public List<KijiRowData> bulkGet(List<EntityId> entityIds, KijiDataRequest dataRequest)

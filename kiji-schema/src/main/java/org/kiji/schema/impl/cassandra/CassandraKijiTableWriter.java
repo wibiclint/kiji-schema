@@ -246,6 +246,7 @@ public final class CassandraKijiTableWriter implements KijiTableWriter {
     );
 
 
+    // TODO: Refactor this query text (and preparation for it) elsewhere.
     // Create the CQL statement to insert data.
     String queryText = String.format(
         "INSERT INTO %s (%s, %s, %s, %s, %s) VALUES (?, ?, ?, ?, ?);",
@@ -342,11 +343,22 @@ public final class CassandraKijiTableWriter implements KijiTableWriter {
     Preconditions.checkState(state == State.OPEN,
         "Cannot delete row while KijiTableWriter %s is in state %s.", this, state);
 
-    // TODO: Write actual implementation of deleting C* row.
-    /*
-    final Delete delete = new Delete(entityId.getHBaseRowKey(), upToTimestamp, null);
-    mHTable.delete(delete);
-    */
+    final ByteBuffer rowKey = CassandraByteUtil.bytesToByteBuffer(entityId.getHBaseRowKey());
+    KijiManagedCassandraTableName cTableName = KijiManagedCassandraTableName.getKijiTableName(
+        mTable.getURI(),
+        mTable.getName()
+    );
+
+    // TODO: Prepare this statement first.
+    String queryString = String.format(
+        "DELETE FROM %s WHERE %s=?",
+        cTableName.toString(),
+        CassandraKiji.CASSANDRA_KEY_COL
+    );
+
+    Session session = mAdmin.getSession();
+    PreparedStatement preparedStatement = session.prepare(queryString);
+    session.execute(preparedStatement.bind(rowKey));
   }
 
   /** {@inheritDoc} */
@@ -369,129 +381,28 @@ public final class CassandraKijiTableWriter implements KijiTableWriter {
       throw new NoSuchColumnException(String.format("Family '%s' not found.", family));
     }
 
-    if (familyLayout.getLocalityGroup().getFamilyMap().size() > 1) {
-      // There are multiple families within the locality group, so we need to be clever.
-      if (familyLayout.isGroupType()) {
-        deleteGroupFamily(entityId, familyLayout, upToTimestamp);
-      } else if (familyLayout.isMapType()) {
-        deleteMapFamily(entityId, familyLayout, upToTimestamp);
-      } else {
-        throw new RuntimeException("Internal error: family is neither map-type nor group-type.");
-      }
-      return;
-    }
+    // TODO: Column name translation.
+    //final HBaseColumnName hbaseColumnName = capsule.getColumnNameTranslator()
+        //.toHBaseColumnName(new KijiColumnName(family));
 
-    // The only data in this HBase family is the one Kiji family, so we can delete everything.
-    // TODO: Write actual implementation of deleting C* column family.
-    /*
-    final HBaseColumnName hbaseColumnName = capsule.getColumnNameTranslator()
-        .toHBaseColumnName(new KijiColumnName(family));
-    final Delete delete = new Delete(entityId.getHBaseRowKey());
-    delete.deleteFamily(hbaseColumnName.getFamily(), upToTimestamp);
+    final ByteBuffer rowKey = CassandraByteUtil.bytesToByteBuffer(entityId.getHBaseRowKey());
+    KijiManagedCassandraTableName cTableName = KijiManagedCassandraTableName.getKijiTableName(
+        mTable.getURI(),
+        mTable.getName()
+    );
 
-    // Send the delete to the HBase HTable.
-    mHTable.delete(delete);
-    */
-  }
+    // TODO: Prepare this statement first.
+    String queryString = String.format(
+        "DELETE FROM %s WHERE %s=? AND %s=? AND %s <= ?",
+        cTableName.toString(),
+        CassandraKiji.CASSANDRA_KEY_COL,
+        CassandraKiji.CASSANDRA_FAMILY_COL,
+        CassandraKiji.CASSANDRA_VERSION_COL
+    );
 
-  /**
-   * Deletes all cells from a group-type family with a timestamp less than or equal to a
-   * specified timestamp.
-   *
-   * @param entityId The entity (row) to delete from.
-   * @param familyLayout The family layout.
-   * @param upToTimestamp A timestamp.
-   * @throws java.io.IOException If there is an IO error.
-   */
-  private void deleteGroupFamily(
-      EntityId entityId,
-      FamilyLayout familyLayout,
-      long upToTimestamp)
-      throws IOException {
-    final State state = mState.get();
-    Preconditions.checkState(state == State.OPEN,
-        "Cannot delete family group while KijiTableWriter %s is in state %s.", this, state);
-    final String familyName = Preconditions.checkNotNull(familyLayout.getName());
-    // TODO: Write actual implementation of deleting C* group-type column family.
-    /*
-    // Delete each column in the group according to the layout.
-    final Delete delete = new Delete(entityId.getHBaseRowKey());
-    for (ColumnLayout columnLayout : familyLayout.getColumnMap().values()) {
-      final String qualifier = columnLayout.getName();
-      final KijiColumnName column = new KijiColumnName(familyName, qualifier);
-      final HBaseColumnName hbaseColumnName =
-          mWriterLayoutCapsule.getColumnNameTranslator().toHBaseColumnName(column);
-      delete.deleteColumns(
-          hbaseColumnName.getFamily(), hbaseColumnName.getQualifier(), upToTimestamp);
-    }
-
-    // Send the delete to the HBase HTable.
-    mHTable.delete(delete);
-    */
-  }
-
-  /**
-   * Deletes all cells from a map-type family with a timestamp less than or equal to a
-   * specified timestamp.
-   *
-   * <p>This call requires an HBase row lock, so it should be used with care.</p>
-   *
-   * @param entityId The entity (row) to delete from.
-   * @param familyLayout A family layout.
-   * @param upToTimestamp A timestamp.
-   * @throws java.io.IOException If there is an IO error.
-   */
-  private void deleteMapFamily(EntityId entityId, FamilyLayout familyLayout, long upToTimestamp)
-      throws IOException {
-    // Since multiple Kiji column families are mapped into a single HBase column family,
-    // we have to do this delete in a two-step transaction:
-    //
-    // 1. Send a get() to retrieve the names of all HBase qualifiers within the HBase
-    //    family that belong to the Kiji column family.
-    // 2. Send a delete() for each of the HBase qualifiers found in the previous step.
-
-    final State state = mState.get();
-    Preconditions.checkState(state == State.OPEN,
-        "Cannot delete map family while KijiTableWriter %s is in state %s.", this, state);
-    final String familyName = familyLayout.getName();
-    final HBaseColumnName hbaseColumnName = mWriterLayoutCapsule.getColumnNameTranslator()
-        .toHBaseColumnName(new KijiColumnName(familyName));
-    final byte[] hbaseRow = entityId.getHBaseRowKey();
-
-    // TODO: Write actual implementation of deleting C* map-type column family.
-    /*
-    // Lock the row.
-    final RowLock rowLock = mHTable.lockRow(hbaseRow);
-    try {
-      // Step 1.
-      final Get get = new Get(hbaseRow, rowLock);
-      get.addFamily(hbaseColumnName.getFamily());
-
-      final FilterList filter = new FilterList(FilterList.Operator.MUST_PASS_ALL);
-      filter.addFilter(new KeyOnlyFilter());
-      filter.addFilter(new ColumnPrefixFilter(hbaseColumnName.getQualifier()));
-      get.setFilter(filter);
-
-      final Result result = mHTable.get(get);
-
-      // Step 2.
-      if (result.isEmpty()) {
-        LOG.debug("No qualifiers to delete in map family: " + familyName);
-      } else {
-        final Delete delete = new Delete(hbaseRow, HConstants.LATEST_TIMESTAMP, rowLock);
-        for (byte[] hbaseQualifier
-                 : result.getFamilyMap(hbaseColumnName.getFamily()).keySet()) {
-          LOG.debug("Deleting HBase column " + hbaseColumnName.getFamilyAsString()
-              + ":" + Bytes.toString(hbaseQualifier));
-          delete.deleteColumns(hbaseColumnName.getFamily(), hbaseQualifier, upToTimestamp);
-        }
-        mHTable.delete(delete);
-      }
-    } finally {
-      // Make sure to unlock the row!
-      mHTable.unlockRow(rowLock);
-    }
-    */
+    Session session = mAdmin.getSession();
+    PreparedStatement preparedStatement = session.prepare(queryString);
+    session.execute(preparedStatement.bind(rowKey, family, upToTimestamp));
   }
 
   /** {@inheritDoc} */
@@ -508,15 +419,26 @@ public final class CassandraKijiTableWriter implements KijiTableWriter {
     Preconditions.checkState(state == State.OPEN,
         "Cannot delete column while KijiTableWriter %s is in state %s.", this, state);
 
-    // TODO: Write actual implementation of deleting C* column.
+    // TODO: Column name translation.
+    final ByteBuffer rowKey = CassandraByteUtil.bytesToByteBuffer(entityId.getHBaseRowKey());
+    KijiManagedCassandraTableName cTableName = KijiManagedCassandraTableName.getKijiTableName(
+        mTable.getURI(),
+        mTable.getName()
+    );
 
-    /*
-    final HBaseColumnName hbaseColumnName = mWriterLayoutCapsule.getColumnNameTranslator()
-        .toHBaseColumnName(new KijiColumnName(family, qualifier));
-    final Delete delete = new Delete(entityId.getHBaseRowKey())
-        .deleteColumns(hbaseColumnName.getFamily(), hbaseColumnName.getQualifier(), upToTimestamp);
-    mHTable.delete(delete);
-    */
+    // TODO: Prepare this statement first.
+    String queryString = String.format(
+        "DELETE FROM %s WHERE %s=? AND %s=? AND %s=? AND %s <= ?",
+        cTableName.toString(),
+        CassandraKiji.CASSANDRA_KEY_COL,
+        CassandraKiji.CASSANDRA_FAMILY_COL,
+        CassandraKiji.CASSANDRA_QUALIFIER_COL,
+        CassandraKiji.CASSANDRA_VERSION_COL
+    );
+
+    Session session = mAdmin.getSession();
+    PreparedStatement preparedStatement = session.prepare(queryString);
+    session.execute(preparedStatement.bind(rowKey, family, qualifier, upToTimestamp));
   }
 
   /** {@inheritDoc} */
@@ -533,15 +455,26 @@ public final class CassandraKijiTableWriter implements KijiTableWriter {
     Preconditions.checkState(state == State.OPEN,
         "Cannot delete cell while KijiTableWriter %s is in state %s.", this, state);
 
-    // TODO: Write actual implementation of deleting C* cell.
+    // TODO: Column name translation.
+    final ByteBuffer rowKey = CassandraByteUtil.bytesToByteBuffer(entityId.getHBaseRowKey());
+    KijiManagedCassandraTableName cTableName = KijiManagedCassandraTableName.getKijiTableName(
+        mTable.getURI(),
+        mTable.getName()
+    );
 
-    /*
-    final HBaseColumnName hbaseColumnName = mWriterLayoutCapsule.getColumnNameTranslator()
-        .toHBaseColumnName(new KijiColumnName(family, qualifier));
-    final Delete delete = new Delete(entityId.getHBaseRowKey())
-        .deleteColumn(hbaseColumnName.getFamily(), hbaseColumnName.getQualifier(), timestamp);
-    mHTable.delete(delete);
-    */
+    // TODO: Prepare this statement first.
+    String queryString = String.format(
+        "DELETE FROM %s WHERE %s=? AND %s=? AND %s=? AND %s=?",
+        cTableName.toString(),
+        CassandraKiji.CASSANDRA_KEY_COL,
+        CassandraKiji.CASSANDRA_FAMILY_COL,
+        CassandraKiji.CASSANDRA_QUALIFIER_COL,
+        CassandraKiji.CASSANDRA_VERSION_COL
+    );
+
+    Session session = mAdmin.getSession();
+    PreparedStatement preparedStatement = session.prepare(queryString);
+    session.execute(preparedStatement.bind(rowKey, family, qualifier, timestamp));
   }
 
   // ----------------------------------------------------------------------------------------------

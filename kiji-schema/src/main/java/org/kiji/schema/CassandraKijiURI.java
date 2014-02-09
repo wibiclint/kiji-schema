@@ -57,7 +57,7 @@ import java.util.regex.Pattern;
  *     .withZookeeperQuorum("127.0.0.1")
  *     .withZookeeperClientPort(2181)
  *     .withCassandraContactPoint("127.0.0.1")
- *     .withCassandraClientPort(9160)
+ *     .withCassandraClientPort(9042)
  *     .withInstanceName("default")
  *     .withTableName("mytable")
  *     .addColumnName(new KijiColumnName(col))
