@@ -100,9 +100,7 @@ public class TestCassandraReadAndWrite extends CassandraKijiClientTest {
     rowData = reader.get(eid0, dataRequest);
 
     // Should not get any data back!
-    assertFalse(
-        rowData.asIterable("family", "column").iterator().hasNext()
-    );
+    assertFalse( rowData.containsColumn("family", "column") );
 
     reader.close();
     writer.close();

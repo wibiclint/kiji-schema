@@ -408,7 +408,29 @@ public final class CassandraKijiTableWriter implements KijiTableWriter {
   /** {@inheritDoc} */
   @Override
   public void deleteColumn(EntityId entityId, String family, String qualifier) throws IOException {
-    deleteColumn(entityId, family, qualifier, HConstants.LATEST_TIMESTAMP);
+    final State state = mState.get();
+    Preconditions.checkState(state == State.OPEN,
+        "Cannot delete column while KijiTableWriter %s is in state %s.", this, state);
+
+    // TODO: Column name translation.
+    final ByteBuffer rowKey = CassandraByteUtil.bytesToByteBuffer(entityId.getHBaseRowKey());
+    KijiManagedCassandraTableName cTableName = KijiManagedCassandraTableName.getKijiTableName(
+        mTable.getURI(),
+        mTable.getName()
+    );
+
+    // TODO: Prepare this statement first.
+    String queryString = String.format(
+        "DELETE FROM %s WHERE %s=? AND %s=? AND %s=?",
+        cTableName.toString(),
+        CassandraKiji.CASSANDRA_KEY_COL,
+        CassandraKiji.CASSANDRA_FAMILY_COL,
+        CassandraKiji.CASSANDRA_QUALIFIER_COL
+    );
+
+    Session session = mAdmin.getSession();
+    PreparedStatement preparedStatement = session.prepare(queryString);
+    session.execute(preparedStatement.bind(rowKey, family, qualifier));
   }
 
   /** {@inheritDoc} */
@@ -419,6 +441,12 @@ public final class CassandraKijiTableWriter implements KijiTableWriter {
     Preconditions.checkState(state == State.OPEN,
         "Cannot delete column while KijiTableWriter %s is in state %s.", this, state);
 
+    // Sadly, the code below won't work, because C* does not yet support inequalities on deletes!
+    throw new UnsupportedOperationException(
+        "C* does not support deletes with inequalities in primary keys yet."
+    );
+
+    /*
     // TODO: Column name translation.
     final ByteBuffer rowKey = CassandraByteUtil.bytesToByteBuffer(entityId.getHBaseRowKey());
     KijiManagedCassandraTableName cTableName = KijiManagedCassandraTableName.getKijiTableName(
@@ -439,6 +467,7 @@ public final class CassandraKijiTableWriter implements KijiTableWriter {
     Session session = mAdmin.getSession();
     PreparedStatement preparedStatement = session.prepare(queryString);
     session.execute(preparedStatement.bind(rowKey, family, qualifier, upToTimestamp));
+    */
   }
 
   /** {@inheritDoc} */

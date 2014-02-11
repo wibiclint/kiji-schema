@@ -22,12 +22,13 @@ package org.kiji.schema.cassandra;
 import com.datastax.driver.core.Cluster;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Maps;
-import org.apache.cassandra.service.EmbeddedCassandraService;
+import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.service.CassandraDaemon;
+import org.apache.cassandra.service.EmbeddedCassandraService;
+import org.apache.commons.io.FileUtils;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hbase.zookeeper.MiniZooKeeperCluster;
 import org.apache.zookeeper.KeeperException;
-import org.cassandraunit.utils.EmbeddedCassandraServerHelper;
 import org.kiji.delegation.Priority;
 import org.kiji.schema.KijiIOException;
 import org.kiji.schema.KijiURI;
@@ -46,12 +47,10 @@ import com.datastax.driver.core.Session;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Map;
-import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-
-import static java.util.concurrent.TimeUnit.SECONDS;
 
 /** Factory for Cassandra instances based on URIs. */
 public final class TestingCassandraFactory implements CassandraFactory {
@@ -82,10 +81,7 @@ public final class TestingCassandraFactory implements CassandraFactory {
    *
    * Once started, will remain alive until the JVM shuts down.
    */
-  private static Session cassandraSession = null;
-
-  private static CassandraDaemon cassandraDaemon = null;
-  static ExecutorService executor;
+  private static Session mCassandraSession = null;
 
   /**
    * ZooKeeperClient used to create chroot directories prior to instantiating test ZooKeeperClients.
@@ -205,8 +201,8 @@ public final class TestingCassandraFactory implements CassandraFactory {
    * @return A C* admin factory that will produce C* admins that will all use the shared EmbeddedCassandraService.
    */
   private CassandraAdminFactory createFakeCassandraAdminFactory(String fakeCassandraID) {
-    Preconditions.checkNotNull(cassandraSession);
-    return TestingCassandraAdminFactory.get(cassandraSession);
+    Preconditions.checkNotNull(mCassandraSession);
+    return TestingCassandraAdminFactory.get(mCassandraSession);
   }
 
   /**
@@ -214,30 +210,45 @@ public final class TestingCassandraFactory implements CassandraFactory {
    */
   private void startEmbeddedCassandraServiceIfNotRunningAndOpenSession() throws Exception {
     LOG.debug("Ready to start a C* service if necessary...");
-    if (null != cassandraSession) {
+    if (null != mCassandraSession) {
       LOG.debug("C* is already running, no need to start the service.");
-      //Preconditions.checkNotNull(cassandraSession);
+      //Preconditions.checkNotNull(mCassandraSession);
       return;
     }
-    // TODO: Check cassandraSession *is* null..
 
     LOG.debug("Starting EmbeddedCassandra!");
-    EmbeddedCassandraServerHelper.startEmbeddedCassandra();
-    /*
     try {
       LOG.info("Starting EmbeddedCassandraService...");
-      embeddedCassandraService = new EmbeddedCassandraService();
+      // Use a custom YAML file that specifies different ports from normal for RPC and thrift.
+      File yamlFile = new File(getClass().getResource("/cassandra.yaml").getFile());
+
+      assert (yamlFile.exists());
+      System.setProperty("cassandra.config", "file:" + yamlFile.getAbsolutePath());
+      System.setProperty("cassandra-foreground", "true");
+
+      // Make sure that all of the directories for the commit log, data, and caches are empty.
+      // Thank goodness there are methods to get this information (versus parsing the YAML directly).
+      ArrayList<String> directoriesToDelete = new ArrayList<String>(Arrays.asList(
+          DatabaseDescriptor.getAllDataFileLocations()
+      ));
+      directoriesToDelete.add(DatabaseDescriptor.getCommitLogLocation());
+      directoriesToDelete.add(DatabaseDescriptor.getSavedCachesLocation());
+      for (String dirName : directoriesToDelete) {
+        FileUtils.deleteDirectory(new File(dirName));
+      }
+      EmbeddedCassandraService embeddedCassandraService = new EmbeddedCassandraService();
       embeddedCassandraService.start();
+
     } catch (IOException ioe) {
       throw new KijiIOException("Cannot start embedded C* service!");
     }
-    */
 
-    // TODO: Possibly configure host for embedded C* session.
+    // Use different port from normal here to avoid conflicts with any locally-running C* cluster.
+    // Port settings are controlled in "cassandra.yaml" in test resources.
     String hostIp = "127.0.0.1";
-    int port = 9142;
+    int port = 9043;
     Cluster cluster = Cluster.builder().addContactPoints(hostIp).withPort(port).build();
-    cassandraSession = cluster.connect();
+    mCassandraSession = cluster.connect();
   }
 
   //------------------------------------------------------------------------------------------------
