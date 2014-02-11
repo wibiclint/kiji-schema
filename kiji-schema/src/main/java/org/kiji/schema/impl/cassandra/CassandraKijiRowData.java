@@ -192,7 +192,12 @@ public final class CassandraKijiRowData implements KijiRowData {
       Long timestamp = row.getLong(CassandraKiji.CASSANDRA_VERSION_COL);
       ByteBuffer value = row.getBytes(CassandraKiji.CASSANDRA_VALUE_COL);
 
-      //LOG.info("Got back data from table for qualifier " + qualifier + " and timestamp " + timestamp);
+      LOG.info(String.format(
+          "Got back data from table for family:qualifier %s:%s, timestamp %s",
+          family,
+          qualifier,
+          timestamp
+      ));
 
       // Insert this data into the map.
 

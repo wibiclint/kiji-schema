@@ -24,6 +24,10 @@ Open TODOs
 - TODO: Add support for counters
 - TODO: Figure out what to do about hashing entity IDs.  Right now we are really hashing twice
   (once in Kiji, once in Cassandra).
+- TODO: Need comprehensible error message if the user does not have Cassandra running (need an error
+  message that is better than a stack trace)
+- TODO: Desperately need more unit tests for the Cassandra / Hadoop code that I wrote, also for the
+  record reader and input format in Kiji MR
 
 
 Open questions
