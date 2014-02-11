@@ -11,6 +11,11 @@ import com.datastax.driver.core.Session;
  *
  * We may want to get rid of this object eventually.  For now, it just has getters for the
  * CassandraAdmin and table name.
+ *
+ * This class may be useful for managing how different objects can access tables, what actions they
+ * can perform, and for keeping track of references to tables (for figuring out when to close open
+ * Cassandra Sessions).
+ *
  */
 public class CassandraTableInterface {
 

@@ -26,7 +26,7 @@ public class TestingCassandraAdmin extends CassandraAdmin {
   /**
    * Constructor for creating a C* admin from an open C* session.
    * @param session An open Session connected to a cluster with a keyspace selected.
-   * @param keyspace The name of the keyspace to use.
+   * @param kijiURI The URI of the Kiji instance for the admin.
    */
   private TestingCassandraAdmin(Session session, KijiURI kijiURI) {
     super(session, kijiURI);
@@ -36,7 +36,7 @@ public class TestingCassandraAdmin extends CassandraAdmin {
    * Create new instance of CassandraAdmin from an already-open C* session.
    *
    * @param session An already-created Cassandra session for testing.
-   * @param kijiURI The URI of the Kiji instance to create.
+   * @param kijiURI The URI of the Kiji instance for the admin.
    * @return A C* admin instance for the Kiji instance.
    */
   public static TestingCassandraAdmin makeFromKijiURI(Session session, KijiURI kijiURI) {

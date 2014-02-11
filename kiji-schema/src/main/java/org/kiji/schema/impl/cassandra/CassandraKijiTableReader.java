@@ -365,8 +365,20 @@ public final class CassandraKijiTableReader implements KijiTableReader {
         mTable, dataRequest, entityId, allRows, capsule.getCellDecoderProvider());
   }
 
-  // TODO: Clean this up, possibly refactor.
 
+  /**
+   * Useful utility method for other classes (e.g., in KijiMR) to put together raw Cassandra Row
+   * objects into a KijiRowData.
+   *
+   * TODO: Clean this up, possibly refactor.
+   *
+   * @param dataRequest The data request that specifies how to assemble the Row instances into
+   *                    KijiRowData.
+   * @param entityId The entity ID to use for this row.
+   * @param allRows The raw Rows to assemble into KijiRowData.
+   * @return A KijiRowData object formed form these raw Rows.
+   * @throws IOException
+   */
   public KijiRowData getRowDataFromCassandraRows(
       KijiDataRequest dataRequest,
       EntityId entityId,

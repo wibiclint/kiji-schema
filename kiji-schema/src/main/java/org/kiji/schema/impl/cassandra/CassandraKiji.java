@@ -294,7 +294,8 @@ public final class CassandraKiji implements Kiji {
     Preconditions.checkState(state == State.OPEN,
         "Cannot get schema table for Kiji instance %s in state %s.", this, state);
     if (null == mSchemaTable) {
-      mSchemaTable = new CassandraSchemaTable(mURI, mConf, mAdmin, mLockFactory);
+      mSchemaTable = CassandraSchemaTable.createAssumingTableExists(
+          mURI, mConf, mAdmin, mLockFactory);
     }
     return mSchemaTable;
   }
@@ -315,7 +316,8 @@ public final class CassandraKiji implements Kiji {
     Preconditions.checkState(state == State.OPEN,
         "Cannot get meta table for Kiji instance %s in state %s.", this, state);
     if (null == mMetaTable) {
-      mMetaTable = new CassandraMetaTable(mURI, mConf, getSchemaTable(), mAdmin);
+      mMetaTable = CassandraMetaTable.createAssumingTableExists(
+          mURI, mConf, getSchemaTable(), mAdmin);
     }
     return mMetaTable;
   }
@@ -369,9 +371,7 @@ public final class CassandraKiji implements Kiji {
     final State state = mState.get();
     Preconditions.checkState(state == State.OPEN,
         "Cannot open table in Kiji instance %s in state %s.", this, state);
-    // TODO: Uncomment this line when CassandraKijiTable is ready
     return new CassandraKijiTable(this, tableName, mConf, mAdmin);
-    //return null;
   }
 
   /** {@inheritDoc} */
@@ -717,7 +717,6 @@ public final class CassandraKiji implements Kiji {
    *
    * @throws java.io.IOException on I/O error.
    */
-  // TODO: Implement C* version
   private void close() throws IOException {
     final State oldState = mState.getAndSet(State.CLOSED);
     Preconditions.checkState(oldState == State.OPEN,

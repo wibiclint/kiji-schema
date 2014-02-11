@@ -123,13 +123,13 @@ public class CassandraMetaTable implements KijiMetaTable {
    * @param admin Wrapper around open C* session.
    * @throws java.io.IOException If there is an error.
    */
-  CassandraMetaTable(
+  public static CassandraMetaTable createAssumingTableExists(
       KijiURI kijiURI,
       Configuration conf,
       KijiSchemaTable schemaTable,
       CassandraAdmin admin)
       throws IOException {
-    this(
+    return new CassandraMetaTable(
         kijiURI,
         newMetaLayoutTable(kijiURI, conf, admin),
         newMetaKeyValueTable(kijiURI, conf, admin),

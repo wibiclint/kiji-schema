@@ -19,20 +19,26 @@
 
 package org.kiji.schema.impl.cassandra;
 
-import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.hbase.client.HBaseAdmin;
 import org.kiji.annotations.ApiAudience;
 import org.kiji.schema.KijiURI;
 
 import java.io.IOException;
 
 /**
- * Factory for HBaseAdmin.
+ * Factory for CassandraAdmin.
  *
- * Note: there is no interface for HBaseAdmin :(
+ * Useful for creating subclasses that can create different CassandraAdmin objects for testing
+ * versus for normal production runtime.
+ *
  */
 @ApiAudience.Private
 public interface CassandraAdminFactory {
-  // TODO: Comments
+  /**
+   * Create an instance of CassandraAdmin for the Cassandra Kiji instance specified by the URI.
+   *
+   * @param uri The URI for a Cassandra Kiji instance.
+   * @return A CassandraAdmin for this instance.
+   * @throws IOException
+   */
   CassandraAdmin create(KijiURI uri) throws IOException;
 }

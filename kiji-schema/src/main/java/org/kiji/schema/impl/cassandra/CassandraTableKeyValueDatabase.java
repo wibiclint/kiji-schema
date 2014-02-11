@@ -49,11 +49,13 @@ public class CassandraTableKeyValueDatabase
 
   public static final Logger LOG = LoggerFactory.getLogger(CassandraTableKeyValueDatabase.class);
 
-  // TODO: final static vars for key, value column names in the C* table
+  // Hard-code the names of the various columns in the underlying Cassandra table.
   public static final String KV_COLUMN_TABLE = "table_name";
   public static final String KV_COLUMN_KEY = "key";
-  public static final String KV_COLUMN_VALUE = "value";
-  public static final String KV_COLUMN_TIME = "time";
+  // Avoid conflicts with any Cassandra CQL reserved words.
+  // We should be okay because we are using quotes around column names, but let's be extra-safe!
+  public static final String KV_COLUMN_VALUE = "myval";
+  public static final String KV_COLUMN_TIME = "mytime";
 
   /**  The HBase table that stores Kiji metadata. */
   private final CassandraTableInterface mTable;
@@ -209,8 +211,6 @@ public class CassandraTableKeyValueDatabase
   @Override
   public NavigableMap<Long, byte[]> getTimedValues(String table, String key, int numVersions)
       throws IOException {
-    // TODO: Add the actual C* call to get data out of the table.
-
     List<Row> rows = getRows(table, key, numVersions);
     if (0 == rows.size()) {
       throw new IOException(String.format(
@@ -277,8 +277,6 @@ public class CassandraTableKeyValueDatabase
   @Override
   public Set<String> keySet(String table) throws IOException {
     // Just return a set of in-use keys
-    // TODO: Make this query a member of the class and prepare in the constructor
-
     Session session = mTable.getSession();
     ResultSet resultSet = session.execute(mPreparedStatementKeySet.bind(table));
     Set<String> keys = new HashSet<String>();
@@ -292,10 +290,8 @@ public class CassandraTableKeyValueDatabase
   /** {@inheritDoc} */
   @Override
   public Set<String> tableSet() throws IOException {
-
     // Just return a set of in-use tables
-    // TODO: Make this query a member of the class and prepare in the constructor
-
+    // TODO: Prepare this query.
 
     String metaTableName = mTable.getTableName();
     Session session = mTable.getSession();

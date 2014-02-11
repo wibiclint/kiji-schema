@@ -1,71 +1,153 @@
 Notes about Cassandra development, refactoring, etc.
 ====================================================
 
+This document includes notes about the C* versions of KijiSchema and KijiMR (almost all of the code
+to support C* in Kiji is in KijiSchema).
+
 Open TODOs
 ==========
 
-- TODO: Remove any dependency on cassandra-unit or verify that cassandra-unit has a license we can
-  use
-- TODO: Update copyrights, check for any stale HBase comments
-- TODO: See whether we can make some of the constructors for system, meta, schema tables private.
-- TODO: Add constructor methods for the C* meta, system, schema tables that match those for HBase
-- TODO: Double check that all rows with timestamps are ordered by DESC
-- TODO: Clean up / expand `KijiManagedCassandraTableName`
+### Major missing features
+
+- Add the column name translation business (I've been skipping that for now).
+- Add support for counters (CQL requires counters to be in separate tables, annoying...)
+- Security / permission checking is not implemented at all now.
+- Add support for filters (even if everything has to happen on the client for now).
+- Modification of table layout (this should "just work" without any C*-specific modifications -- we
+  just need to test it).
+- The code in `CassandraKijiRowScanner` that assembles the results from multiple iterators over
+  `Row`s into a single `KijiRowData` needs to use the `token` function to do some checks if some
+  Kiji rows are missing data for some columns.
+- We need a C* version of `KijiTableAnnotator`.
+- `CassandraKijiTableReader` has a few missing functions that should be easy to add (e.g.,
+  `bulkGet`).
+- We need a C* version of `AtomicKijiPutter`.
+
+### General cleanup:
+
+- Update copyrights, check for any stale HBase comments
+- Add super-unstable annotations to this API.  :)
+
+### Prepared CQL statements:
+
+- Update any class that calls `Session#execute` to use a prepared query.
+
+### Testing and error messages
+
+- Need comprehensible error message if the user does not have Cassandra running (need an error
+  message that is better than a stack trace)
+- Desperately need more unit tests for the Cassandra / Hadoop code that I wrote, also for the
+  record reader and input format in Kiji MR
+- Add integration tests
+  - Especially need tests with multiple Cassandra nodes to make sure that the new Cassandra / Hadoop
+    code in KijiMR and in the Cassandra2/Hadoop2 interface works properly.
+- The `CassandraKijiClientTest` needs to allow a user to use a JVM system property to force unit
+  tests to run on a real Cassandra server (and not on the session created within the unit tests).
+- The code in `CassandraKijiRowScanner` that creates `KijiRowData` instances from a list of
+  iterators over `Row`s needs *a lot* of testing.  This code has to create the results of multiple
+  RPC calls to provide a coherent view of a given Kiji row.  There is some trickiness that can occur
+  if some Kiji rows do not have any data present whatsoever for a given column.  I had an e-mail
+  thread with Joe about this and there is a `token` function that we use to order the entity IDs.
+
+### General code organization
+
+- Clean up / expand `KijiManagedCassandraTableName`
+  - This is a total mess right now, with a mixture of static and non-static methods.
   - Make the methods in `KijiManagedCassandraTableName` more explicit about whether they are
     returning names in the Kiji namespace or in the C* namespace.
-- TODO: Add super-unstable annotations to this API.  :)
-- TODO: Check for any case-sensitivity issues - The CQL commands that we are using to create and
+- Think about refactoring some code that is shared between HBase and Cassandra implementations of
+  some components into new abstract superclasses or elsewhere.
+  - There is lots of copy-paste code now, not good!
+- Think about limiting the number of places from which we can call `Session#execute`.
+  - Might be good to put all of these calls within `CassandraAdmin`, for example.
+  - That would make it easier to manage prepared queries, since the queries are prepared
+    per-`Session` (double-check that this is true) and the `CassandraAdmin` manages the active
+    Cassandra `Session`.
+- Do we want to refactor `CassandraAdmin` into multiple classes?  Should we add or remove some
+  functionality to or from it?  The class as it is now is somewhat arbitrary -- I created it mostly
+  as a wrapper around an open Cassandra `Session` to try to future-proof the code.
+- Do we need the `CassandraTableInterface` class?  It is basically just a table name and a pointer
+  to a `CassandraAdmin` (which may be useful by itself).
+  - We may want to keep this class around to manage reference counting for open sessions.
+  - We could have the various objects that use CQL always go through an instance of
+    `CassandraTableInterface`, rather than getting a `Session` from `CassandraAdmin`.  Such a
+    restriction would make it easier to manage what objects are doing what with the currently open
+    `Session.`
+
+### Performance
+
+- Add some performance tests!
+  - How does this perform versus HBase?
+  - How does this perform versus bare-bones Cassandra?
+- The `CassandraKijiBufferedWriter` should be aware of the replica nodes for different key ranges
+  and send requests directly to the replica nodes.
+
+### Resource management
+
+- Add code appropriately to keep track of refernces to `CassandraAdmin`, maybe to open `Session`s,
+  etc.
+- Implement the code to close open `Session`s when jobs are done.
+
+
+### Other
+
+- Double check that all rows with timestamps are ordered by DESC
+
+
+- Check for any case-sensitivity issues - The CQL commands that we are using to create and
   manipulate tables may need some kind of quotes or other escaping to maintain upper/lower case.
     - Also really tighten up all of the places where we create queries and where we get actual C*
       table and keyspace names (want to pass around URIs and not strings).
-- TODO: Do we need to make an interface for MetadataRestorer and then create HBase and C* versions?
+
+- Do we need to make an interface for MetadataRestorer and then create HBase and C* versions?
   - Could have a static "get" method in KijiMetaTable that can get the appropriate restorer
-- TODO: Add the column name translation business (I've been skipping that for now).
-- TODO: Add support for counters
-- TODO: Figure out what to do about hashing entity IDs.  Right now we are really hashing twice
+- Figure out what to do about hashing entity IDs.  Right now we are really hashing twice
   (once in Kiji, once in Cassandra).
-- TODO: Need comprehensible error message if the user does not have Cassandra running (need an error
-  message that is better than a stack trace)
-- TODO: Desperately need more unit tests for the Cassandra / Hadoop code that I wrote, also for the
-  record reader and input format in Kiji MR
 
 
 Open questions
 ==============
 
+These are meant to be higher-level issues than those in the TODO section above.
+
 (This is kind of a random list.  There are other open items on the spreadsheet in google docs.)
 
-- Do we want to have a common `TableLayoutDesc` for HBase- and C*-backed Kiji tables?  There is a
-  lot of HBase-specific stuff in there now.  Things we could put into a C*-specific layout
-  description:
-    - Query patterns.  e.g., for a given column family, do we want to search for all versions for a
-      given qualifier, or all qualifiers for a given version (e.g., the most recent)?  (This choice
-      affects the order of the columns in the composite primary key.)
-- The same goes for data requests.  Presumably we need some way to expose the C* consistency levels
-  to the user.
-- *Code reuse:* Do we want to do a broader refactoring of the interfaces and classes in
-  `o.k.s.impl.hbase` and `o.k.s.impl.cassandra` to share more code between the HBase and C*
-  implementations?  Many of the pairs of HBase/C* classes share probably 80-90% of the code, with
-  the only differences existing in the methods that actually interact with the underlying tables.
-  (Scala's traits would be perfect for this, since we could make the interfaces into traits and put
-  the common code there...)
-- How do we want to implement permissions?
-- Currently we have one Cassandra table per Kiji column family.  Is this an issue?
-  - If necessary, we can still perform atomic writes to a Kiji row by using a batch Cassandra
-    statement to perform multiple writes together.
-- Do we need to support a second table layout that better supports scans?  What if I want to scan
-  all of the values of a particular fully-qualified column for all entity IDs?  I'd like to have a
-  different primary key orders (e.g., `PRIMARY KEY (qualifier, key, time)`).
-  - This would also allow us to support scans with start and stop entity IDs.  If we use entity IDs
-    as partition keys, then we cannot implement a scan over an entity ID range (since the order of
-    the rows is not meaningful after the partition keys go through the `RandomPartitioner` or
-    `Murmur3Partitioner`.
-- The current Cassandra implementation of `KijiRowScanner` will break if some column families have
-  no data for some entity IDs.  I'm not sure how to support row scanning if some column families
-  have no data for a given entity ID *without* being able to make any assumptions about the entity
-  ID ordering for results.
+### Table layout and data modeling
+
+- Should we make a new `TableLayoutDesc` for C*-backed Kiji tables?
+  - The current `TableLayoutDesc` has a lot of HBase-specific stuff in it.
+  - A C*-specific layout description could allow users to indicate their most important query
+    patterns, for example, which might allow us to change how we map locality groups, column
+    families, versions, etc. into C*.
+  - Currently the CQL primary key has the order (key, family, qualifier, version, value).  To
+    support different query patterns, we might want to have a different ordering.
+- How shall we expose C*'s variable consistency levels to the user?
+- Do we need to support row scans?
+- We are currently hashing every entity ID twice.  Once in Kiji, and then again when that entity ID
+  becomes the C* partition key and it goes through the `Murmur3Partioner`.  Do we want to change
+  this?
+- Do we want allow users to encode some data using Cassandra's built-in types instead of always
+  using Avro types?
+  - Unless a user is doing some kind of nesting of lists, maps, or sets, he can do all of his data
+    modeling now directly in the CQL data types.
+
+### Bulk importing
+
+- Is there a C* equivalent of an HFile?  Most C* documentation indicates that we should be able to
+  load a table often by just writing to it directly.
+- DataStax has a blog post about an `sstableloader` tool.
+- It looks like they added some [support](https://issues.apache.org/jira/browse/CASSANDRA-3045) for
+  having a C* Hadoop job output files for bulk loading.
+- The DataStax documentation for Cassandra 1.1
+  [indicates](https://issues.apache.org/jira/browse/CASSANDRA-3045)
+  that we can use something similar to HFiles called `BulkOutputFormat`.
+- This [talk](http://www.slideshare.net/knewton/hadoop-and-cassandra-24950937) also looks useful.
+
+### URIs
+
 - Can we represent our Cassandra Kiji URIs more efficiently?  Is there any standard environment
   variable that contains a list of C* hosts and ports (so that a user could specify .env)?
+
 
 
 Usage notes

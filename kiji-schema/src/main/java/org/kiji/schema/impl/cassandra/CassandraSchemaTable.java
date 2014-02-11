@@ -291,19 +291,23 @@ public class CassandraSchemaTable implements KijiSchemaTable {
 
   /**
    * Wrap existing C* tables with schema mappings in them.
+   *
+   * Assumes that the table already exists in Cassandra.
+   *
    * @param kijiURI
    * @param conf
    * @param admin
    * @param lockFactory
    * @throws IOException
    */
-  public CassandraSchemaTable(
+  public static CassandraSchemaTable createAssumingTableExists(
       KijiURI kijiURI,
       Configuration conf,
       CassandraAdmin admin,
       LockFactory lockFactory)
       throws IOException {
-    this(newSchemaHashTable(kijiURI, conf, admin),
+    return new CassandraSchemaTable(
+        newSchemaHashTable(kijiURI, conf, admin),
         newSchemaIdTable(kijiURI, conf, admin),
         newSchemaCounterTable(kijiURI, conf, admin),
         newLock(kijiURI, lockFactory),
@@ -319,7 +323,6 @@ public class CassandraSchemaTable implements KijiSchemaTable {
    * @param uri URI of the Kiji instance this schema table belongs to.
    * @throws java.io.IOException on I/O error.
    */
-  // TODO: Check whether this needs to be public
   private CassandraSchemaTable(
       CassandraTableInterface hashTable,
       CassandraTableInterface idTable,
@@ -346,8 +349,6 @@ public class CassandraSchemaTable implements KijiSchemaTable {
     prepareQueryWriteIdTable();
     prepareQueryReadHashTable();
   }
-
-  // TODO: Probably add a constructor that gets a CassandraAdmin and uses that to create the m*Tables
 
   /**
    * Looks up a schema entry given an Avro schema object.
@@ -493,7 +494,6 @@ public class CassandraSchemaTable implements KijiSchemaTable {
    */
   private void storeInTable(final SchemaTableEntry avroEntry, long timestamp, boolean flush)
       throws IOException {
-    // TODO: Replace with actual C* code
     final byte[] entryBytes = encodeSchemaEntry(avroEntry);
 
     // TODO: Obviate this comment by doing all of this in batch.
@@ -938,7 +938,6 @@ public class CassandraSchemaTable implements KijiSchemaTable {
   /** {@inheritDoc} */
   @Override
   public void fromBackup(final SchemaTableBackup backup) throws IOException {
-    // TODO: Replace with actual C* code
     final State state = mState.get();
     Preconditions.checkState(state == State.OPEN,
         "Cannot restore backup to SchemaTable instance in state %s.", state);
@@ -1093,7 +1092,6 @@ public class CassandraSchemaTable implements KijiSchemaTable {
    * @throws java.io.IOException on I/O error.
    */
   private Set<SchemaEntry> loadSchemaHashTable(CassandraTableInterface hashTable) throws IOException {
-    // TODO: Replace with actual C* code
     LOG.info("Loading entries from schema hash table.");
     final Set<SchemaEntry> entries = new HashSet<SchemaEntry>();
     int hashTableRowCounter = 0;
@@ -1157,7 +1155,6 @@ public class CassandraSchemaTable implements KijiSchemaTable {
    * @throws java.io.IOException on I/O error.
    */
   private Set<SchemaEntry> loadSchemaIdTable(CassandraTableInterface idTable) throws IOException {
-    // TODO: Replace with actual C* code
     LOG.info("Loading entries from schema ID table.");
     int idTableRowCounter = 0;
     final Set<SchemaEntry> entries = new HashSet<SchemaEntry>();

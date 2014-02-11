@@ -3,10 +3,13 @@ package org.kiji.schema.impl.cassandra;
 import com.datastax.driver.core.Cluster;
 import com.datastax.driver.core.ResultSet;
 import com.datastax.driver.core.Session;
+import com.google.common.base.Preconditions;
+import org.kiji.schema.CassandraKijiURI;
 import org.kiji.schema.KijiURI;
 import org.kiji.schema.cassandra.KijiManagedCassandraTableName;
 
 import java.io.Closeable;
+import java.util.List;
 
 /**
  * Lightweight wrapper to mimic the functionality of HBaseAdmin.
@@ -21,26 +24,34 @@ import java.io.Closeable;
 public class DefaultCassandraAdmin extends CassandraAdmin {
 
   /**
-   * Create new instance of CassandraAdmin from an already-open C* session.
+   * Create a CassandraAdmin object from a URI.
    *
-   * @return a new CassandraAdmin instance.
+   * @param kijiURI The KijiURI specifying the Kiji instance for the CassandraAdmin.
+   *                Note: Must be an instance of CassandraKijiURI.
+   * @return A CassandraAdmin for the given Kiji instance.
    */
-  //public static DefaultCassandraAdmin makeFromOpenSession(Session session, String keyspace) {
-    //return new DefaultCassandraAdmin(session, keyspace);
-  //}
-
   public static DefaultCassandraAdmin makeFromKijiURI(KijiURI kijiURI) {
-    // TODO: Replace "localhost" with host from KijiURI.
-    Cluster cluster = Cluster.builder().addContactPoint("localhost").build();
+    Preconditions.checkArgument(kijiURI.isCassandra());
+    CassandraKijiURI cassandraKijiURI = (CassandraKijiURI) kijiURI;
+    List<String> hosts = cassandraKijiURI.getCassandraNodes();
+    String[] hostStrings = hosts.toArray(new String[0]);
+    int port = cassandraKijiURI.getCassandraClientPort();
+    Cluster cluster = Cluster
+        .builder()
+        .addContactPoints(hostStrings)
+        .withPort(port)
+        .build();
     Session cassandraSession = cluster.connect();
     return new DefaultCassandraAdmin(cassandraSession, kijiURI);
   }
 
 
   /**
-   * Constructor for creating a C* admin from an open C* session.
-   * @param session An open Session connected to a cluster with a keyspace selected.
-   * @param keyspace The name of the keyspace to use.
+   * Create a CassandraAdmin from an open Cassandra Session and a URI.
+   *
+   * @param session The open C* Session.
+   * @param kijiURI The KijiURI specifying the Kiji instance for the CassandraAdmin.
+   *                Note: Must be an instance of CassandraKijiURI.
    */
   private DefaultCassandraAdmin(Session session, KijiURI kijiURI) {
     super(session, kijiURI);

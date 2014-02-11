@@ -157,7 +157,7 @@ public class CassandraSystemTable implements KijiSystemTable {
    * @param uri URI of the Kiji instance this table belongs to.
    * @param ctable A C* table to wrap.
    */
-  public CassandraSystemTable(KijiURI uri, CassandraTableInterface ctable) {
+  private CassandraSystemTable(KijiURI uri, CassandraTableInterface ctable) {
     mURI = uri;
     mTable = ctable;
 
@@ -255,7 +255,7 @@ public class CassandraSystemTable implements KijiSystemTable {
     ResultSet resultSet = mTable.getSession().execute(preparedStatementGetValue.bind(key));
 
     // Extra the value from the byte buffer, otherwise return this empty buffer
-    // TODO: Some checks here?
+    // TODO: Some additional sanity checks here?
     List<Row> rows = resultSet.all();
     if (rows.size() == 1) {
       Row row = rows.get(0);
@@ -287,7 +287,7 @@ public class CassandraSystemTable implements KijiSystemTable {
     Preconditions.checkState(state == State.OPEN,
         "Cannot get all from SystemTable instance in state %s.", state);
 
-    // TODO: Make this query a member of the class and prepare in the constructor
+    // TODO: Make this a prepared query.
     String queryText = "SELECT * FROM " +  mTable.getTableName() + ";";
     Session session = mTable.getSession();
     ResultSet resultSet = session.execute(queryText);

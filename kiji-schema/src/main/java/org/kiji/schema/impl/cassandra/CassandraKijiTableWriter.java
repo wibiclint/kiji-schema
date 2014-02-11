@@ -197,9 +197,6 @@ public final class CassandraKijiTableWriter implements KijiTableWriter {
     Preconditions.checkState(mWriterLayoutCapsule != null,
         "KijiTableWriter for table: %s failed to initialize.", mTable.getURI());
 
-    // TODO: Do we need to do something similar here?
-    //mCTable = table.openCassandraTableConnection();
-    //SchemaPlatformBridge.get().setAutoFlush(mCTable, true);
     mAdmin = mTable.getAdmin();
 
     // Retain the table only when everything succeeds.

@@ -91,10 +91,6 @@ public final class TestingCassandraFactory implements CassandraFactory {
    */
   private static ZooKeeperClient mMiniZkClient;
 
-  /** Map from fake HBase ID to fake HBase instances. */
-  // TODO: Maybe replace with a map to keyspaces?
-  //private final Map<String, FakeHBase> mFakeHBase = Maps.newHashMap();
-
   /** Map from fake HBase ID to fake (local) lock factories. */
   private final Map<String, LockFactory> mLock = Maps.newHashMap();
 
@@ -171,7 +167,7 @@ public final class TestingCassandraFactory implements CassandraFactory {
     if (!zkHost.startsWith(FAKE_CASSANDRA_ID_PREFIX)) {
       return null;
     }
-    // TODO: Add assertion that isFakeCassandraURI agrees.
+    assert(isFakeCassandraURI(uri));
     return zkHost.substring(FAKE_CASSANDRA_ID_PREFIX.length());
   }
 
@@ -181,7 +177,7 @@ public final class TestingCassandraFactory implements CassandraFactory {
    * @param uri The URI in question.
    * @return Whether the URI is for a fake instance or not.
    */
-  private boolean isFakeCassandraURI(KijiURI uri) {
+  private static boolean isFakeCassandraURI(KijiURI uri) {
     if (uri.getZookeeperQuorum().size() != 1) {
       return false;
     }

@@ -93,23 +93,20 @@ public class CassandraDataRequestAdapter {
   }
 
   /**
+   * Query a Cassandra table for a get or for a scan.
    *
-   * @param table
+   * @param table The Cassandra Kiji table to scan.
    * @param entityId Make null if this is a scan over all entity IDs (not currently supporting entity ID ranges).
-   * @param kijiTableLayout
-   * @return
+   * @param kijiTableLayout The layout for the Cassandra Kiji table to scan.
+   * @return A list of results for the Cassandra query.
    * @throws IOException
    */
-  public List<ResultSet> queryCassandraTables(
+  private List<ResultSet> queryCassandraTables(
       CassandraKijiTable table,
       EntityId entityId,
       KijiTableLayout kijiTableLayout
   ) throws IOException {
-
-    // TODO: Refactor this method to get rid of "if entityID == null" blocks.
-
     boolean bIsScan = (null == entityId);
-
     Session session = table.getAdmin().getSession();
 
     // Keep track of all of the results coming back from Cassandra

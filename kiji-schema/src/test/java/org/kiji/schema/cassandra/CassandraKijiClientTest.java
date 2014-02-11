@@ -49,7 +49,7 @@ import java.util.concurrent.atomic.AtomicLong;
 public class CassandraKijiClientTest {
   /*
    * <p>
-   *   // TODO: Implement this:
+   *   // TODO: Implement ability to connect to a real Cassandra service in tests.
    *   By default, this base class connects to an EmbeddedCassandraService.
    *   By setting a JVM system property, this class may be configured to use a real Cassandra instance.
    *   For example, to use an C* node running on <code>localhost:2181</code>, you may use:

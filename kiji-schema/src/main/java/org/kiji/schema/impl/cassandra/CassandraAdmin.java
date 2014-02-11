@@ -8,47 +8,59 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.Closeable;
-import java.util.ArrayList;
 import java.util.Collection;
 
 /**
- * Lightweight wrapper to mimic the functionality of HBaseAdmin.
+ * Lightweight wrapper to mimic the functionality of HBaseAdmin (and provide other functionality).
  *
- * We can pass instances of this class around the C* code instead of passing around just Sessions or something like that.
+ * This class exists mostly so that we are not passing around instances of
+ * com.datastax.driver.core.Session everywhere.
  *
- * NOTE: We assume that this session does NOT currently have a keyspace selected.
- *
- * TODO: Need to figure out who is in charge of closing out the open session here...
+ * TODO: Handle reference counting, closing of Session.
  *
  */
 public abstract class CassandraAdmin implements Closeable {
-
   private static final Logger LOG = LoggerFactory.getLogger(CassandraAdmin.class);
 
-  private static String stripQuotesFromKeyspace(String keyspace) {
-    return keyspace.substring(1, keyspace.length()-1);
-  }
-
-  private static String stripQuotesFromTableName(String tableName) {
-    // If the table name looks like keyspace.table, then we have to strip off both!  Yikes!
-    // This would be one trivial line of Python...
-    return tableName.replace("\"", "");
-  }
-
-  /** Current C* session for the given keyspace. */
+  /** Current C* session for the Kiji instance.. */
   private final Session mSession;
 
   /** URI for this instance. **/
   private final KijiURI mKijiURI;
 
+  /**
+   * Remove quotes around a nameWithQuotes, e.g., turn
+   *     "nameWithQuotes"
+   * into
+   *     nameWithQuotes.
+   * We need quotes for CQL statements, but not if we are doing direct queries with the DataStax
+   * Java driver.
+   *
+   * @param nameWithQuotes The nameWithQuotes with quotes.
+   * @return The nameWithQuotes without quotes.
+   */
+  private static String stripQuotes(String nameWithQuotes) {
+    return nameWithQuotes.replace("\"", "");
+  }
+
+  /**
+   * Getter for open Session.
+   *
+   * @return The Session.
+   */
   public Session getSession() { return mSession; }
 
+  /**
+   * Constructor for use by classes that extend this class.  Creates a CassandraAdmin object for a
+   * given Kiji instance.
+   *
+   * @param session Session for this Kiji instance.
+   * @param kijiURI URI for this Kiji instance.
+   */
   protected CassandraAdmin(Session session, KijiURI kijiURI) {
     Preconditions.checkNotNull(session);
     this.mSession = session;
     this.mKijiURI = kijiURI;
-    // TODO: We might want to replace this call in the constructor with a public version of the
-    // createKeyspaceIfMissingForURI that the installers have to call themselves.
     createKeyspaceIfMissingForURI(mKijiURI);
   }
 
@@ -61,7 +73,7 @@ public abstract class CassandraAdmin implements Closeable {
     String keyspace = KijiManagedCassandraTableName.getCassandraKeyspaceFormattedForCQL(kijiURI);
     LOG.info(String.format("Creating keyspace %s (if missing) for %s.", keyspace, kijiURI));
 
-    // TODO: Should check whether the keyspace is longer than 48 characters long and if so provide a Kiji error to the user.
+    // TODO: Check whether keyspace is > 48 characters long and if so provide Kiji error to the user.
     String queryText = "CREATE KEYSPACE IF NOT EXISTS " + keyspace +
         " WITH REPLICATION = {'class' : 'SimpleStrategy', 'replication_factor': 1}";
     ResultSet resultSet = getSession().execute(queryText);
@@ -73,11 +85,17 @@ public abstract class CassandraAdmin implements Closeable {
 
   }
 
+  /**
+   * Check whether a keyspace exists.
+   *
+   * @param keyspace The keyspace name (can include quotes - this method strips them).
+   * @return Whether the keyspace exists.
+   */
   private boolean keyspaceExists(String keyspace) {
     Preconditions.checkArgument(KijiManagedCassandraTableName.keyspaceNameIsFormattedForCQL(keyspace));
 
     // Strip quotes off of keyspace
-    String noQuotesKeyspace = stripQuotesFromKeyspace(keyspace);
+    String noQuotesKeyspace = stripQuotes(keyspace);
     LOG.debug("keyspace without quotes = " + noQuotesKeyspace);
 
     LOG.debug("Checking whether keyspace " + noQuotesKeyspace + " exists.");
@@ -92,7 +110,8 @@ public abstract class CassandraAdmin implements Closeable {
   /**
    * Create a table in the given keyspace.
    *
-   * This wrapper exists so that we can add lots of extra boilerplate checks in here.
+   * This wrapper exists (rather than having various classes create tables themselves) so that we
+   * can add lots of extra boilerplate checks in here.
    *
    * @param tableName The name of the table to create.
    * @param cassandraTableLayout A string with the table layout.
@@ -109,6 +128,15 @@ public abstract class CassandraAdmin implements Closeable {
     return CassandraTableInterface.createFromCassandraAdmin(this, tableName);
   }
 
+  /**
+   * Returns an interface to a Cassandra table.
+   *
+   * The `CassandraTableInterface` object is meant to provide functionality similar to that of
+   * `HTableInterface`.
+   *
+   * @param tableName The name of the table for which to return an interface.
+   * @return The interface for the specified Cassandra table.
+   */
   public CassandraTableInterface getCassandraTableInterface(String tableName) {
     Preconditions.checkArgument(KijiManagedCassandraTableName.tableNameIsFormattedForCQL(tableName));
     assert(tableExists(tableName));
@@ -136,7 +164,7 @@ public abstract class CassandraAdmin implements Closeable {
     Preconditions.checkNotNull(getSession().getCluster());
     Preconditions.checkNotNull(getSession().getCluster().getMetadata());
     String keyspace = KijiManagedCassandraTableName.getCassandraKeyspaceFormattedForCQL(mKijiURI);
-    String noQuotesKeyspace = stripQuotesFromKeyspace(keyspace);
+    String noQuotesKeyspace = stripQuotes(keyspace);
     Preconditions.checkNotNull(getSession().getCluster().getMetadata().getKeyspace(noQuotesKeyspace));
     Collection<TableMetadata> tables =
         getSession().getCluster().getMetadata().getKeyspace(noQuotesKeyspace).getTables();
@@ -157,11 +185,11 @@ public abstract class CassandraAdmin implements Closeable {
 
     // Remove the quotes from the keyspace and the tablename for comparing against what we find in
     // the C* metadata.
-    String keyspace = stripQuotesFromKeyspace(
+    String keyspace = stripQuotes(
         KijiManagedCassandraTableName.getCassandraKeyspaceFormattedForCQL(mKijiURI)
     );
 
-    String tableNameNoQuotes = stripQuotesFromTableName(tableName);
+    String tableNameNoQuotes = stripQuotes(tableName);
 
     LOG.debug("Looking for table with name " + tableNameNoQuotes);
     LOG.debug("\tkeyspace (w/o quotes) = " + keyspace);

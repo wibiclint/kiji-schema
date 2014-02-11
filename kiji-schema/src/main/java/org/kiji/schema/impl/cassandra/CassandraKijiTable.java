@@ -767,46 +767,18 @@ public final class CassandraKijiTable implements KijiTable {
   }
 
   /**
-   * Loads partitioned HFiles directly into the regions of this Kiji table.
+   * Loads partitioned HFiles directly into the regions of this Kiji table.  Does not make sense for
+   * a Cassandra-backed Kiji table.
    *
    * @param hfilePath Path of the HFiles to load.
    * @throws java.io.IOException on I/O error.
    */
   public void bulkLoad(Path hfilePath) throws IOException {
-    /*
-    final LoadIncrementalHFiles loader = createHFileLoader(mConf);
-    try {
-      // LoadIncrementalHFiles.doBulkLoad() requires an HTable instance, not an HTableInterface:
-      final HTable htable = (HTable) mHTableFactory.create(mConf, mHBaseTableName);
-      try {
-        final List<Path> hfilePaths = Lists.newArrayList();
-
-        // Try to find any hfiles for partitions within the passed in path
-        final FileStatus[] hfiles = FileSystem.get(mConf).globStatus(new Path(hfilePath, "*"));
-        for (FileStatus hfile : hfiles) {
-          String partName = hfile.getPath().getName();
-          if (!partName.startsWith("_") && partName.endsWith(".hfile")) {
-            Path partHFile = new Path(hfilePath, partName);
-            hfilePaths.add(partHFile);
-          }
-        }
-        if (hfilePaths.isEmpty()) {
-          // If we didn't find any parts, add in the passed in parameter
-          hfilePaths.add(hfilePath);
-        }
-        for (Path path : hfilePaths) {
-          loader.doBulkLoad(path, htable);
-          LOG.info("Successfully loaded: " + path.toString());
-        }
-      } finally {
-        htable.close();
-      }
-    } catch (TableNotFoundException tnfe) {
-      throw new InternalKijiError(tnfe);
-    }
-    */
-    // TODO: Implement C* version of bulk load (maybe with SSTable?).
+    throw new UnsupportedOperationException(
+        "Cassandra-backed Kiji tables do not support bulk loads from HFiles."
+    );
   }
+
   /**
    * Getter method for this instances C* admin.
    *

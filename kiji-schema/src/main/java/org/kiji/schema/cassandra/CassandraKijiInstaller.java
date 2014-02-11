@@ -63,7 +63,7 @@ public final class CassandraKijiInstaller {
    * Installs the specified Kiji instance.
    *
    * @param uri URI of the Kiji instance to install.
-   * @param conf Hadoop configuration (TODO: Not clear if we really need this here).
+   * @param conf Hadoop configuration
    * @throws IOException on I/O error.
    * @throws KijiInvalidNameException if the Kiji instance name is invalid or already exists.
    */
@@ -78,7 +78,7 @@ public final class CassandraKijiInstaller {
    * @param cassandraFactory C* factory.
    * @param properties Map of the initial system properties for installation, to be used in addition
    *     to the defaults.
-   * @param conf Hadoop configuration (TODO: Not clear if we really need this here).
+   * @param conf Hadoop configuration
    * @throws IOException on I/O error.
    * @throws KijiInvalidNameException if the instance name is invalid or already exists.
    */
@@ -127,7 +127,7 @@ public final class CassandraKijiInstaller {
       throw new KijiAlreadyExistsException(String.format(
           "Cassandra Kiji instance '%s' already exists.", uri), uri);
     }
-    // TODO: Security stuff
+    // TODO: Add security checks when we have a plan for security in Cassandra Kiji.
 
     LOG.info(String.format("Installed Cassandra Kiji instance '%s'.", uri));
   }
@@ -154,7 +154,7 @@ public final class CassandraKijiInstaller {
 
     final Kiji kiji = CassandraKijiFactory.get().open(uri, conf);
     try {
-      // TODO: Check for permissions using KijiSecurityManager.
+      // TODO: Add security checks when we have a plan for security in Cassandra Kiji.
 
       for (String tableName : kiji.getTableNames()) {
         LOG.debug("Deleting kiji table " + tableName + "...");
