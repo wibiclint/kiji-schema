@@ -525,13 +525,15 @@ public final class CassandraKiji implements Kiji {
       boolean dryRun,
       PrintStream printStream)
       throws IOException {
-    /*
     final State state = mState.get();
     Preconditions.checkState(state == State.OPEN,
         "Cannot modify table layout in Kiji instance %s in state %s.", this, state);
     Preconditions.checkNotNull(update);
 
     ensureValidationCompatibility(update);
+
+    // Note that a Cassandra table layout modification should never require a schema change
+    // in the underlying Cassandra table, unless we are adding or removing a counter.
 
     if (dryRun && (null == printStream)) {
       printStream = System.out;
@@ -558,8 +560,8 @@ public final class CassandraKiji implements Kiji {
       if (mSystemVersion.compareTo(Versions.SYSTEM_2_0) >= 0) {
         try {
           // Use ZooKeeper to inform all watchers that a new table layout is available.
-          final HBaseTableLayoutUpdater updater =
-              new HBaseTableLayoutUpdater(this, tableURI, update);
+          final CassandraTableLayoutUpdater updater =
+              new CassandraTableLayoutUpdater(this, tableURI, update);
           try {
             updater.update();
             newLayout = updater.getNewLayout();
@@ -581,103 +583,11 @@ public final class CassandraKiji implements Kiji {
       printStream.println("This table layout is valid.");
     }
 
-    LOG.debug("Computing new HBase schema");
-    final HTableSchemaTranslator translator = new HTableSchemaTranslator();
-    final HTableDescriptor newTableDescriptor =
-        translator.toHTableDescriptor(mURI.getInstance(), newLayout);
-
-    LOG.debug("Reading existing HBase schema");
-    final KijiManagedHBaseTableName hbaseTableName =
-        KijiManagedHBaseTableName.getKijiTableName(mURI.getInstance(), tableName);
-    HTableDescriptor currentTableDescriptor = null;
-    byte[] tableNameAsBytes = hbaseTableName.toBytes();
-    try {
-      currentTableDescriptor = getHBaseAdmin().getTableDescriptor(tableNameAsBytes);
-    } catch (TableNotFoundException tnfe) {
-      if (!dryRun) {
-        throw tnfe; // Not in dry-run mode; table needs to exist. Rethrow exception.
-      }
-    }
-    if (currentTableDescriptor == null) {
-      if (dryRun) {
-        printStream.println("Would create new table: " + tableName);
-        currentTableDescriptor = HTableDescriptorComparator.makeEmptyTableDescriptor(
-            hbaseTableName);
-      } else {
-        throw new RuntimeException("Table " + hbaseTableName.getKijiTableName()
-            + " does not exist");
-      }
-    }
-    LOG.debug("Existing table descriptor: {}", currentTableDescriptor);
-    LOG.debug("New table descriptor: {}", newTableDescriptor);
-
-    LOG.debug("Checking for differences between the new HBase schema and the existing one");
-    final HTableDescriptorComparator comparator = new HTableDescriptorComparator();
-    if (0 == comparator.compare(currentTableDescriptor, newTableDescriptor)) {
-      LOG.debug("HBase schemas are the same.  No need to change HBase schema");
-      if (dryRun) {
-        printStream.println("This layout does not require any physical table schema changes.");
-      }
-    } else {
-      LOG.debug("HBase schema must be changed, but no columns will be deleted");
-
-      if (dryRun) {
-        printStream.println("Changes caused by this table layout:");
-      } else {
-        LOG.debug("Disabling HBase table");
-        getHBaseAdmin().disableTable(hbaseTableName.toString());
-      }
-
-      for (HColumnDescriptor newColumnDescriptor : newTableDescriptor.getFamilies()) {
-        final String columnName = Bytes.toString(newColumnDescriptor.getName());
-        final ColumnId columnId = ColumnId.fromString(columnName);
-        final String lgName = newLayout.getLocalityGroupIdNameMap().get(columnId);
-        final HColumnDescriptor currentColumnDescriptor =
-            currentTableDescriptor.getFamily(newColumnDescriptor.getName());
-        if (null == currentColumnDescriptor) {
-          if (dryRun) {
-            printStream.println("  Creating new locality group: " + lgName);
-          } else {
-            LOG.debug("Creating new column " + columnName);
-            getHBaseAdmin().addColumn(hbaseTableName.toString(), newColumnDescriptor);
-          }
-        } else if (!newColumnDescriptor.equals(currentColumnDescriptor)) {
-          if (dryRun) {
-            printStream.println("  Modifying locality group: " + lgName);
-          } else {
-            LOG.debug("Modifying column " + columnName);
-            getHBaseAdmin().modifyColumn(hbaseTableName.toString(), newColumnDescriptor);
-          }
-        } else {
-          LOG.debug("No changes needed for column " + columnName);
-        }
-      }
-
-      if (dryRun) {
-        if (newTableDescriptor.getMaxFileSize() != currentTableDescriptor.getMaxFileSize()) {
-          printStream.printf("  Changing max_filesize from %d to %d: %n",
-            currentTableDescriptor.getMaxFileSize(),
-            newTableDescriptor.getMaxFileSize());
-        }
-        if (newTableDescriptor.getMaxFileSize() != currentTableDescriptor.getMaxFileSize()) {
-          printStream.printf("  Changing memstore_flushsize from %d to %d: %n",
-            currentTableDescriptor.getMemStoreFlushSize(),
-            newTableDescriptor.getMemStoreFlushSize());
-        }
-      } else {
-        LOG.debug("Modifying table descriptor");
-        getHBaseAdmin().modifyTable(tableNameAsBytes, newTableDescriptor);
-      }
-
-      if (!dryRun) {
-        LOG.debug("Re-enabling HBase table");
-        getHBaseAdmin().enableTable(hbaseTableName.toString());
-      }
+    if (dryRun) {
+      printStream.println("No changes possible for Cassandra-backed Kiji tables.");
     }
 
     return newLayout;
-    */
-    return null;
   }
   // CSON: MethodLength
 

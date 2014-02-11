@@ -223,8 +223,6 @@ public final class CassandraKijiTableWriter implements KijiTableWriter {
 
     // TODO: Refactor Kiji/C* mapping code to common place.
 
-    // TODO: Implement column name translations (not present now).
-
     // Encode the value to write into the table as a ByteBuffer for C*.
     final WriterLayoutCapsule capsule = mWriterLayoutCapsule;
     final KijiCellEncoder cellEncoder =
@@ -257,11 +255,15 @@ public final class CassandraKijiTableWriter implements KijiTableWriter {
 
     Session session = mAdmin.getSession();
 
+    final KijiColumnName columnName = new KijiColumnName(family, qualifier);
+    final HBaseColumnName translatedColumnName =
+        capsule.getColumnNameTranslator().toHBaseColumnName(columnName);
+
     PreparedStatement preparedStatement = session.prepare(queryText);
     session.execute(preparedStatement.bind(
         rowKey,
-        family,
-        qualifier,
+        translatedColumnName.getFamilyAsString(),
+        translatedColumnName.getQualifierAsString(),
         timestamp,
         encodedByteBuffer
     ));
@@ -378,9 +380,8 @@ public final class CassandraKijiTableWriter implements KijiTableWriter {
       throw new NoSuchColumnException(String.format("Family '%s' not found.", family));
     }
 
-    // TODO: Column name translation.
-    //final HBaseColumnName hbaseColumnName = capsule.getColumnNameTranslator()
-        //.toHBaseColumnName(new KijiColumnName(family));
+    final HBaseColumnName hbaseColumnName = capsule.getColumnNameTranslator()
+        .toHBaseColumnName(new KijiColumnName(family));
 
     final ByteBuffer rowKey = CassandraByteUtil.bytesToByteBuffer(entityId.getHBaseRowKey());
     KijiManagedCassandraTableName cTableName = KijiManagedCassandraTableName.getKijiTableName(
@@ -399,7 +400,10 @@ public final class CassandraKijiTableWriter implements KijiTableWriter {
 
     Session session = mAdmin.getSession();
     PreparedStatement preparedStatement = session.prepare(queryString);
-    session.execute(preparedStatement.bind(rowKey, family, upToTimestamp));
+    session.execute(preparedStatement.bind(
+        rowKey,
+        hbaseColumnName.getFamilyAsString(),
+        upToTimestamp));
   }
 
   /** {@inheritDoc} */
@@ -409,7 +413,6 @@ public final class CassandraKijiTableWriter implements KijiTableWriter {
     Preconditions.checkState(state == State.OPEN,
         "Cannot delete column while KijiTableWriter %s is in state %s.", this, state);
 
-    // TODO: Column name translation.
     final ByteBuffer rowKey = CassandraByteUtil.bytesToByteBuffer(entityId.getHBaseRowKey());
     KijiManagedCassandraTableName cTableName = KijiManagedCassandraTableName.getKijiTableName(
         mTable.getURI(),
@@ -425,9 +428,21 @@ public final class CassandraKijiTableWriter implements KijiTableWriter {
         CassandraKiji.CASSANDRA_QUALIFIER_COL
     );
 
+    final WriterLayoutCapsule capsule = mWriterLayoutCapsule;
+    final FamilyLayout familyLayout = capsule.getLayout().getFamilyMap().get(family);
+    if (null == familyLayout) {
+      throw new NoSuchColumnException(String.format("Family '%s' not found.", family));
+    }
+    final HBaseColumnName hbaseColumnName = capsule.getColumnNameTranslator()
+        .toHBaseColumnName(new KijiColumnName(family, qualifier));
+
     Session session = mAdmin.getSession();
     PreparedStatement preparedStatement = session.prepare(queryString);
-    session.execute(preparedStatement.bind(rowKey, family, qualifier));
+    session.execute(preparedStatement.bind(
+        rowKey,
+        hbaseColumnName.getFamilyAsString(),
+        hbaseColumnName.getQualifierAsString()
+    ));
   }
 
   /** {@inheritDoc} */
@@ -444,7 +459,14 @@ public final class CassandraKijiTableWriter implements KijiTableWriter {
     );
 
     /*
-    // TODO: Column name translation.
+    final WriterLayoutCapsule capsule = mWriterLayoutCapsule;
+    final FamilyLayout familyLayout = capsule.getLayout().getFamilyMap().get(family);
+    if (null == familyLayout) {
+      throw new NoSuchColumnException(String.format("Family '%s' not found.", family));
+    }
+    final HBaseColumnName hbaseColumnName = capsule.getColumnNameTranslator()
+        .toHBaseColumnName(new KijiColumnName(family));
+
     final ByteBuffer rowKey = CassandraByteUtil.bytesToByteBuffer(entityId.getHBaseRowKey());
     KijiManagedCassandraTableName cTableName = KijiManagedCassandraTableName.getKijiTableName(
         mTable.getURI(),
@@ -463,7 +485,12 @@ public final class CassandraKijiTableWriter implements KijiTableWriter {
 
     Session session = mAdmin.getSession();
     PreparedStatement preparedStatement = session.prepare(queryString);
-    session.execute(preparedStatement.bind(rowKey, family, qualifier, upToTimestamp));
+    session.execute(preparedStatement.bind(
+        rowKey,
+        hbaseColumnName.getFamilyAsString(),
+        hbaseColumnName.getQualifierAsString(),
+        upToTimestamp
+    ));
     */
   }
 
@@ -481,7 +508,14 @@ public final class CassandraKijiTableWriter implements KijiTableWriter {
     Preconditions.checkState(state == State.OPEN,
         "Cannot delete cell while KijiTableWriter %s is in state %s.", this, state);
 
-    // TODO: Column name translation.
+    final WriterLayoutCapsule capsule = mWriterLayoutCapsule;
+    final FamilyLayout familyLayout = capsule.getLayout().getFamilyMap().get(family);
+    if (null == familyLayout) {
+      throw new NoSuchColumnException(String.format("Family '%s' not found.", family));
+    }
+    final HBaseColumnName hbaseColumnName = capsule.getColumnNameTranslator()
+        .toHBaseColumnName(new KijiColumnName(family, qualifier));
+
     final ByteBuffer rowKey = CassandraByteUtil.bytesToByteBuffer(entityId.getHBaseRowKey());
     KijiManagedCassandraTableName cTableName = KijiManagedCassandraTableName.getKijiTableName(
         mTable.getURI(),
@@ -500,7 +534,12 @@ public final class CassandraKijiTableWriter implements KijiTableWriter {
 
     Session session = mAdmin.getSession();
     PreparedStatement preparedStatement = session.prepare(queryString);
-    session.execute(preparedStatement.bind(rowKey, family, qualifier, timestamp));
+    session.execute(preparedStatement.bind(
+        rowKey,
+        hbaseColumnName.getFamilyAsString(),
+        hbaseColumnName.getQualifierAsString(),
+        timestamp
+    ));
   }
 
   // ----------------------------------------------------------------------------------------------

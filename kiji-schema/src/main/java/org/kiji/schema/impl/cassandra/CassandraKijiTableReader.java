@@ -35,6 +35,7 @@ import org.kiji.schema.KijiTableReaderBuilder.OnDecoderCacheMiss;
 import org.kiji.schema.cassandra.KijiManagedCassandraTableName;
 import org.kiji.schema.filter.KijiRowFilter;
 import org.kiji.schema.filter.KijiRowFilterApplicator;
+import org.kiji.schema.hbase.HBaseColumnName;
 import org.kiji.schema.hbase.HBaseScanOptions;
 import org.kiji.schema.impl.BoundColumnReaderSpec;
 import org.kiji.schema.impl.LayoutConsumer;
@@ -346,8 +347,10 @@ public final class CassandraKijiTableReader implements KijiTableReader {
     final KijiTableLayout tableLayout = capsule.getLayout();
     validateRequestAgainstLayout(dataRequest, tableLayout);
 
-    // TODO: Insert column-name translator here.
-    CassandraDataRequestAdapter adapter = new CassandraDataRequestAdapter(dataRequest, null);
+    CassandraDataRequestAdapter adapter = new CassandraDataRequestAdapter(
+        dataRequest,
+        capsule.getColumnNameTranslator()
+    );
 
     List<ResultSet> results = adapter.doGet(mTable, entityId, tableLayout);
 
@@ -455,8 +458,10 @@ public final class CassandraKijiTableReader implements KijiTableReader {
     final KijiTableLayout tableLayout = capsule.getLayout();
     validateRequestAgainstLayout(dataRequest, tableLayout);
 
-    // TODO: Insert column-name translator here.
-    CassandraDataRequestAdapter adapter = new CassandraDataRequestAdapter(dataRequest, null);
+    CassandraDataRequestAdapter adapter = new CassandraDataRequestAdapter(
+        dataRequest,
+        capsule.getColumnNameTranslator()
+    );
 
     List<ResultSet> results = adapter.doScan(mTable, tableLayout, kijiScannerOptions);
 

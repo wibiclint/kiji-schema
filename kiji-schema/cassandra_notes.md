@@ -11,12 +11,9 @@ Open TODOs
 ### Major missing features
 
 - Support paging!
-- Add the column name translation business (I've been skipping that for now).
 - Add support for counters (CQL requires counters to be in separate tables, annoying...)
 - Security / permission checking is not implemented at all now.
 - Add support for filters (even if everything has to happen on the client for now).
-- Modification of table layout (this should "just work" without any C*-specific modifications -- we
-  just need to test it).
 - The code in `CassandraKijiRowScanner` that assembles the results from multiple iterators over
   `Row`s into a single `KijiRowData` needs to use the `token` function to do some checks if some
   Kiji rows are missing data for some columns.
@@ -50,6 +47,7 @@ Open TODOs
   RPC calls to provide a coherent view of a given Kiji row.  There is some trickiness that can occur
   if some Kiji rows do not have any data present whatsoever for a given column.  I had an e-mail
   thread with Joe about this and there is a `token` function that we use to order the entity IDs.
+- Need unit tests for changing table layouts
 
 ### General code organization
 

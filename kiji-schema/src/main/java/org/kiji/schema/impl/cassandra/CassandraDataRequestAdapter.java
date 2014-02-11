@@ -25,6 +25,7 @@ import com.datastax.driver.core.Session;
 import org.kiji.annotations.ApiAudience;
 import org.kiji.schema.*;
 import org.kiji.schema.cassandra.KijiManagedCassandraTableName;
+import org.kiji.schema.hbase.HBaseColumnName;
 import org.kiji.schema.layout.KijiTableLayout;
 import org.kiji.schema.layout.impl.ColumnNameTranslator;
 import org.slf4j.Logger;
@@ -123,9 +124,6 @@ public class CassandraDataRequestAdapter {
     // For now, to keep things simple, we have a separate request for each column (even if there
     // are multiple columns of interest in the same column family / C* table).
     for (KijiDataRequest.Column column : mKijiDataRequest.getColumns()) {
-      // Get the Kiji family and qualifier
-      String family = column.getFamily();
-      String qualifier = column.getQualifier();
 
       // Get the Cassandra table name for this column family
       String cassandraTableName = KijiManagedCassandraTableName.getKijiTableName(
@@ -135,6 +133,13 @@ public class CassandraDataRequestAdapter {
       // TODO: Optimize these queries such that we need only one RPC per column family.
       // (Right now a data request that asks for "info:foo" and "info:bar" would trigger two
       // separate session.execute(statement) commands.
+
+      // Get the translated Kiji family and qualifier.
+      HBaseColumnName hBaseColumnName = mColumnNameTranslator.toHBaseColumnName(
+          new KijiColumnName(column.getName())
+      );
+      String family = hBaseColumnName.getFamilyAsString();
+      String qualifier = hBaseColumnName.getQualifierAsString();
 
       if (bIsScan) {
         // Select this column in the C* family for this qualifier.
@@ -147,10 +152,10 @@ public class CassandraDataRequestAdapter {
         );
         LOG.info("Preparing query string " + queryString);
 
+
         PreparedStatement preparedStatement = session.prepare(queryString);
         ResultSet res = session.execute(preparedStatement.bind(family, qualifier));
         results.add(res);
-
       } else {
         assert(entityId != null);
 

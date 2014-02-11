@@ -28,6 +28,7 @@ import com.google.common.collect.Sets;
 import org.apache.avro.Schema;
 import org.kiji.annotations.ApiAudience;
 import org.kiji.schema.*;
+import org.kiji.schema.hbase.HBaseColumnName;
 import org.kiji.schema.impl.BoundColumnReaderSpec;
 import org.kiji.schema.impl.LayoutCapsule;
 import org.kiji.schema.layout.ColumnReaderSpec;
@@ -178,19 +179,46 @@ public final class CassandraKijiRowData implements KijiRowData {
       return mFilteredMap;
     }
 
-    LOG.info("Filtering the Cassandra results into a map of kiji cells...");
+    LOG.info(String.format(
+        "Filtering the Cassandra results into a map of kiji cells.  There are a total of %d rows",
+        mRows.size()));
 
     mFilteredMap = new TreeMap<String, NavigableMap<String, NavigableMap<Long, byte[]>>>();
+
+    // Need to translate from short names in Cassandra table into longer names in Kiji table.
+    final ColumnNameTranslator columnNameTranslator = new ColumnNameTranslator(mTableLayout);
 
     // Go through every column in the result set and add the data to the filtered map.
     for (Row row : mRows) {
 
+      LOG.info("Reading a row back...");
+
       // Get the Cassandra key (entity Id), qualifier, timestamp, and value.
       ByteBuffer eidByteBuffer = row.getBytes(CassandraKiji.CASSANDRA_KEY_COL);
-      String family = row.getString(CassandraKiji.CASSANDRA_FAMILY_COL);
-      String qualifier = row.getString(CassandraKiji.CASSANDRA_QUALIFIER_COL);
       Long timestamp = row.getLong(CassandraKiji.CASSANDRA_VERSION_COL);
       ByteBuffer value = row.getBytes(CassandraKiji.CASSANDRA_VALUE_COL);
+
+      String cassandraRawfamily = row.getString(CassandraKiji.CASSANDRA_FAMILY_COL);
+      String cassandraRawQualifier = row.getString(CassandraKiji.CASSANDRA_QUALIFIER_COL);
+
+      final HBaseColumnName hBaseColumnName = new HBaseColumnName(
+          cassandraRawfamily,
+          cassandraRawQualifier
+      );
+
+      KijiColumnName kijiColumnName;
+      try {
+        kijiColumnName = columnNameTranslator.toKijiColumnName(hBaseColumnName);
+      } catch (NoSuchColumnException e) {
+        LOG.info(String.format(
+            "Ignoring Cassandra column '%s:%s' because it doesn't contain Kiji data.",
+            cassandraRawfamily,
+            cassandraRawQualifier));
+        continue;
+      }
+
+      String family = kijiColumnName.getFamily();
+      String qualifier = kijiColumnName.getQualifier();
 
       LOG.info(String.format(
           "Got back data from table for family:qualifier %s:%s, timestamp %s",

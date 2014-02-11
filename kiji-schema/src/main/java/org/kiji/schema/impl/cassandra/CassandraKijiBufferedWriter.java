@@ -246,7 +246,8 @@ public class CassandraKijiBufferedWriter implements KijiBufferedWriter {
     final KijiColumnName columnName = new KijiColumnName(family, qualifier);
     final WriterLayoutCapsule capsule = mWriterLayoutCapsule;
 
-    // TODO: Column name translation.
+    final HBaseColumnName translatedColumnName =
+        capsule.getColumnNameTranslator().toHBaseColumnName(columnName);
 
     final KijiCellEncoder cellEncoder =
         capsule.getCellEncoderProvider().getEncoder(family, qualifier);
@@ -258,8 +259,8 @@ public class CassandraKijiBufferedWriter implements KijiBufferedWriter {
 
     BoundStatement boundStatement = mPutStatement.bind(
         rowKey,
-        family,
-        qualifier,
+        translatedColumnName.getFamilyAsString(),
+        translatedColumnName.getQualifierAsString(),
         timestamp,
         encodedByteBuffer);
 
