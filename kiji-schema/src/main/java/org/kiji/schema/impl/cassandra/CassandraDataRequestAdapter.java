@@ -145,7 +145,13 @@ public class CassandraDataRequestAdapter {
         // Select this column in the C* family for this qualifier.
         // Eventually, this column will to have escaped quotes around it (to handle upper and lower case)
         String queryString = String.format(
-            "SELECT * FROM %s WHERE %s=? AND %s=? ALLOW FILTERING",
+            "SELECT token(%s), %s, %s, %s, %s, %s FROM %s WHERE %s=? AND %s=? ALLOW FILTERING",
+            CassandraKiji.CASSANDRA_KEY_COL,
+            CassandraKiji.CASSANDRA_KEY_COL,
+            CassandraKiji.CASSANDRA_FAMILY_COL,
+            CassandraKiji.CASSANDRA_QUALIFIER_COL,
+            CassandraKiji.CASSANDRA_VERSION_COL,
+            CassandraKiji.CASSANDRA_VALUE_COL,
             cassandraTableName,
             CassandraKiji.CASSANDRA_FAMILY_COL,
             CassandraKiji.CASSANDRA_QUALIFIER_COL

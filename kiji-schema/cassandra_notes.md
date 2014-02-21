@@ -16,11 +16,16 @@ Open TODOs
 - Add support for filters (even if everything has to happen on the client for now).
 - The code in `CassandraKijiRowScanner` that assembles the results from multiple iterators over
   `Row`s into a single `KijiRowData` needs to use the `token` function to do some checks if some
-  Kiji rows are missing data for some columns.
+  Kiji rows are missing data for some columns.  The code for the Cassandra / Kiji `RecordReader` in
+  KijiMR will also need similar functionality.  Note that we may have to modify the queries we send
+  to Cassandra to say `SELECT token(key), key, ... FROM ...` instead of just `SELECT key, ... FROM
+  ...`.
 - We need a C* version of `KijiTableAnnotator`.
 - `CassandraKijiTableReader` has a few missing functions that should be easy to add (e.g.,
   `bulkGet`).
 - We need a C* version of `AtomicKijiPutter`.
+- The various table readers and writers are still missing some functionality (e.g., different
+  flavors of deletes).  These shouldn't be too hard to add.
 
 ### General cleanup:
 

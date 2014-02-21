@@ -152,19 +152,16 @@ public class CassandraKijiRowScanner implements KijiRowScanner {
   }
 
   /**
-   * Get the a KijiRowData for the next row.  If we are out of data, then return null.
-   * @return The next KijiRowData for this scanner, or null if we are out of data.
+   * Look at all of the iterators over Cassandra Rows and return the entity ID (Cassandra partition
+   * key) that has the lowest token value.
+   *
+   * @return The EntityId for the Cassandra partition key with the lowest Cassandra token value, or
+   *     null if there are no more rows left to read.
    */
-  private KijiRowData getNextRow() {
-    // TODO: Support some columns not having any data for some entity IDs.
-    // TODO: Keep a set of already-seen entity IDs to make sure that we don't hit one twice (sanity check).
-    // (E-mail thread started with Joe about this.)
+  private ByteBuffer getEntityIdWithLowestTokenValue() {
+    ByteBuffer lowestTokenEntityId = null;
+    Long lowestTokenValue = null;
 
-    LOG.info("Getting next row for CassandraKijiRowScanner.");
-
-    ByteBuffer currentEntityIdBlob = null;
-
-    // Make sure that all of the current Row iterators have the same entity ID at their heads.
     for (PeekingIterator<Row> iterator : mRowIterators) {
       Row row = iterator.peek();
 
@@ -173,44 +170,69 @@ public class CassandraKijiRowScanner implements KijiRowScanner {
         continue;
       }
 
+      Long tokenValue = row.getLong(String.format("token(%s)", CassandraKiji.CASSANDRA_KEY_COL));
       ByteBuffer entityIdBlob = row.getBytes(CassandraKiji.CASSANDRA_KEY_COL);
-      if (null == currentEntityIdBlob) {
-        currentEntityIdBlob = entityIdBlob;
-      } else {
-        assert(currentEntityIdBlob.equals(entityIdBlob)) :
-            "No support yet for column families missing data for a given entity ID during a scan.";
+
+      if (null == lowestTokenValue || tokenValue < lowestTokenValue) {
+        lowestTokenValue = tokenValue;
+        lowestTokenEntityId = entityIdBlob;
       }
     }
+    return lowestTokenEntityId;
+  }
 
-    if (null == currentEntityIdBlob) {
+  /**
+   * Get the a KijiRowData for the next row.  If we are out of data, then return null.
+   * @return The next KijiRowData for this scanner, or null if we are out of data.
+   */
+  private KijiRowData getNextRow() {
+    // TODO: Keep a set of already-seen entity IDs to make sure that we don't hit one twice (sanity check).
+
+    LOG.info("Getting next row for CassandraKijiRowScanner.");
+
+    // In this section of the code, we create a new KijiRowData instance by looking at the Cassandra
+    // row data at the head of all of the various Row iterators that we have.  Creating the
+    // KijiRowData is tricky only because every Cassandra Row object may not contain an entry for
+    // every Kiji entity ID.  We can use the backing Cassandra table's "token" function to order the
+    // Cassandra Rows by partition key (Cassandra should always return Rows to use in the order
+    // dictated by the token function of the partition keys).
+
+    // The CassandraDataRequestAdapter adds token(key) to the query that creates the Cassandra Row
+    // data that we deal with in this method.
+
+    // Therefore, to create a KijiRowData, we get the entity ID with the lowest token value from all
+    // of our iterators over Cassandra Rows, get all of the data for the rows with that
+    // lowest-token-value entity ID, and then stitch them together.
+
+    ByteBuffer entityIdWithLowestToken = getEntityIdWithLowestTokenValue();
+
+    if (null == entityIdWithLowestToken) {
       LOG.info("No more data, returning null for next value.");
-      // No more data anywhere!
       return null;
     }
-
 
     // Get a big set of Row objects for the given entity ID.
     HashSet<Row> rowsThisEntityId = new HashSet<Row>();
 
     LOG.info("Still data left for another row!");
-    assert (null != currentEntityIdBlob);
+    assert (null != entityIdWithLowestToken);
 
     for (PeekingIterator<Row> iterator : mRowIterators) {
 
       // Add all of the rows for this iterator until the entity ID changes.
       while (
           iterator.peek() != null &&
-          currentEntityIdBlob.equals(iterator.peek().getBytes(CassandraKiji.CASSANDRA_KEY_COL))
+          entityIdWithLowestToken.equals(iterator.peek().getBytes(CassandraKiji.CASSANDRA_KEY_COL))
       ) {
         Row row = iterator.next();
         // If this assertion fails, something is screwy with the peeking iterator.
-        assert(row.getBytes(CassandraKiji.CASSANDRA_KEY_COL).equals(currentEntityIdBlob));
+        assert(row.getBytes(CassandraKiji.CASSANDRA_KEY_COL).equals(entityIdWithLowestToken));
         rowsThisEntityId.add(row);
       }
     }
 
     // Actually create the entity ID from the ByteBuffer.
-    byte[] eidBytes = CassandraByteUtil.byteBuffertoBytes(currentEntityIdBlob);
+    byte[] eidBytes = CassandraByteUtil.byteBuffertoBytes(entityIdWithLowestToken);
     EntityId eid = mEntityIdFactory.getEntityIdFromHBaseRowKey(eidBytes);
 
     // Now create a KijiRowData with all of these rows.
