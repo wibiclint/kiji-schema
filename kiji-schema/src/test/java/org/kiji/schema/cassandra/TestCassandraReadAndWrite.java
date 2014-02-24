@@ -19,6 +19,7 @@
 
 package org.kiji.schema.cassandra;
 
+import org.apache.hadoop.hbase.HConstants;
 import org.junit.Test;
 import org.kiji.schema.*;
 import org.kiji.schema.KijiDataRequestBuilder.ColumnsDef;
@@ -71,6 +72,88 @@ public class TestCassandraReadAndWrite extends CassandraKijiClientTest {
     writer.close();
     kiji.release();
   }
+
+  /**
+   * Test that exposes bug in timestamp ordering of KijiRowData.
+   */
+  @Test
+  public void testReadLatestValue() throws Exception {
+    final Kiji kiji = getKiji();
+    kiji.createTable(KijiTableLayouts.getLayout(KijiTableLayouts.SIMPLE));
+
+    final KijiTable table = kiji.openTable("table");
+    final KijiTableWriter writer = table.openTableWriter();
+    final KijiTableReader reader = table.openTableReader();
+
+    EntityId eid0 = table.getEntityId("row0");
+
+    // Write just a value at timestamp 0.
+    writer.put(eid0, "family", "column", 0L, "Value at timestamp 0.");
+
+    final KijiDataRequest dataRequest = KijiDataRequest.builder()
+        .addColumns(ColumnsDef.create().add("family", "column"))
+        .build();
+
+    // Do a get and verify the value (only one value should be present now).
+    KijiRowData rowData = reader.get(eid0, dataRequest);
+    String s = rowData.getValue("family", "column", 0L).toString();
+    assertEquals(s, "Value at timestamp 0.");
+
+    // Write a second value, with a more-recent timestamp.
+    writer.put(eid0, "family", "column", 1L, "Value at timestamp 1.");
+
+    // Do a get and verify that both values are present.
+    rowData = reader.get(eid0, dataRequest);
+    assertTrue(rowData.containsCell("family", "column", 0L));
+    assertTrue(rowData.containsCell("family", "column", 1L));
+
+    // The most-recent value should be the one with the highest timestamp!
+    assertEquals("Value at timestamp 1.", rowData.getMostRecentValue("family", "column").toString());
+
+    reader.close();
+    writer.close();
+    kiji.release();
+  }
+
+  /**
+   * Test the multiple writes without a timestamp will step on one other.
+   */
+  @Test
+  public void testDefaultTimestamp() throws Exception {
+    final Kiji kiji = getKiji();
+    kiji.createTable(KijiTableLayouts.getLayout(KijiTableLayouts.SIMPLE));
+
+    final KijiTable table = kiji.openTable("table");
+    final KijiTableWriter writer = table.openTableWriter();
+    final KijiTableReader reader = table.openTableReader();
+
+    EntityId eid0 = table.getEntityId("row0");
+
+    writer.put(eid0, "family", "column", "First value");
+
+    final KijiDataRequest dataRequest = KijiDataRequest.builder()
+        .addColumns(ColumnsDef.create().add("family", "column"))
+        .build();
+
+    // Try this as a get.
+    KijiRowData rowData = reader.get(eid0, dataRequest);
+    assertTrue(rowData.containsCell("family", "column", HConstants.LATEST_TIMESTAMP));
+    assertEquals(
+      rowData.getValue("family", "column", HConstants.LATEST_TIMESTAMP).toString(),
+      "First value");
+
+    writer.put(eid0, "family", "column", "Second value");
+    rowData = reader.get(eid0, dataRequest);
+    assertTrue(rowData.containsCell("family", "column", HConstants.LATEST_TIMESTAMP));
+    assertEquals(
+        rowData.getValue("family", "column", HConstants.LATEST_TIMESTAMP).toString(),
+        "Second value");
+
+    reader.close();
+    writer.close();
+    kiji.release();
+  }
+
 
   /** Try deleting an entire column. */
    @Test

@@ -243,7 +243,9 @@ public final class CassandraKijiRowData implements KijiRowData {
       if (familyMap.containsKey(qualifier)) {
         qualifierMap = familyMap.get(qualifier);
       } else {
-        qualifierMap = new TreeMap<Long, byte[]>();
+        // Need to use TimestampComparator here to sort timestamps such that lowest timestamp is
+        // first in order.
+        qualifierMap =  new TreeMap<Long, byte[]>(TimestampComparator.INSTANCE);
         familyMap.put(qualifier, qualifierMap);
       }
 

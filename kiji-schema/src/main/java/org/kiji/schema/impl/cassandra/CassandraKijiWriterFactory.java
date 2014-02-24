@@ -54,7 +54,7 @@ public final class CassandraKijiWriterFactory implements KijiWriterFactory {
   public AtomicKijiPutter openAtomicPutter() throws IOException {
     //return new HBaseAtomicKijiPutter(mTable);
     // TODO: Implement C* atomic putter.
-    return null;
+    return new CassandraAtomicKijiPutter(mTable);
   }
 
   /** {@inheritDoc} */

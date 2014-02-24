@@ -11,6 +11,7 @@ Open TODOs
 ### Major missing features
 
 - Support paging!
+- Fix bug in `getMostRecentValue` (and related methods) in `CassandraKijiRowData`.
 - Add support for counters (CQL requires counters to be in separate tables, annoying...)
 - Security / permission checking is not implemented at all now.
 - Add support for filters (even if everything has to happen on the client for now).
@@ -18,6 +19,10 @@ Open TODOs
 - `CassandraKijiTableReader` has a few missing functions that should be easy to add (e.g.,
   `bulkGet`).
 - We need a C* version of `AtomicKijiPutter`.
+  - The only trick here is figuring out how to do the compare-and-set
+  - CQL has support for "lightweight transactions" that perform compare-and-set, but it is not clear
+    how to use these with batch operations.  (I have an e-mail out to the Cassandra users list
+    about this.)
 - The various table readers and writers are still missing some functionality (e.g., different
   flavors of deletes).  These shouldn't be too hard to add.
 
