@@ -11,7 +11,6 @@ Open TODOs
 ### Major missing features
 
 - Support paging!
-- Fix bug in `getMostRecentValue` (and related methods) in `CassandraKijiRowData`.
 - Add support for counters (CQL requires counters to be in separate tables, annoying...)
 - Security / permission checking is not implemented at all now.
 - Add support for filters (even if everything has to happen on the client for now).
