@@ -25,7 +25,6 @@ import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.zookeeper.KeeperException;
 import org.kiji.annotations.ApiAudience;
-import org.kiji.delegation.Lookups;
 import org.kiji.schema.*;
 import org.kiji.schema.avro.RowKeyEncoding;
 import org.kiji.schema.avro.RowKeyFormat;
@@ -34,11 +33,8 @@ import org.kiji.schema.cassandra.CassandraFactory;
 import org.kiji.schema.cassandra.KijiManagedCassandraTableName;
 import org.kiji.schema.hbase.HBaseFactory;
 import org.kiji.schema.impl.Versions;
-import org.kiji.schema.impl.hbase.*;
 import org.kiji.schema.layout.InvalidLayoutException;
 import org.kiji.schema.layout.KijiTableLayout;
-import org.kiji.schema.layout.impl.ColumnId;
-import org.kiji.schema.layout.impl.HTableSchemaTranslator;
 import org.kiji.schema.layout.impl.ZooKeeperClient;
 import org.kiji.schema.layout.impl.ZooKeeperMonitor;
 import org.kiji.schema.security.CassandraKijiSecurityManager;
@@ -744,6 +740,7 @@ public final class CassandraKiji implements Kiji {
 
   // Useful static members for referring to different fields in the C* tables.
   public static String CASSANDRA_KEY_COL = "key";
+  public static String CASSANDRA_LOCALITY_GROUP_COL = "lg";
   public static String CASSANDRA_FAMILY_COL = "family";
   public static String CASSANDRA_QUALIFIER_COL = "qualifier";
   public static String CASSANDRA_VERSION_COL = "version";
@@ -807,16 +804,19 @@ public final class CassandraKiji implements Kiji {
     );
 
     String cassandraTableLayout = String.format(
-        "(%s blob, %s text, %s text, %s bigint, %s blob, PRIMARY KEY (%s, %s, %s, %s)) WITH CLUSTERING ORDER BY (%s ASC, %s ASC, %s DESC);",
+        "(%s blob, %s text, %s text, %s text, %s bigint, %s blob, PRIMARY KEY (%s, %s, %s, %s, %s)) WITH CLUSTERING ORDER BY (%s ASC, %s ASC, %s ASC, %s DESC);",
         CASSANDRA_KEY_COL,
+        CASSANDRA_LOCALITY_GROUP_COL,
         CASSANDRA_FAMILY_COL,
         CASSANDRA_QUALIFIER_COL,
         CASSANDRA_VERSION_COL,
         CASSANDRA_VALUE_COL,
         CASSANDRA_KEY_COL,
+        CASSANDRA_LOCALITY_GROUP_COL,
         CASSANDRA_FAMILY_COL,
         CASSANDRA_QUALIFIER_COL,
         CASSANDRA_VERSION_COL,
+        CASSANDRA_LOCALITY_GROUP_COL,
         CASSANDRA_FAMILY_COL,
         CASSANDRA_QUALIFIER_COL,
         CASSANDRA_VERSION_COL

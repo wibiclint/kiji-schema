@@ -30,6 +30,7 @@ import org.kiji.schema.cassandra.KijiManagedCassandraTableName;
 import org.kiji.schema.hbase.HBaseColumnName;
 import org.kiji.schema.layout.KijiTableLayout;
 import org.kiji.schema.layout.impl.ColumnNameTranslator;
+import org.kiji.schema.layout.impl.cassandra.CassandraColumnNameTranslator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -49,7 +50,7 @@ public class CassandraDataRequestAdapter {
   private final KijiDataRequest mKijiDataRequest;
 
   /** The translator for generating Cassandra column names. */
-  private final ColumnNameTranslator mColumnNameTranslator;
+  private final CassandraColumnNameTranslator mColumnNameTranslator;
 
   /**
 
@@ -62,7 +63,7 @@ public class CassandraDataRequestAdapter {
    */
   public CassandraDataRequestAdapter(
       KijiDataRequest kijiDataRequest,
-      ColumnNameTranslator translator) {
+      CassandraColumnNameTranslator translator) {
     mKijiDataRequest = kijiDataRequest;
     mColumnNameTranslator = translator;
   }
@@ -122,6 +123,7 @@ public class CassandraDataRequestAdapter {
       KijiTableLayout kijiTableLayout,
       boolean pagingEnabled
   ) throws IOException {
+    LOG.info(">>>>>>>>>> Translating KijiDataRequest into Cassandra SELECT statements. <<<<<<<<<<");
     boolean bIsScan = (null == entityId);
 
     // Cannot do a scan with paging.
@@ -163,50 +165,83 @@ public class CassandraDataRequestAdapter {
       // separate session.execute(statement) commands.
 
       // Get the translated Kiji family and qualifier.
-      HBaseColumnName hBaseColumnName = mColumnNameTranslator.toHBaseColumnName(
-          new KijiColumnName(column.getName())
-      );
-      String family = hBaseColumnName.getFamilyAsString();
-      String qualifier = hBaseColumnName.getQualifierAsString();
+      KijiColumnName kijiColumnName = new KijiColumnName(column.getName());
+      String localityGroup = mColumnNameTranslator.toCassandraLocalityGroup(kijiColumnName);
+      String family = mColumnNameTranslator.toCassandraColumnFamily(kijiColumnName);
+      String qualifier = mColumnNameTranslator.toCassandraColumnQualifier(kijiColumnName);
+      LOG.info("family = " + family);
+      LOG.info("qualifier = " + qualifier);
 
       // TODO: Support paging in data requests with paging in DataStax API.
-      if (bIsScan) {
-        // Select this column in the C* family for this qualifier.
-        // Eventually, this column will to have escaped quotes around it (to handle upper and lower case)
+      if (bIsScan && qualifier != null) {
         String queryString = String.format(
-            "SELECT token(%s), %s, %s, %s, %s, %s FROM %s WHERE %s=? AND %s=? ALLOW FILTERING",
+            "SELECT token(%s), %s, %s, %s, %s, %s, %s FROM %s WHERE %s=? AND %s=? AND %s=? ALLOW FILTERING",
             CassandraKiji.CASSANDRA_KEY_COL,
             CassandraKiji.CASSANDRA_KEY_COL,
+            CassandraKiji.CASSANDRA_LOCALITY_GROUP_COL,
             CassandraKiji.CASSANDRA_FAMILY_COL,
             CassandraKiji.CASSANDRA_QUALIFIER_COL,
             CassandraKiji.CASSANDRA_VERSION_COL,
             CassandraKiji.CASSANDRA_VALUE_COL,
             cassandraTableName,
+            CassandraKiji.CASSANDRA_LOCALITY_GROUP_COL,
             CassandraKiji.CASSANDRA_FAMILY_COL,
             CassandraKiji.CASSANDRA_QUALIFIER_COL
         );
         LOG.info("Preparing query string " + queryString);
-
-
         PreparedStatement preparedStatement = session.prepare(queryString);
-        ResultSet res = session.execute(preparedStatement.bind(family, qualifier));
+        ResultSet res = session.execute(preparedStatement.bind(localityGroup, family, qualifier));
         results.add(res);
+      } else if (bIsScan && qualifier == null) {
+        String queryString = String.format(
+            "SELECT token(%s), %s, %s, %s, %s, %s, %s FROM %s WHERE %s=? AND %s=? ALLOW FILTERING",
+            CassandraKiji.CASSANDRA_KEY_COL,
+            CassandraKiji.CASSANDRA_KEY_COL,
+            CassandraKiji.CASSANDRA_LOCALITY_GROUP_COL,
+            CassandraKiji.CASSANDRA_FAMILY_COL,
+            CassandraKiji.CASSANDRA_QUALIFIER_COL,
+            CassandraKiji.CASSANDRA_VERSION_COL,
+            CassandraKiji.CASSANDRA_VALUE_COL,
+            cassandraTableName,
+            CassandraKiji.CASSANDRA_LOCALITY_GROUP_COL,
+            CassandraKiji.CASSANDRA_FAMILY_COL
+        );
+        LOG.info("Preparing query string " + queryString);
+        PreparedStatement preparedStatement = session.prepare(queryString);
+        ResultSet res = session.execute(preparedStatement.bind(localityGroup, family));
+        results.add(res);
+
+
       } else {
         assert(entityId != null);
 
-        // Select this column in the C* family for this qualifier.
-        // Eventually, this column will to have escaped quotes around it (to handle upper and lower case)
-        String queryString = String.format(
-            "SELECT * FROM %s WHERE %s=? AND %s=? AND %s=?",
-            cassandraTableName,
-            CassandraKiji.CASSANDRA_KEY_COL,
-            CassandraKiji.CASSANDRA_FAMILY_COL,
-            CassandraKiji.CASSANDRA_QUALIFIER_COL
-        );
-        LOG.info("Preparing query string " + queryString);
+        Statement boundStatement;
+        if (qualifier != null) {
+          String queryString = String.format(
+              "SELECT * FROM %s WHERE %s=? AND %s=? AND %s=? AND %s=?",
+              cassandraTableName,
+              CassandraKiji.CASSANDRA_KEY_COL,
+              CassandraKiji.CASSANDRA_LOCALITY_GROUP_COL,
+              CassandraKiji.CASSANDRA_FAMILY_COL,
+              CassandraKiji.CASSANDRA_QUALIFIER_COL
+          );
+          LOG.info("Preparing query string " + queryString);
 
-        PreparedStatement preparedStatement = session.prepare(queryString);
-        Statement boundStatement = preparedStatement.bind(entityIdByteBuffer, family, qualifier);
+          PreparedStatement preparedStatement = session.prepare(queryString);
+          boundStatement = preparedStatement.bind(entityIdByteBuffer, localityGroup, family, qualifier);
+        } else {
+          String queryString = String.format(
+              "SELECT * FROM %s WHERE %s=? AND %s=? AND %s=?",
+              cassandraTableName,
+              CassandraKiji.CASSANDRA_KEY_COL,
+              CassandraKiji.CASSANDRA_LOCALITY_GROUP_COL,
+              CassandraKiji.CASSANDRA_FAMILY_COL
+          );
+          LOG.info("Preparing query string " + queryString);
+
+          PreparedStatement preparedStatement = session.prepare(queryString);
+          boundStatement = preparedStatement.bind(entityIdByteBuffer, localityGroup, family);
+        }
         if (pagingEnabled) {
           int pageSize = column.getPageSize();
           boundStatement = boundStatement.setFetchSize(pageSize);

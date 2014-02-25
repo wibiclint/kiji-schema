@@ -43,6 +43,7 @@ import org.kiji.schema.layout.KijiTableLayout.LocalityGroupLayout.FamilyLayout;
 import org.kiji.schema.layout.KijiTableLayout.LocalityGroupLayout.FamilyLayout.ColumnLayout;
 import org.kiji.schema.layout.impl.CellEncoderProvider;
 import org.kiji.schema.layout.impl.ColumnNameTranslator;
+import org.kiji.schema.layout.impl.cassandra.CassandraColumnNameTranslator;
 import org.kiji.schema.platform.SchemaPlatformBridge;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -101,7 +102,7 @@ public final class CassandraKijiTableWriter implements KijiTableWriter {
   public static final class WriterLayoutCapsule {
     private final CellEncoderProvider mCellEncoderProvider;
     private final KijiTableLayout mLayout;
-    private final ColumnNameTranslator mTranslator;
+    private final CassandraColumnNameTranslator mTranslator;
 
     /**
      * Default constructor.
@@ -113,7 +114,7 @@ public final class CassandraKijiTableWriter implements KijiTableWriter {
     public WriterLayoutCapsule(
         final CellEncoderProvider cellEncoderProvider,
         final KijiTableLayout layout,
-        final ColumnNameTranslator translator) {
+        final CassandraColumnNameTranslator translator) {
       mCellEncoderProvider = cellEncoderProvider;
       mLayout = layout;
       mTranslator = translator;
@@ -181,7 +182,7 @@ public final class CassandraKijiTableWriter implements KijiTableWriter {
       mWriterLayoutCapsule = new WriterLayoutCapsule(
           provider,
           capsule.getLayout(),
-          capsule.getColumnNameTranslator());
+          (CassandraColumnNameTranslator)capsule.getColumnNameTranslator());
     }
   }
 
@@ -244,9 +245,10 @@ public final class CassandraKijiTableWriter implements KijiTableWriter {
     // TODO: Refactor this query text (and preparation for it) elsewhere.
     // Create the CQL statement to insert data.
     String queryText = String.format(
-        "INSERT INTO %s (%s, %s, %s, %s, %s) VALUES (?, ?, ?, ?, ?);",
+        "INSERT INTO %s (%s, %s, %s, %s, %s, %s) VALUES (?, ?, ?, ?, ?, ?);",
         cTableName.toString(),
         CassandraKiji.CASSANDRA_KEY_COL,
+        CassandraKiji.CASSANDRA_LOCALITY_GROUP_COL,
         CassandraKiji.CASSANDRA_FAMILY_COL,
         CassandraKiji.CASSANDRA_QUALIFIER_COL,
         CassandraKiji.CASSANDRA_VERSION_COL,
@@ -256,14 +258,15 @@ public final class CassandraKijiTableWriter implements KijiTableWriter {
     Session session = mAdmin.getSession();
 
     final KijiColumnName columnName = new KijiColumnName(family, qualifier);
-    final HBaseColumnName translatedColumnName =
-        capsule.getColumnNameTranslator().toHBaseColumnName(columnName);
+    final CassandraColumnNameTranslator translator =
+        (CassandraColumnNameTranslator) capsule.getColumnNameTranslator();
 
     PreparedStatement preparedStatement = session.prepare(queryText);
     session.execute(preparedStatement.bind(
         rowKey,
-        translatedColumnName.getFamilyAsString(),
-        translatedColumnName.getQualifierAsString(),
+        translator.toCassandraLocalityGroup(columnName),
+        translator.toCassandraColumnFamily(columnName),
+        translator.toCassandraColumnQualifier(columnName),
         timestamp,
         encodedByteBuffer
     ));
@@ -380,8 +383,9 @@ public final class CassandraKijiTableWriter implements KijiTableWriter {
       throw new NoSuchColumnException(String.format("Family '%s' not found.", family));
     }
 
-    final HBaseColumnName hbaseColumnName = capsule.getColumnNameTranslator()
-        .toHBaseColumnName(new KijiColumnName(family));
+    final CassandraColumnNameTranslator translator =
+        (CassandraColumnNameTranslator) capsule.getColumnNameTranslator();
+    final KijiColumnName kijiColumnName = new KijiColumnName(family);
 
     final ByteBuffer rowKey = CassandraByteUtil.bytesToByteBuffer(entityId.getHBaseRowKey());
     KijiManagedCassandraTableName cTableName = KijiManagedCassandraTableName.getKijiTableName(
@@ -391,9 +395,10 @@ public final class CassandraKijiTableWriter implements KijiTableWriter {
 
     // TODO: Prepare this statement first.
     String queryString = String.format(
-        "DELETE FROM %s WHERE %s=? AND %s=? AND %s <= ?",
+        "DELETE FROM %s WHERE %s=? AND %s=? AND %s=? AND %s <= ?",
         cTableName.toString(),
         CassandraKiji.CASSANDRA_KEY_COL,
+        CassandraKiji.CASSANDRA_LOCALITY_GROUP_COL,
         CassandraKiji.CASSANDRA_FAMILY_COL,
         CassandraKiji.CASSANDRA_VERSION_COL
     );
@@ -402,7 +407,8 @@ public final class CassandraKijiTableWriter implements KijiTableWriter {
     PreparedStatement preparedStatement = session.prepare(queryString);
     session.execute(preparedStatement.bind(
         rowKey,
-        hbaseColumnName.getFamilyAsString(),
+        translator.toCassandraLocalityGroup(kijiColumnName),
+        translator.toCassandraColumnFamily(kijiColumnName),
         upToTimestamp));
   }
 
@@ -421,9 +427,10 @@ public final class CassandraKijiTableWriter implements KijiTableWriter {
 
     // TODO: Prepare this statement first.
     String queryString = String.format(
-        "DELETE FROM %s WHERE %s=? AND %s=? AND %s=?",
+        "DELETE FROM %s WHERE %s=? AND %s=? AND %s=? AND %s=?",
         cTableName.toString(),
         CassandraKiji.CASSANDRA_KEY_COL,
+        CassandraKiji.CASSANDRA_LOCALITY_GROUP_COL,
         CassandraKiji.CASSANDRA_FAMILY_COL,
         CassandraKiji.CASSANDRA_QUALIFIER_COL
     );
@@ -433,15 +440,17 @@ public final class CassandraKijiTableWriter implements KijiTableWriter {
     if (null == familyLayout) {
       throw new NoSuchColumnException(String.format("Family '%s' not found.", family));
     }
-    final HBaseColumnName hbaseColumnName = capsule.getColumnNameTranslator()
-        .toHBaseColumnName(new KijiColumnName(family, qualifier));
+    final CassandraColumnNameTranslator translator =
+        (CassandraColumnNameTranslator) capsule.getColumnNameTranslator();
+    final KijiColumnName kijiColumnName = new KijiColumnName(family, qualifier);
 
     Session session = mAdmin.getSession();
     PreparedStatement preparedStatement = session.prepare(queryString);
     session.execute(preparedStatement.bind(
         rowKey,
-        hbaseColumnName.getFamilyAsString(),
-        hbaseColumnName.getQualifierAsString()
+        translator.toCassandraLocalityGroup(kijiColumnName),
+        translator.toCassandraColumnFamily(kijiColumnName),
+        translator.toCassandraColumnQualifier(kijiColumnName)
     ));
   }
 
@@ -513,8 +522,9 @@ public final class CassandraKijiTableWriter implements KijiTableWriter {
     if (null == familyLayout) {
       throw new NoSuchColumnException(String.format("Family '%s' not found.", family));
     }
-    final HBaseColumnName hbaseColumnName = capsule.getColumnNameTranslator()
-        .toHBaseColumnName(new KijiColumnName(family, qualifier));
+    final CassandraColumnNameTranslator translator =
+        (CassandraColumnNameTranslator) capsule.getColumnNameTranslator();
+    final KijiColumnName kijiColumnName = new KijiColumnName(family, qualifier);
 
     final ByteBuffer rowKey = CassandraByteUtil.bytesToByteBuffer(entityId.getHBaseRowKey());
     KijiManagedCassandraTableName cTableName = KijiManagedCassandraTableName.getKijiTableName(
@@ -524,9 +534,10 @@ public final class CassandraKijiTableWriter implements KijiTableWriter {
 
     // TODO: Prepare this statement first.
     String queryString = String.format(
-        "DELETE FROM %s WHERE %s=? AND %s=? AND %s=? AND %s=?",
+        "DELETE FROM %s WHERE %s=? AND %s=? AND %s=? AND %s=? AND %s=?",
         cTableName.toString(),
         CassandraKiji.CASSANDRA_KEY_COL,
+        CassandraKiji.CASSANDRA_LOCALITY_GROUP_COL,
         CassandraKiji.CASSANDRA_FAMILY_COL,
         CassandraKiji.CASSANDRA_QUALIFIER_COL,
         CassandraKiji.CASSANDRA_VERSION_COL
@@ -536,8 +547,9 @@ public final class CassandraKijiTableWriter implements KijiTableWriter {
     PreparedStatement preparedStatement = session.prepare(queryString);
     session.execute(preparedStatement.bind(
         rowKey,
-        hbaseColumnName.getFamilyAsString(),
-        hbaseColumnName.getQualifierAsString(),
+        translator.toCassandraLocalityGroup(kijiColumnName),
+        translator.toCassandraColumnFamily(kijiColumnName),
+        translator.toCassandraColumnQualifier(kijiColumnName),
         timestamp
     ));
   }

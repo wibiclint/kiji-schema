@@ -35,6 +35,7 @@ import org.kiji.schema.layout.ColumnReaderSpec;
 import org.kiji.schema.layout.KijiTableLayout;
 import org.kiji.schema.layout.impl.CellDecoderProvider;
 import org.kiji.schema.layout.impl.ColumnNameTranslator;
+import org.kiji.schema.layout.impl.cassandra.CassandraColumnNameTranslator;
 import org.kiji.schema.util.TimestampComparator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -186,7 +187,7 @@ public final class CassandraKijiRowData implements KijiRowData {
     mFilteredMap = new TreeMap<String, NavigableMap<String, NavigableMap<Long, byte[]>>>();
 
     // Need to translate from short names in Cassandra table into longer names in Kiji table.
-    final ColumnNameTranslator columnNameTranslator = new ColumnNameTranslator(mTableLayout);
+    final CassandraColumnNameTranslator columnNameTranslator = new CassandraColumnNameTranslator(mTableLayout);
 
     // Go through every column in the result set and add the data to the filtered map.
     for (Row row : mRows) {
@@ -198,21 +199,21 @@ public final class CassandraKijiRowData implements KijiRowData {
       Long timestamp = row.getLong(CassandraKiji.CASSANDRA_VERSION_COL);
       ByteBuffer value = row.getBytes(CassandraKiji.CASSANDRA_VALUE_COL);
 
-      String cassandraRawfamily = row.getString(CassandraKiji.CASSANDRA_FAMILY_COL);
+      String cassandraRawLocalityGroup = row.getString(CassandraKiji.CASSANDRA_LOCALITY_GROUP_COL);
+      String cassandraRawFamily = row.getString(CassandraKiji.CASSANDRA_FAMILY_COL);
       String cassandraRawQualifier = row.getString(CassandraKiji.CASSANDRA_QUALIFIER_COL);
-
-      final HBaseColumnName hBaseColumnName = new HBaseColumnName(
-          cassandraRawfamily,
-          cassandraRawQualifier
-      );
 
       KijiColumnName kijiColumnName;
       try {
-        kijiColumnName = columnNameTranslator.toKijiColumnName(hBaseColumnName);
+        kijiColumnName = columnNameTranslator.toKijiColumnName(
+            cassandraRawLocalityGroup,
+            cassandraRawFamily,
+            cassandraRawQualifier);
+
       } catch (NoSuchColumnException e) {
         LOG.info(String.format(
             "Ignoring Cassandra column '%s:%s' because it doesn't contain Kiji data.",
-            cassandraRawfamily,
+            cassandraRawFamily,
             cassandraRawQualifier));
         continue;
       }
@@ -596,24 +597,31 @@ public final class CassandraKijiRowData implements KijiRowData {
    * @param <T> The type parameter for the KijiCells being iterated over.
    */
   private static final class KijiCellIterator<T> implements Iterator<KijiCell<T>> {
-    /** A KeyValue comparator. */
-    //private static final KVComparator KV_COMPARATOR = new KVComparator();
-    /** The cell decoder for this column. */
-    //private final KijiCellDecoder<T> mDecoder;
-    /** The column name translator for the given table. */
-    //private final ColumnNameTranslator mColumnNameTranslator;
+    // This is a much less-sophisticated (and probably less-optimal) implementation of this
+    // interface than that present in HBaseKijiRowData.
+
     /** The maximum number of versions requested. */
-    //private final int mMaxVersions;
-    /** An array of KeyValues returned by Cassandra. */
-    //private final KeyValue[] mKVs;
+    private final int mMaxVersions;
+
+    /** An iterator over all of the columns. */
+    private final Iterator<Map.Entry<String, NavigableMap<Long, byte[]>>> mQualifierIterator;
+
+    /** An iterator over values in the current qualified column. */
+    private Iterator<Map.Entry<Long, byte[]>> mVersionIterator;
+
+    private String mCurrentQualifier;
+
     /** The column or map type family being iterated over. */
-    //private final KijiColumnName mColumn;
+    private final KijiColumnName mColumn;
+
     /** The number of versions returned by the iterator so far. */
-    //private int mNumVersions;
-    /** The current index in the underlying KV array. */
-    //private int mCurrentIdx;
+    private int mNumVersions;
+
+    /** The cell decoder for this column. */
+    private final KijiCellDecoder<T> mDecoder;
+
     /** The next cell to return. */
-    //private KijiCell<T> mNextCell;
+    private KijiCell<T> mNextCell;
 
     /**
      * An iterator of KijiCells, for a particular column.
@@ -625,23 +633,79 @@ public final class CassandraKijiRowData implements KijiRowData {
      */
     protected KijiCellIterator(KijiColumnName columnName, CassandraKijiRowData rowdata, EntityId eId)
         throws IOException {
-      /*
       mColumn = columnName;
-      // Initialize column name translator.
-      mColumnNameTranslator = new ColumnNameTranslator(rowdata.mTableLayout);
-      // Get cell decoder.
-      mDecoder = rowdata.getDecoder(mColumn);
       // Get info about the data request for this column.
       KijiDataRequest.Column columnRequest = rowdata.mDataRequest.getRequestForColumn(mColumn);
       mMaxVersions = columnRequest.getMaxVersions();
-      mKVs = rowdata.mResult.raw();
       mNumVersions = 0;
-      // Find the first index for this column.
-      final CassandraColumnName colName = mColumnNameTranslator.toHBaseColumnName(mColumn);
-      mCurrentIdx = findInsertionPoint(mKVs, new KeyValue(eId.getCassandraRowKey(), colName.getFamily(),
-          colName.getQualifier()));
+      mDecoder = rowdata.getDecoder(columnName);
+
+      // Initialize the qualifier iterator.
+      NavigableMap<String, NavigableMap<Long, byte[]>> columnMap;
+      if (mColumn.isFullyQualified()) {
+        // Create a single-entry map with just this one qualifier in it.  Doing so keeps the rest of
+        // the code for this class agnostic to whether the column is fully-qualified or not.
+        NavigableMap<Long, byte[]> qualMap = rowdata.getMap().get(mColumn.getFamily()).get(mColumn.getQualifier());
+        columnMap = new TreeMap<String, NavigableMap<Long, byte[]>>();
+        columnMap.put(mColumn.getQualifier(), qualMap);
+      } else {
+        columnMap = rowdata.getMap().get(mColumn.getFamily());
+      }
+
+      mQualifierIterator = columnMap.entrySet().iterator();
+      assert(mQualifierIterator.hasNext());
+
+      Map.Entry<String, NavigableMap<Long, byte[]>> qualifierAndValues = mQualifierIterator.next();
+
+      mCurrentQualifier = qualifierAndValues.getKey();
+      mVersionIterator = qualifierAndValues.getValue().entrySet().iterator();
+
       mNextCell = getNextCell();
-      */
+    }
+
+    /**
+     * Constructs the next cell that will be returned by the iterator.
+     *
+     * @return The next cell in the column we are iterating over, potentially null.
+     */
+    private KijiCell<T> getNextCell() {
+      KijiCell<T> nextCell = null;
+
+      if (mVersionIterator.hasNext()) {
+        // If the current version-to-value iterator has another value, then create a cell from that
+        // and return it.
+        Map.Entry<Long, byte[]> nextVersionAndValue = mVersionIterator.next();
+        assert(nextVersionAndValue != null);
+
+        try {
+          nextCell = new KijiCell<T>(
+              mColumn.getFamily(),
+              mCurrentQualifier,
+              nextVersionAndValue.getKey(),
+              mDecoder.decodeCell(nextVersionAndValue.getValue())
+          );
+        } catch (IOException ex) {
+          throw new KijiIOException(ex);
+        }
+        return nextCell;
+      } else {
+        // If the current version-to-value iterator is empty, then try to get another
+        // version-to-value iterator and repeat.
+        if (!mQualifierIterator.hasNext()) {
+          // We are done with this entire iterator.
+          return null;
+        }
+
+        // Start an iterator for a new column and repeat.
+        Map.Entry<String, NavigableMap<Long, byte[]>> qualifierAndValues = mQualifierIterator.next();
+
+        mCurrentQualifier = qualifierAndValues.getKey();
+        mVersionIterator = qualifierAndValues.getValue().entrySet().iterator();
+
+        nextCell = getNextCell();
+        assert(nextCell != null);
+        return nextCell;
+      }
     }
 
     /** {@inheritDoc} */
@@ -654,18 +718,14 @@ public final class CassandraKijiRowData implements KijiRowData {
     /** {@inheritDoc} */
     @Override
     public KijiCell<T> next() {
-      /*
       KijiCell<T> cellToReturn = mNextCell;
       if (null == mNextCell) {
         throw new NoSuchElementException();
       } else {
         mNumVersions += 1;
       }
-      mCurrentIdx = getNextIndex(mCurrentIdx);
       mNextCell = getNextCell();
       return cellToReturn;
-      */
-      return null;
     }
 
     /** {@inheritDoc} */
@@ -674,83 +734,8 @@ public final class CassandraKijiRowData implements KijiRowData {
       throw new UnsupportedOperationException("Removing a cell is not a supported operation.");
     }
 
-    /**
-     * Constructs the next cell that will be returned by the iterator.
-     *
-     * @return The next cell in the column we are iterating over, potentially null.
-     */
-    private KijiCell<T> getNextCell() {
-      /*
-      KijiCell<T> nextCell = null;
-      try {
-        if (mCurrentIdx < mKVs.length) { // If our index is out of bounds, nextCell is null.
-          final KeyValue kv = mKVs[mCurrentIdx];
-          // Filter KeyValues by Kiji column family.
-          final KijiColumnName colName = mColumnNameTranslator.toKijiColumnName(
-              new CassandraColumnName(kv.getFamily(), kv.getQualifier()));
-          nextCell = new KijiCell<T>(mColumn.getFamily(), colName.getQualifier(),
-              kv.getTimestamp(), mDecoder.decodeCell(kv.getValue()));
-        }
-      } catch (IOException ex) {
-        throw new KijiIOException(ex);
-      }
-      return nextCell;
-      */
-      return null;
-    }
-
-    /**
-     * Finds the index of the next KeyValue in the underlying KV array that is from the column we
-     * are iterating over.
-     *
-     * @param lastIndex The index of the KV used to construct the last returned cell.
-     * @return The index of the next KeyValue from the column we are iterating over.If there are no
-     * more cells to iterate over, the returned value will be mKVs.length.
-     */
-    private int getNextIndex(int lastIndex) {
-      /*
-      int nextIndex = lastIndex;
-      if (mColumn.isFullyQualified()) {
-        if (mNumVersions < mMaxVersions) {
-          nextIndex = lastIndex + 1; // The next element should be the next in the array.
-        } else {
-          nextIndex = mKVs.length; //There is nothing else to return.
-        }
-      } else {
-        if (mNumVersions <= mMaxVersions) {
-          nextIndex = lastIndex + 1; // The next element should be the next in the array.
-        } else {
-          mNumVersions = 0; // Reset current number of versions.
-          nextIndex = findInsertionPoint(mKVs, makePivotKeyValue(mKVs[lastIndex]));
-        }
-      }
-      if (nextIndex < mKVs.length) {
-        final KeyValue kv = mKVs[nextIndex];
-        // Filter KeyValues by Kiji column family.
-        try {
-          final KijiColumnName colName = mColumnNameTranslator.toKijiColumnName(
-            new CassandraColumnName(kv.getFamily(), kv.getQualifier()));
-          if (!colName.getQualifier().equals(mNextCell.getQualifier())) {
-            if (mColumn.isFullyQualified()) {
-              return mKVs.length;
-            } else {
-              nextIndex = findInsertionPoint(mKVs, makePivotKeyValue(mKVs[lastIndex]));
-              mNumVersions = 0;
-            }
-          }
-          if (!colName.getFamily().equals(mColumn.getFamily())) {
-            return mKVs.length; // From the wrong column family.
-          }
-        } catch (NoSuchColumnException ex) {
-          throw new KijiIOException(ex);
-        }
-      }
-      return nextIndex;
-      */
-      return -1;
-    }
-
   }
+
   /**
    * An iterable of cells in a column.
    *
@@ -758,11 +743,11 @@ public final class CassandraKijiRowData implements KijiRowData {
    */
   private static final class CellIterable<T> implements Iterable<KijiCell<T>> {
     /** The column family. */
-    //private final KijiColumnName mColumnName;
+    private final KijiColumnName mColumnName;
     /** The rowdata we are iterating over. */
-    //private final CassandraKijiRowData mRowData;
+    private final CassandraKijiRowData mRowData;
     /** The entity id for the row. */
-    //private final EntityId mEntityId;
+    private final EntityId mEntityId;
     /**
      * An iterable of KijiCells, for a particular column.
      *
@@ -771,25 +756,19 @@ public final class CassandraKijiRowData implements KijiRowData {
      * @param eId of the rowdata we are iterating over.
      */
     protected CellIterable(KijiColumnName colName, CassandraKijiRowData rowdata, EntityId eId) {
-      /*
       mColumnName = colName;
       mRowData = rowdata;
       mEntityId = eId;
-      */
-      throw new UnsupportedOperationException("Not implemented yet!");
     }
 
     /** {@inheritDoc} */
     @Override
     public Iterator<KijiCell<T>> iterator() {
-      /*
       try {
         return new KijiCellIterator<T>(mColumnName , mRowData, mEntityId);
       } catch (IOException ex) {
         throw new KijiIOException(ex);
       }
-      */
-      throw new UnsupportedOperationException("Not implemented yet!");
     }
   }
 

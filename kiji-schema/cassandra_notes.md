@@ -85,6 +85,14 @@ Open TODOs
     `CassandraTableInterface`, rather than getting a `Session` from `CassandraAdmin`.  Such a
     restriction would make it easier to manage what objects are doing what with the currently open
     `Session.`
+- The code for column-name translation is kind of a mess right now.  I wanted to share the layout
+  capsule code as much as possible between the HBase and Cassandra Kiji implementations.  The
+  layout capsule contains a `ColumnNameTranslator` already, so to share that code, but to enable a
+  different translator for Cassandra Kiji, I had to make `CassandraColumnNameTranslator` a subclass
+  of `ColumnNameTranslator`, which is okay, but really they should both be separate implementations
+  of a much smaller interface (mostly likely).  Yikes!  In the interest of making more progress, I
+  left this code ugly for now and moved on, but we need to clean this up later (and possibly reorg
+  it).
 
 ### Performance
 
@@ -143,6 +151,9 @@ These are meant to be higher-level issues than those in the TODO section above.
   using Avro types?
   - Unless a user is doing some kind of nesting of lists, maps, or sets, he can do all of his data
     modeling now directly in the CQL data types.
+- The [IntraVert](https://github.com/zznate/intravert-ug) project provides some server-side
+  processing on top of Cassandra.  We may want to look into this project more carefully to see what
+  whether we can leverage it for implementing filters, etc.
 
 ### Bulk importing
 

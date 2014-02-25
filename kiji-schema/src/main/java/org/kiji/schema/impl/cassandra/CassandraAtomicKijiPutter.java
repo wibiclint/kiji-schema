@@ -36,6 +36,7 @@ import org.kiji.schema.impl.LayoutConsumer;
 import org.kiji.schema.impl.hbase.HBaseKijiTableWriter.WriterLayoutCapsule;
 import org.kiji.schema.layout.LayoutUpdatedException;
 import org.kiji.schema.layout.impl.CellEncoderProvider;
+import org.kiji.schema.layout.impl.cassandra.CassandraColumnNameTranslator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -234,8 +235,7 @@ public final class CassandraAtomicKijiPutter implements AtomicKijiPutter {
         "Cannot checkAndCommit a transaction on an AtomicKijiPutter instance in state %s.", state);
     final WriterLayoutCapsule capsule = getWriterLayoutCapsule();
     final KijiColumnName kijiColumnName = new KijiColumnName(family, qualifier);
-    final HBaseColumnName columnName =
-        capsule.getColumnNameTranslator().toHBaseColumnName(kijiColumnName);
+    //final HBaseColumnName columnName = capsule.getColumnNameTranslator().toHBaseColumnName(kijiColumnName);
     final byte[] encoded;
 
     // If passed value is null, then let encoded value be null.
@@ -278,9 +278,10 @@ public final class CassandraAtomicKijiPutter implements AtomicKijiPutter {
 
     // TODO: Create this bound statement once, in the constructor.
     String queryString = String.format(
-        "INSERT into %s (%s, %s, %s, %s, %s) VALUES (?, ?, ?, ?, ?)",
+        "INSERT into %s (%s, %s, %s, %s, %s, %s) VALUES (?, ?, ?, ?, ?, ?)",
         cassandraTableName,
         CassandraKiji.CASSANDRA_KEY_COL,
+        CassandraKiji.CASSANDRA_LOCALITY_GROUP_COL,
         CassandraKiji.CASSANDRA_FAMILY_COL,
         CassandraKiji.CASSANDRA_QUALIFIER_COL,
         CassandraKiji.CASSANDRA_VERSION_COL,
@@ -298,6 +299,7 @@ public final class CassandraAtomicKijiPutter implements AtomicKijiPutter {
       LOG.info("Binding timestamp " + kv.getTimestamp());
       statements.add(preparedStatement.bind(
           rowKey,
+          kv.getmLocalityGroup(),
           kv.getFamily(),
           kv.getQualifier(),
           kv.getTimestamp(),
@@ -333,18 +335,22 @@ public final class CassandraAtomicKijiPutter implements AtomicKijiPutter {
     Preconditions.checkState(state == State.OPEN,
         "Cannot put cell to an AtomicKijiPutter instance in state %s.", state);
     final WriterLayoutCapsule capsule = getWriterLayoutCapsule();
-    final KijiColumnName kijiColumnName = new KijiColumnName(family, qualifier);
-    final HBaseColumnName columnName =
-        capsule.getColumnNameTranslator().toHBaseColumnName(kijiColumnName);
 
     final KijiCellEncoder cellEncoder =
         capsule.getCellEncoderProvider().getEncoder(family, qualifier);
     final byte[] encoded = cellEncoder.encode(value);
 
+    final KijiColumnName kijiColumnName = new KijiColumnName(family, qualifier);
+    CassandraColumnNameTranslator translator = (CassandraColumnNameTranslator)capsule.getColumnNameTranslator();
+
     // Somewhat abusive here to use the HBase KeyValue to keep track of stuff to insert in a
     // Cassandra table, but KeyValue stores the family, qualifier, version, and value properly.
     mHopper.add(new CassandraKeyValue(
-        columnName.getFamilyAsString(), columnName.getQualifierAsString(), timestamp, encoded));
+        translator.toCassandraLocalityGroup(kijiColumnName),
+        translator.toCassandraColumnFamily(kijiColumnName),
+        translator.toCassandraColumnQualifier(kijiColumnName),
+        timestamp,
+        encoded));
   }
 
   /**
@@ -386,18 +392,21 @@ public final class CassandraAtomicKijiPutter implements AtomicKijiPutter {
   }
 
   private class CassandraKeyValue {
+    final String mLocalityGroup;
     final String mFamily;
     final String mQualifier;
     final Long mTimestamp;
     final byte[] mValue;
 
-    CassandraKeyValue(String family, String qualifier, Long timestamp, byte[] value){
+    CassandraKeyValue(String localityGroup, String family, String qualifier, Long timestamp, byte[] value){
       mFamily = family;
       mQualifier = qualifier;
       mTimestamp = timestamp;
+      mLocalityGroup = localityGroup;
       mValue = value;
     }
 
+    public String getmLocalityGroup() { return mLocalityGroup; }
     public String getFamily() { return mFamily; }
     public String getQualifier() { return mQualifier; }
     public Long getTimestamp() { return mTimestamp; }

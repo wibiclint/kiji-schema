@@ -44,6 +44,7 @@ import org.kiji.schema.impl.hbase.HBaseKijiTableWriter.WriterLayoutCapsule;
 import org.kiji.schema.layout.KijiTableLayout.LocalityGroupLayout.FamilyLayout;
 import org.kiji.schema.layout.KijiTableLayout.LocalityGroupLayout.FamilyLayout.ColumnLayout;
 import org.kiji.schema.layout.impl.CellEncoderProvider;
+import org.kiji.schema.layout.impl.cassandra.CassandraColumnNameTranslator;
 import org.kiji.schema.platform.SchemaPlatformBridge;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -197,9 +198,10 @@ public class CassandraKijiBufferedWriter implements KijiBufferedWriter {
     );
 
     String queryText = String.format(
-        "INSERT INTO %s (%s, %s, %s, %s, %s) VALUES (?, ?, ?, ?, ?);",
+        "INSERT INTO %s (%s, %s, %s, %s, %s, %s) VALUES (?, ?, ?, ?, ?, ?);",
         cTableName,
         CassandraKiji.CASSANDRA_KEY_COL,
+        CassandraKiji.CASSANDRA_LOCALITY_GROUP_COL,
         CassandraKiji.CASSANDRA_FAMILY_COL,
         CassandraKiji.CASSANDRA_QUALIFIER_COL,
         CassandraKiji.CASSANDRA_VERSION_COL,
@@ -245,9 +247,8 @@ public class CassandraKijiBufferedWriter implements KijiBufferedWriter {
       throws IOException {
     final KijiColumnName columnName = new KijiColumnName(family, qualifier);
     final WriterLayoutCapsule capsule = mWriterLayoutCapsule;
-
-    final HBaseColumnName translatedColumnName =
-        capsule.getColumnNameTranslator().toHBaseColumnName(columnName);
+    CassandraColumnNameTranslator translator =
+        (CassandraColumnNameTranslator) capsule.getColumnNameTranslator();
 
     final KijiCellEncoder cellEncoder =
         capsule.getCellEncoderProvider().getEncoder(family, qualifier);
@@ -259,8 +260,9 @@ public class CassandraKijiBufferedWriter implements KijiBufferedWriter {
 
     BoundStatement boundStatement = mPutStatement.bind(
         rowKey,
-        translatedColumnName.getFamilyAsString(),
-        translatedColumnName.getQualifierAsString(),
+        translator.toCassandraLocalityGroup(columnName),
+        translator.toCassandraColumnFamily(columnName),
+        translator.toCassandraColumnQualifier(columnName),
         timestamp,
         encodedByteBuffer);
 
