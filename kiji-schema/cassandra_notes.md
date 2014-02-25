@@ -11,6 +11,13 @@ Open TODOs
 ### Major missing features
 
 - Support paging!
+  - Paging should come "for free" from the DataStax Java driver (you can iterate over paged data
+    just as you would over non-paged data)
+  - If we are going to change how paging works for KijiSchema 2.0, then maybe we don't need to
+    support the full paging API now anyway.
+  - In KijiSchema, we specify page size in terms of the number of cells to retrieve per page.  The
+    DataStax driver does the same (thank goodness!)
+- `KijiCellIterator` in `CassandraKijiRowData` is missing.
 - Add support for counters (CQL requires counters to be in separate tables, annoying...)
 - Security / permission checking is not implemented at all now.
 - Add support for filters (even if everything has to happen on the client for now).
@@ -19,11 +26,13 @@ Open TODOs
   `bulkGet`).
 - We need a C* version of `AtomicKijiPutter`.
   - The only trick here is figuring out how to do the compare-and-set
-  - CQL has support for "lightweight transactions" that perform compare-and-set, but it is not clear
-    how to use these with batch operations.  (I have an e-mail out to the Cassandra users list
-    about this.)
+  - CQL has support for "lightweight transactions" that perform compare-and-set, but it does not
+    currently support batch operations.
+  - I started a thread about this on the users list.  C* 2.0.6 will have some additional support for
+    batch compare-and-set, but likely not what we need.
 - The various table readers and writers are still missing some functionality (e.g., different
   flavors of deletes).  These shouldn't be too hard to add.
+- There are still some HBase-specific classes that need to be refactored into `impl` packages.
 
 ### General cleanup:
 
@@ -403,4 +412,5 @@ The Java drivers for Cassandra already support paging.  There is a little bit mo
 paging in Cassandra 2.0.  Our challenge will be figuring out how to map the Cassandra paging
 mechanism into the Kiji paging interface.
 
+A Kiji user can specify paging options on a per-column basis.
 

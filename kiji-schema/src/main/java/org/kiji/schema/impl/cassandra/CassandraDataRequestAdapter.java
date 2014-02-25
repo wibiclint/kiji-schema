@@ -22,6 +22,8 @@ package org.kiji.schema.impl.cassandra;
 import com.datastax.driver.core.PreparedStatement;
 import com.datastax.driver.core.ResultSet;
 import com.datastax.driver.core.Session;
+import com.datastax.driver.core.Statement;
+import com.google.common.base.Preconditions;
 import org.kiji.annotations.ApiAudience;
 import org.kiji.schema.*;
 import org.kiji.schema.cassandra.KijiManagedCassandraTableName;
@@ -74,10 +76,12 @@ public class CassandraDataRequestAdapter {
       KijiTableReader.KijiScannerOptions kijiScannerOptions
     ) throws IOException {
     // TODO: Do something with the scan options.
-    return queryCassandraTables(table, null, kijiTableLayout);
+    return queryCassandraTables(table, null, kijiTableLayout, false);
   }
 
   /**
+   * Perform a Cassandra CQL "SELECT" statement (like an HBase Get).  Will ignore any columns with
+   * paging enabled (use `doPagedGet` for requests with paging).
    *
    * @param table
    * @param entityId EntityID for the given get.
@@ -90,7 +94,15 @@ public class CassandraDataRequestAdapter {
       EntityId entityId,
       KijiTableLayout kijiTableLayout
   ) throws IOException {
-    return queryCassandraTables(table, entityId, kijiTableLayout);
+    return queryCassandraTables(table, entityId, kijiTableLayout, false);
+  }
+
+  public List<ResultSet> doPagedGet(
+      CassandraKijiTable table,
+      EntityId entityId,
+      KijiTableLayout kijiTableLayout
+  ) throws IOException {
+    return queryCassandraTables(table, entityId, kijiTableLayout, true);
   }
 
   /**
@@ -99,15 +111,22 @@ public class CassandraDataRequestAdapter {
    * @param table The Cassandra Kiji table to scan.
    * @param entityId Make null if this is a scan over all entity IDs (not currently supporting entity ID ranges).
    * @param kijiTableLayout The layout for the Cassandra Kiji table to scan.
+   * @param pagingEnabled If true, all columns in the data request should be paged.  If false, skip
+   *                      any paged columns in the data request.
    * @return A list of results for the Cassandra query.
    * @throws IOException
    */
   private List<ResultSet> queryCassandraTables(
       CassandraKijiTable table,
       EntityId entityId,
-      KijiTableLayout kijiTableLayout
+      KijiTableLayout kijiTableLayout,
+      boolean pagingEnabled
   ) throws IOException {
     boolean bIsScan = (null == entityId);
+
+    // Cannot do a scan with paging.
+    Preconditions.checkArgument(!(pagingEnabled && bIsScan));
+
     Session session = table.getAdmin().getSession();
 
     // Keep track of all of the results coming back from Cassandra
@@ -125,6 +144,15 @@ public class CassandraDataRequestAdapter {
     // are multiple columns of interest in the same column family / C* table).
     for (KijiDataRequest.Column column : mKijiDataRequest.getColumns()) {
 
+      if (!pagingEnabled && column.isPagingEnabled()) {
+        // The user will have to use an explicit KijiPager to get this data.
+        continue;
+      }
+
+      // This should never happen, because requests with paging enabled should come from only
+      // explicit KijiPagers, which should create custom data requests for only paged columns.
+      assert (!(pagingEnabled && !column.isPagingEnabled()));
+
       // Get the Cassandra table name for this column family
       String cassandraTableName = KijiManagedCassandraTableName.getKijiTableName(
           table.getURI(),
@@ -141,6 +169,7 @@ public class CassandraDataRequestAdapter {
       String family = hBaseColumnName.getFamilyAsString();
       String qualifier = hBaseColumnName.getQualifierAsString();
 
+      // TODO: Support paging in data requests with paging in DataStax API.
       if (bIsScan) {
         // Select this column in the C* family for this qualifier.
         // Eventually, this column will to have escaped quotes around it (to handle upper and lower case)
@@ -177,7 +206,12 @@ public class CassandraDataRequestAdapter {
         LOG.info("Preparing query string " + queryString);
 
         PreparedStatement preparedStatement = session.prepare(queryString);
-        ResultSet res = session.execute(preparedStatement.bind(entityIdByteBuffer, family, qualifier));
+        Statement boundStatement = preparedStatement.bind(entityIdByteBuffer, family, qualifier);
+        if (pagingEnabled) {
+          int pageSize = column.getPageSize();
+          boundStatement = boundStatement.setFetchSize(pageSize);
+        }
+        ResultSet res = session.execute(boundStatement);
         results.add(res);
       }
     }

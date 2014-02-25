@@ -19,13 +19,13 @@
 
 package org.kiji.schema.impl.cassandra;
 
-import com.datastax.driver.core.ResultSet;
 import com.datastax.driver.core.Row;
 import com.google.common.base.Objects;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
 import org.apache.avro.Schema;
+import org.apache.commons.math.analysis.solvers.UnivariateRealSolverUtils;
 import org.kiji.annotations.ApiAudience;
 import org.kiji.schema.*;
 import org.kiji.schema.hbase.HBaseColumnName;
@@ -557,12 +557,9 @@ public final class CassandraKijiRowData implements KijiRowData {
   @Override
   public KijiPager getPager(String family, String qualifier)
       throws KijiColumnPagingNotEnabledException {
-    /*
     final KijiColumnName kijiColumnName = new KijiColumnName(family, qualifier);
     return new CassandraVersionPager(
         mEntityId, mDataRequest, mTable,  kijiColumnName, mDecoderProvider);
-    */
-    return null;
   }
 
   /** {@inheritDoc} */
@@ -779,6 +776,7 @@ public final class CassandraKijiRowData implements KijiRowData {
       mRowData = rowdata;
       mEntityId = eId;
       */
+      throw new UnsupportedOperationException("Not implemented yet!");
     }
 
     /** {@inheritDoc} */
@@ -791,7 +789,7 @@ public final class CassandraKijiRowData implements KijiRowData {
         throw new KijiIOException(ex);
       }
       */
-      return null;
+      throw new UnsupportedOperationException("Not implemented yet!");
     }
   }
 

@@ -600,3 +600,48 @@ Prepared statements for different tables.
 
 For now, I am putting a Map from tableURI-to-prepared statements for reading, writing, etc. into
 `CassandraAdmin`
+
+Week of 2014-02-24
+==================
+
+Paging
+------
+
+We need to support paging in C* Kiji.  Milo started circulating a document with proposals for
+KijiSchema 2.0, which will be the first version to support Cassandra.  Given that we are going to
+change the major version of KijiSchema for C* support, we may not need to support 100% of the
+current KijiSchema paging API (since we can change it in 2.0), but we should try.
+
+The main trick with paging is likely that we cannot build up the entire
+family-to-qualifier-to-timestamp-to-value map structure in `KijiRowData` in one go now, since all of
+the cells may not fit into memory.  The current code will iterate through everything and create a
+map with all of the data for the entire row.
+
+In the current KijiSchema, it looks like paging works like this:
+
+- The user specifies that he wants to use paging when he creates his data request
+- The user then has to use "getPager" for the family or qualified column
+- The pager has an interface that looks like an iterator over `KijiRowData`.
+
+The user can also get different iterators over a column that hide the page-fetching process:
+
+- `ColumnVersionIterator` iterates through the versions in a given column.
+- `MapFamilyQualifierIterator` iterates through the qualifiers in a map-type family.
+- `MapFamilyVersionIterator` iterates through the versions in all columns from a map-type family.
+
+In all of these, the initial `KijiRowData` does not contain any values for any columns that have
+paging enabled.  The subsequent calls to `ColumnVersionIterator`, `KijiPager`, etc. make multiple
+get requests to get the paged data.
+
+We may need to refactor how we organize the various calls to
+`CassandraDataRequestAdapter#queryCassandraTables`.  We have the following cases:
+
+- Standard scans and gets
+  - Should *not* try to get any data from a Cassandra table for any paged columns.
+  - The paged columns will get requested later by a `KijiPager`
+- Paged gets (I don't think there are paged scans)
+  - We should be able to verify that *every* column in a `KijiDataRequest` used for a paged request
+    has paging turned on.
+  - We can probably do other assertion checks for the `KijiDataRequest` for a paged operation, e.g.,
+    that it should not have more than one column (or at least more than one family).
+  - A paged get should (for now) return only a single ResultSet, not a collection of them.
