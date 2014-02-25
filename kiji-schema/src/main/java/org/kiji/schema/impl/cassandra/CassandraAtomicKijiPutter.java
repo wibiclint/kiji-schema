@@ -299,11 +299,11 @@ public final class CassandraAtomicKijiPutter implements AtomicKijiPutter {
       LOG.info("Binding timestamp " + kv.getTimestamp());
       statements.add(preparedStatement.bind(
           rowKey,
-          kv.getmLocalityGroup(),
+          kv.getLocalityGroup(),
           kv.getFamily(),
           kv.getQualifier(),
           kv.getTimestamp(),
-          kv.getValue()
+          CassandraByteUtil.bytesToByteBuffer(kv.getValue())
       ));
     }
 
@@ -406,7 +406,7 @@ public final class CassandraAtomicKijiPutter implements AtomicKijiPutter {
       mValue = value;
     }
 
-    public String getmLocalityGroup() { return mLocalityGroup; }
+    public String getLocalityGroup() { return mLocalityGroup; }
     public String getFamily() { return mFamily; }
     public String getQualifier() { return mQualifier; }
     public Long getTimestamp() { return mTimestamp; }
