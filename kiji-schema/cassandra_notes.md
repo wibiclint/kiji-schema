@@ -217,9 +217,10 @@ Locality groups
 
 **OPEN ITEM.**
 
-We do not currently implement locality groups.  It would make sense to map Kiji locality groups into
-Cassandra tables, since everything in a Cassandra table is located together, and Cassandra tables
-support all of the storage options (caching, compression, etc.) that Kiji locality groups support.
+We do not currently implement locality groups (other than using them as part of the namespace of the
+Kiji table).  It would make sense to map Kiji locality groups into Cassandra tables, since
+everything in a Cassandra table is located together, and Cassandra tables support all of the storage
+options (caching, compression, etc.) that Kiji locality groups support.
 
 Below are details about how we implement (or plan to implement) various features of locality groups:
 
@@ -275,6 +276,7 @@ We can implement map- and group-type families with Cassandra tables of this form
 
     CREATE TABLE kiji_table_name_column_family_name (
       key blob,
+      lg text,
       qualifier text,
       time long,
       value blob,
