@@ -124,6 +124,9 @@ public class CassandraDataRequestAdapter {
       KijiTableLayout kijiTableLayout,
       boolean pagingEnabled
   ) throws IOException {
+    // TODO: Use futures for the multiple C* RPCs below to make the code faster.
+    // TODO: Or figure out how to combine multiple SELECT statements into a single RPC (IntraVert?).
+    // TODO: Or just combine everything into a single SELECT statement!
     LOG.info("---------- Translating KijiDataRequest into Cassandra SELECT statements. ----------");
     boolean bIsScan = (null == entityId);
 
@@ -131,6 +134,11 @@ public class CassandraDataRequestAdapter {
     Preconditions.checkArgument(!(pagingEnabled && bIsScan));
 
     Session session = table.getAdmin().getSession();
+
+    // Get the Cassandra table name for this column family
+    String cassandraTableName = KijiManagedCassandraTableName.getKijiTableName(
+        table.getURI(),
+        table.getName()).toString();
 
     // Keep track of all of the results coming back from Cassandra
     ArrayList<ResultSet> results = new ArrayList<ResultSet>();
@@ -145,6 +153,13 @@ public class CassandraDataRequestAdapter {
     // Timestamp limits for queries.
     long maxTimestamp = mKijiDataRequest.getMaxTimestamp();
     long minTimestamp = mKijiDataRequest.getMinTimestamp();
+
+    // If this is a scan, you need to make sure that you execute at least one SELECT statement,
+    // just to get *something* back for every entity ID.  If you do not do so, then a user could
+    // create a scanner with a data request that has a single, paged column, and you would never
+    // execute a SELECT query below (because we wait to execute paged SELECT queries) and so you
+    // would never get an iterator back with any row keys at all!  Eek!
+    int numScanQueries = 0;
 
     // Ignore everything for now except for column families and qualifiers.
     // For now, to keep things simple, we have a separate request for each column (even if there
@@ -162,10 +177,6 @@ public class CassandraDataRequestAdapter {
       // explicit KijiPagers, which should create custom data requests for only paged columns.
       assert (!(pagingEnabled && !column.isPagingEnabled()));
 
-      // Get the Cassandra table name for this column family
-      String cassandraTableName = KijiManagedCassandraTableName.getKijiTableName(
-          table.getURI(),
-          table.getName()).toString();
 
       // TODO: Optimize these queries such that we need only one RPC per column family.
       // (Right now a data request that asks for "info:foo" and "info:bar" would trigger two
@@ -224,6 +235,7 @@ public class CassandraDataRequestAdapter {
         PreparedStatement preparedStatement = session.prepare(queryString);
         ResultSet res = session.execute(preparedStatement.bind(localityGroup, family));
         results.add(res);
+        numScanQueries++;
 
 
       } else {
@@ -276,6 +288,20 @@ public class CassandraDataRequestAdapter {
         results.add(res);
       }
     }
+
+    if (bIsScan && 0 == numScanQueries) {
+      // Need to add a dummy scan here to make sure that we get back some data for every row.
+      String queryString = String.format(
+          "SELECT token(%s), %s FROM %s ALLOW FILTERING",
+          CassandraKiji.CASSANDRA_KEY_COL,
+          CassandraKiji.CASSANDRA_KEY_COL,
+          cassandraTableName
+      );
+      LOG.info("Preparing query string " + queryString);
+      ResultSet res = session.execute(queryString);
+      results.add(res);
+    }
+
     return results;
   }
 }

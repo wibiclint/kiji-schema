@@ -299,6 +299,7 @@ public class TestCassandraKijiRowData extends CassandraKijiClientTest {
   // from those rows back into a set of Row objects to use in the creation of a KijiRowData.
   // Put all of the common code into this utility function!
   // TODO: Speed up this entire class by doing all of this business here once for many tests.
+  // Could probably use @BeforeClass, just need a static way to get a Kiji, etc.
   private HashSet<Row> getRowsAppleBananaCarrot(EntityId eid) throws IOException {
     // Put some data into the table.
     KijiTableWriter writer = mTable.getWriterFactory().openTableWriter();

@@ -164,7 +164,8 @@ public class TestCassandraVersionPager extends CassandraKijiClientTest {
 
   /** Test case where max-versions is less than the actual number of versions in the column. */
   @Test
-  public void testVersionsPagerMaxVersionsLessThanActual() throws IOException {
+  //public void testVersionsPagerMaxVersionsLessThanActual() throws IOException {
+  public void testMaxVersionsLessThanActual() throws IOException {
     final EntityId eid = mTable.getEntityId("me");
 
     final int maxVersions = 3;  // < actual number of versions in the column (which is 5)
@@ -220,7 +221,8 @@ public class TestCassandraVersionPager extends CassandraKijiClientTest {
 
   /** Test case where max-versions is greater than the actual number of versions in the column. */
   @Test
-  public void testVersionsPagerMaxVersionsGreaterThanActual() throws IOException {
+  //public void testVersionsPagerMaxVersionsGreaterThanActual() throws IOException {
+  public void testMaxVersionsGTActual() throws IOException {
     final EntityId eid = mTable.getEntityId("me");
 
     final int maxVersions = 7;     // > actual number of versions in the column (which is 5)
