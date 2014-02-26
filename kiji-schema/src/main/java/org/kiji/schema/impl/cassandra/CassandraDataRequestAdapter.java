@@ -123,7 +123,7 @@ public class CassandraDataRequestAdapter {
       KijiTableLayout kijiTableLayout,
       boolean pagingEnabled
   ) throws IOException {
-    LOG.info(">>>>>>>>>> Translating KijiDataRequest into Cassandra SELECT statements. <<<<<<<<<<");
+    LOG.info("---------- Translating KijiDataRequest into Cassandra SELECT statements. ----------");
     boolean bIsScan = (null == entityId);
 
     // Cannot do a scan with paging.
@@ -174,6 +174,7 @@ public class CassandraDataRequestAdapter {
 
       // TODO: Support paging in data requests with paging in DataStax API.
       if (bIsScan && qualifier != null) {
+        // Fully-qualified scan.
         String queryString = String.format(
             "SELECT token(%s), %s, %s, %s, %s, %s, %s FROM %s WHERE %s=? AND %s=? AND %s=? ALLOW FILTERING",
             CassandraKiji.CASSANDRA_KEY_COL,
@@ -217,18 +218,25 @@ public class CassandraDataRequestAdapter {
 
         Statement boundStatement;
         if (qualifier != null) {
+          // Fully-qualified get.
           String queryString = String.format(
-              "SELECT * FROM %s WHERE %s=? AND %s=? AND %s=? AND %s=?",
+              "SELECT * FROM %s WHERE %s=? AND %s=? AND %s=? AND %s=? LIMIT ?",
               cassandraTableName,
               CassandraKiji.CASSANDRA_KEY_COL,
               CassandraKiji.CASSANDRA_LOCALITY_GROUP_COL,
               CassandraKiji.CASSANDRA_FAMILY_COL,
               CassandraKiji.CASSANDRA_QUALIFIER_COL
           );
-          LOG.info("Preparing query string " + queryString);
+          LOG.info("Preparing query string for single-row get of fully-qualified column: " + queryString);
+          LOG.info(String.format("\tUsing limit %d", column.getMaxVersions()));
 
           PreparedStatement preparedStatement = session.prepare(queryString);
-          boundStatement = preparedStatement.bind(entityIdByteBuffer, localityGroup, family, qualifier);
+          boundStatement = preparedStatement.bind(
+              entityIdByteBuffer,
+              localityGroup,
+              family,
+              qualifier,
+              column.getMaxVersions());
         } else {
           String queryString = String.format(
               "SELECT * FROM %s WHERE %s=? AND %s=? AND %s=?",

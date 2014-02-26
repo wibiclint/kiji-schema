@@ -28,6 +28,7 @@ import org.apache.avro.Schema;
 import org.apache.commons.math.analysis.solvers.UnivariateRealSolverUtils;
 import org.kiji.annotations.ApiAudience;
 import org.kiji.schema.*;
+import org.kiji.schema.filter.KijiColumnFilter;
 import org.kiji.schema.hbase.HBaseColumnName;
 import org.kiji.schema.impl.BoundColumnReaderSpec;
 import org.kiji.schema.impl.LayoutCapsule;
@@ -180,6 +181,8 @@ public final class CassandraKijiRowData implements KijiRowData {
       return mFilteredMap;
     }
 
+    // TODO: Add only cell values that are valid with respect to the data request (filters, etc.)
+
     LOG.info(String.format(
         "Filtering the Cassandra results into a map of kiji cells.  There are a total of %d rows",
         mRows.size()));
@@ -228,35 +231,151 @@ public final class CassandraKijiRowData implements KijiRowData {
           timestamp
       ));
 
-      // Insert this data into the map.
-
-      // Get a reference to the map for the family.
-      NavigableMap<String, NavigableMap<Long, byte[]>> familyMap;
-      if (mFilteredMap.containsKey(family)) {
-        familyMap = mFilteredMap.get(family);
-      } else {
-        familyMap = new TreeMap<String, NavigableMap<Long, byte[]>>();
-        mFilteredMap.put(family, familyMap);
-      }
-
-      // Get a reference to the map for the qualifier.
-      NavigableMap<Long, byte[]> qualifierMap;
-      if (familyMap.containsKey(qualifier)) {
-        qualifierMap = familyMap.get(qualifier);
-      } else {
-        // Need to use TimestampComparator here to sort timestamps such that lowest timestamp is
-        // first in order.
-        qualifierMap =  new TreeMap<Long, byte[]>(TimestampComparator.INSTANCE);
-        familyMap.put(qualifier, qualifierMap);
-      }
-
-      // Should not already have an entry for this timestamp!
-      assert(!qualifierMap.containsKey(timestamp));
-
-      // Finally insert the data into the map!
-      qualifierMap.put(timestamp, CassandraByteUtil.byteBuffertoBytes(value));
+      checkDataRequestAndInsertValueIntoMap(family, qualifier, timestamp, value);
     }
+
+    updateMapForMaxValues();
+
     return mFilteredMap;
+  }
+
+  /**
+   * Insert this value into the map if it is valid with respect to the data request.
+   *
+   * @param family
+   * @param qualifier
+   * @param timestamp
+   * @param value
+   */
+  private void checkDataRequestAndInsertValueIntoMap(
+      String family,
+      String qualifier,
+      Long timestamp,
+      ByteBuffer value
+  ) {
+    LOG.info(String.format(
+        "Considering whether to add (%s, %s, %s, -)...",
+        family,
+        qualifier,
+        timestamp));
+
+    // Check whether there is a request for this column or for this column family.
+    KijiDataRequest.Column columnRequest = mDataRequest.getRequestForColumn(family, qualifier);
+
+    // This column is not part of the data request, do not add it to the map.
+    if (null == columnRequest) {
+      return;
+    }
+
+    // TODO: Do something with the filter for this data request.
+    KijiColumnFilter filter = columnRequest.getFilter();
+
+    if (timestamp < mDataRequest.getMinTimestamp() || timestamp >= mDataRequest.getMaxTimestamp()) {
+      return;
+    }
+
+    // Get a reference to the map for the family.
+    NavigableMap<String, NavigableMap<Long, byte[]>> familyMap;
+    if (mFilteredMap.containsKey(family)) {
+      familyMap = mFilteredMap.get(family);
+    } else {
+      familyMap = new TreeMap<String, NavigableMap<Long, byte[]>>();
+      mFilteredMap.put(family, familyMap);
+    }
+
+    // Get a reference to the map for the qualifier.
+    NavigableMap<Long, byte[]> qualifierMap;
+    if (familyMap.containsKey(qualifier)) {
+      qualifierMap = familyMap.get(qualifier);
+    } else {
+      // Need to use TimestampComparator here to sort timestamps such that lowest timestamp is
+      // first in order.
+      qualifierMap =  new TreeMap<Long, byte[]>(TimestampComparator.INSTANCE);
+      familyMap.put(qualifier, qualifierMap);
+    }
+
+    // Should not already have an entry for this timestamp!
+    assert(!qualifierMap.containsKey(timestamp));
+
+    // Insert the data into the map if we have not already exceeded the maximum number of
+    // versions.  Also check that the timestamp for the current cell we are considering is older
+    // than any of the versions currently in the map.
+
+    // TODO: Guarantee order of data here is same as C* SELECT and do max-versions filtering here.
+    // (Instead of at the end of building the entire map.)
+    /*
+    // Already exceeded the maximum number of versions for this column.
+    int maxVersions = columnRequest.getMaxVersions();
+    LOG.info(String.format(
+        "...max versions = %d, already have %d values.",
+        maxVersions,
+        qualifierMap.size()));
+
+    // Sanity check that this timestamp is older than any we have seen so far.
+    // Recall that we are using a comparator for timestamps that sorts timestamps such that the
+    // highest (most recent) values come first.
+    assert(null == qualifierMap.ceilingKey(timestamp)) :
+        "Should be getting data back in reverse-timestamp order. " +
+        "Currently looking at datum with timestamp " + timestamp + ", but there exists a datum " +
+        "already with timestamp " + qualifierMap.ceilingKey(timestamp) + "!";
+
+    if (qualifierMap.size() >= maxVersions) {
+      LOG.info("...Already have max versions, not adding.");
+      return;
+    }
+    */
+
+    LOG.info("...Adding the cell!");
+    // Finally insert the data into the map!
+    qualifierMap.put(timestamp, CassandraByteUtil.byteBuffertoBytes(value));
+  }
+
+  /**
+   * Delete values from the internal map based on the max values constraints for various columns.
+   */
+  private void updateMapForMaxValues() {
+    for (String family : mFilteredMap.keySet()) {
+
+      NavigableMap<String, NavigableMap<Long, byte[]>> familyMap = mFilteredMap.get(family);
+
+      for (String qualifier : familyMap.keySet()) {
+
+        // Check whether there is a request for this column or for this column family.
+        KijiDataRequest.Column columnRequest = mDataRequest.getRequestForColumn(family, qualifier);
+        // If this column request does not exist, then there shouldn't be any data present in the
+        // map because we check for this earlier.
+        assert(columnRequest != null);
+        int maxVersions = columnRequest.getMaxVersions();
+
+        NavigableMap<Long, byte[]> columnMap = familyMap.get(qualifier);
+
+        if (maxVersions >= columnMap.size()) {
+          continue;
+        }
+
+        // TODO: Optimize this code.
+
+        // Trim the size of the map...
+        int versionCount = 0;
+        long firstKeyToDrop = -1;
+
+        for (Long key: columnMap.keySet()) {
+          if (versionCount >= maxVersions) {
+            // This is the first key that is too old to include here.
+            firstKeyToDrop = key;
+            break;
+          }
+          versionCount++;
+        }
+
+        NavigableMap<Long, byte[]> trimmedColumnMap = columnMap.headMap(firstKeyToDrop, false);
+        assert (maxVersions == trimmedColumnMap.size());
+
+        familyMap.put(qualifier, trimmedColumnMap);
+      }
+
+    }
+
   }
 
   /** {@inheritDoc} */

@@ -21,6 +21,8 @@ Open TODOs
 - Add support for counters (CQL requires counters to be in separate tables, annoying...)
 - Security / permission checking is not implemented at all now.
 - Add support for filters (even if everything has to happen on the client for now).
+  - We may also need to modify the KijiColumnFilter interface to have a method like:
+    `filterCell(qualifier, family, timestamp, value)`.
 - We need a C* version of `KijiTableAnnotator`.
 - `CassandraKijiTableReader` has a few missing functions that should be easy to add (e.g.,
   `bulkGet`).
@@ -113,7 +115,6 @@ Open TODOs
 
 - Double check that all rows with timestamps are ordered by DESC
 
-
 - Check for any case-sensitivity issues - The CQL commands that we are using to create and
   manipulate tables may need some kind of quotes or other escaping to maintain upper/lower case.
     - Also really tighten up all of the places where we create queries and where we get actual C*
@@ -123,6 +124,10 @@ Open TODOs
   - Could have a static "get" method in KijiMetaTable that can get the appropriate restorer
 - Figure out what to do about hashing entity IDs.  Right now we are really hashing twice
   (once in Kiji, once in Cassandra).
+
+- `CassandraKijiRowData` does not need to use all of its fetched data to populate a map in its
+  `getMap` method.  It should look at the data request and populate only those values that are valid
+  with regard to requested columns, filters, max versions, etc.
 
 
 Open questions

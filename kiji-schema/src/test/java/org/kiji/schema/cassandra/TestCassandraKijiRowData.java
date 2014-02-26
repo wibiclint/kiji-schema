@@ -19,6 +19,8 @@
 
 package org.kiji.schema.cassandra;
 
+import com.datastax.driver.core.ResultSet;
+import com.datastax.driver.core.Row;
 import com.google.common.collect.Lists;
 import org.apache.avro.Schema;
 import org.apache.avro.Schema.Field;
@@ -36,21 +38,22 @@ import org.kiji.schema.avro.*;
 import org.kiji.schema.hbase.HBaseColumnName;
 import org.kiji.schema.impl.AvroCellEncoder;
 import org.kiji.schema.impl.LayoutCapsule;
+import org.kiji.schema.impl.cassandra.CassandraDataRequestAdapter;
+import org.kiji.schema.impl.cassandra.CassandraKijiRowData;
 import org.kiji.schema.impl.cassandra.CassandraKijiTable;
 import org.kiji.schema.impl.hbase.HBaseKijiRowData;
 import org.kiji.schema.impl.hbase.HBaseKijiTable;
 import org.kiji.schema.layout.CellSpec;
+import org.kiji.schema.layout.KijiTableLayout;
 import org.kiji.schema.layout.KijiTableLayouts;
 import org.kiji.schema.layout.impl.ColumnNameTranslator;
+import org.kiji.schema.layout.impl.cassandra.CassandraColumnNameTranslator;
 import org.kiji.schema.util.InstanceBuilder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Map;
-import java.util.NavigableMap;
+import java.util.*;
 
 import static org.junit.Assert.*;
 
@@ -205,18 +208,13 @@ public class TestCassandraKijiRowData extends CassandraKijiClientTest {
     assertEquals(42, integer);
   }
 
-  /*
   @Test
   public void testGetReaderSchema() throws IOException {
-    final Result result = new Result();
     final KijiDataRequest dataRequest = KijiDataRequest.builder().build();
 
-    final KijiRowData input = new HBaseKijiRowData(
-        mTable,
-        dataRequest,
-        RawEntityId.getEntityId(Bytes.toBytes("row-key")),
-        result,
-        null);
+    // Read data for an entity ID that does not exist.
+    KijiTableReader reader = mTable.getReaderFactory().openTableReader();
+    final KijiRowData input = reader.get(mEntityIdFactory.getEntityId("hmm"), dataRequest);
 
     assertEquals(Schema.create(Schema.Type.STRING), input.getReaderSchema("family", "empty"));
     assertEquals(Schema.create(Schema.Type.INT), input.getReaderSchema("family", "qual3"));
@@ -224,15 +222,11 @@ public class TestCassandraKijiRowData extends CassandraKijiClientTest {
 
   @Test
   public void testGetReaderSchemaNoSuchColumn() throws IOException {
-    final Result result = new Result();
     final KijiDataRequest dataRequest = KijiDataRequest.builder().build();
 
-    final KijiRowData input = new HBaseKijiRowData(
-        mTable,
-        dataRequest,
-        RawEntityId.getEntityId(Bytes.toBytes("row-key")),
-        result,
-        null);
+    // Read data for an entity ID that does not exist.
+    KijiTableReader reader = mTable.getReaderFactory().openTableReader();
+    final KijiRowData input = reader.get(mEntityIdFactory.getEntityId("hmm"), dataRequest);
 
     try {
       input.getReaderSchema("this_family", "does_not_exist");
@@ -281,73 +275,109 @@ public class TestCassandraKijiRowData extends CassandraKijiClientTest {
   // one of the columns in the Result map, you used to a get a NullPointerException.
   @Test
   public void testGetMap() throws IOException {
-    final List<KeyValue> kvs = Lists.newArrayList();
     final EntityId eid = mEntityIdFactory.getEntityId("foo");
-    kvs.add(new KeyValue(eid.getHBaseRowKey(), mHBaseFamily, mHBaseQual0, Bytes.toBytes("bot")));
-    kvs.add(new KeyValue(eid.getHBaseRowKey(), mHBaseFamily, mHBaseEmpty, Bytes.toBytes("car")));
-    final Result result = new Result(kvs);
+
+    // Put some data into the table.
+    KijiTableWriter writer = mTable.getWriterFactory().openTableWriter();
+    writer.put(eid, FAMILY, QUAL0, Bytes.toBytes("bot"));
+    writer.put(eid, FAMILY, EMPTY, Bytes.toBytes("car"));
+    writer.close();
 
     final KijiDataRequest dataRequest = KijiDataRequest.builder().build();
+    KijiTableReader reader = mTable.getReaderFactory().openTableReader();
     // We didn't request any data, so the map should be null.
-    final HBaseKijiRowData input = new HBaseKijiRowData(
-        mTable,
-        dataRequest,
-        eid,
-        result,
-        null);
-    assertTrue(input.getMap().isEmpty());
+    final KijiRowData input = reader.get(mEntityIdFactory.getEntityId("hmm"), dataRequest);
+    assertTrue(((CassandraKijiRowData)input).getMap().isEmpty());
   }
 
   @Test
   public void testReadWithMaxVersions() throws IOException {
-    final List<KeyValue> kvs = Lists.newArrayList();
     final EntityId eid = mEntityIdFactory.getEntityId("row0");
-    final byte[] hbaseRowKey = eid.getHBaseRowKey();
-    kvs.add(new KeyValue(hbaseRowKey, mHBaseFamily, mHBaseQual0, 3L, encodeStr("apple")));
-    kvs.add(new KeyValue(hbaseRowKey, mHBaseFamily, mHBaseQual0, 2L, encodeStr("banana")));
-    kvs.add(new KeyValue(hbaseRowKey, mHBaseFamily, mHBaseQual0, 1L, encodeStr("carrot")));
-    kvs.add(new KeyValue(hbaseRowKey, mHBaseFamily, mHBaseQual1, 6L, encodeStr("antelope")));
-    kvs.add(new KeyValue(hbaseRowKey, mHBaseFamily, mHBaseQual1, 5L, encodeStr("bear")));
-    kvs.add(new KeyValue(hbaseRowKey, mHBaseFamily, mHBaseQual1, 4L, encodeStr("cat")));
-    final Result result = new Result(kvs);
+
+    // Put some data into the table.
+    KijiTableWriter writer = mTable.getWriterFactory().openTableWriter();
+    writer.put(eid, FAMILY, QUAL0, 3L, "apple");
+    writer.put(eid, FAMILY, QUAL0, 2L, "banana");
+    writer.put(eid, FAMILY, QUAL0, 1L, "carrot");
+    writer.put(eid, FAMILY, QUAL1, 6L, "antelope");
+    writer.put(eid, FAMILY, QUAL1, 5L, "bear");
+    writer.put(eid, FAMILY, QUAL1, 4L, "cat");
+    writer.close();
+
 
     final KijiDataRequest dataRequest = KijiDataRequest.builder()
         .addColumns(ColumnsDef.create().withMaxVersions(1).add("family", "qual0"))
         .addColumns(ColumnsDef.create().withMaxVersions(2).add("family", "qual1"))
         .build();
 
-    final KijiRowData input = new HBaseKijiRowData(mTable, dataRequest, eid, result, null);
+    KijiTableReader reader = mTable.getReaderFactory().openTableReader();
+    final KijiRowData input = reader.get(eid, dataRequest);
+
     assertEquals(1, input.getValues("family", "qual0").size());
     assertEquals("apple", input.getMostRecentValue("family",  "qual0").toString());
     assertEquals(2, input.getValues("family", "qual1").size());
     assertEquals("antelope", input.getValues("family", "qual1").get(6L).toString());
-    assertEquals("bear", input.getValues("family", "qual1").get(5L).toString());
+    assertEquals("bear", input.getValues(FAMILY, "qual1").get(5L).toString());
+  }
+
+  private HashSet<Row> getRowsForDataRequest(EntityId eid, KijiDataRequest kijiDataRequest)
+    throws IOException {
+    // TODO: Possibly refactor the puts and the data request creation into this method as well.
+
+    final KijiTableLayout tableLayout = mTable.getLayout();
+
+    CassandraDataRequestAdapter adapter = new CassandraDataRequestAdapter(
+        kijiDataRequest,
+        (CassandraColumnNameTranslator)mTable.getColumnNameTranslator()
+    );
+
+    List<ResultSet> results = adapter.doGet(mTable, eid, tableLayout);
+    HashSet<Row> allRows = new HashSet<Row>();
+
+    for (ResultSet res : results) {
+      for (Row row : res.all()) {
+        allRows.add(row);
+      }
+    }
+    return allRows;
   }
 
   @Test
   public void testTypedReadWithMaxVersions() throws IOException {
-    final List<KeyValue> kvs = Lists.newArrayList();
+    // Begin by inserting some data into the table.
     final EntityId eid = mEntityIdFactory.getEntityId("row0");
-    final byte[] hbaseRowKey = eid.getHBaseRowKey();
-    kvs.add(new KeyValue(hbaseRowKey, mHBaseFamily, mHBaseQual0, 3L, encodeStr("apple")));
-    kvs.add(new KeyValue(hbaseRowKey, mHBaseFamily, mHBaseQual0, 2L, encodeStr("banana")));
-    kvs.add(new KeyValue(hbaseRowKey, mHBaseFamily, mHBaseQual0, 1L, encodeStr("carrot")));
-    kvs.add(new KeyValue(hbaseRowKey, mHBaseFamily, mHBaseQual1, 6L, Bytes.toBytes("antelope")));
-    kvs.add(new KeyValue(hbaseRowKey, mHBaseFamily, mHBaseQual1, 5L, Bytes.toBytes("bear")));
-    kvs.add(new KeyValue(hbaseRowKey, mHBaseFamily, mHBaseQual1, 4L, Bytes.toBytes("cat")));
-    final Result result = new Result(kvs);
+
+    // Put some data into the table.
+    KijiTableWriter writer = mTable.getWriterFactory().openTableWriter();
+    writer.put(eid, FAMILY, QUAL0, 3L, "apple");
+    writer.put(eid, FAMILY, QUAL0, 2L, "banana");
+    writer.put(eid, FAMILY, QUAL0, 1L, "carrot");
+    writer.put(eid, FAMILY, QUAL1, 6L, "antelope");
+    writer.put(eid, FAMILY, QUAL1, 5L, "bear");
+    writer.put(eid, FAMILY, QUAL1, 4L, "cat");
+    writer.close();
+
+    // Create a big set of Rows with a data request without max versions.
+    KijiDataRequestBuilder builder = KijiDataRequest.builder();
+    builder.newColumnsDef().withMaxVersions(Integer.MAX_VALUE).add(FAMILY, QUAL0).add(FAMILY, QUAL1);
+    final KijiDataRequest dataRequestAllVersions = builder.build();
+
+    HashSet<Row> allRows = getRowsForDataRequest(eid, dataRequestAllVersions);
+    assert(6 == allRows.size());
 
     final KijiDataRequest dataRequest = KijiDataRequest.builder()
         .addColumns(ColumnsDef.create().withMaxVersions(1).add("family", "qual0"))
         .addColumns(ColumnsDef.create().withMaxVersions(2).add("family", "qual1"))
         .build();
-    final KijiRowData input = new HBaseKijiRowData(mTable, dataRequest, eid, result, null);
+
+    final KijiRowData input = new CassandraKijiRowData(mTable, dataRequest, eid, allRows, null);
     assertEquals(1, input.getValues("family", "qual0").size());
     final NavigableMap<Long, CharSequence> typedValues = input.getValues("family", "qual0");
     assertEquals("apple", typedValues.get(3L).toString());
     assertEquals(2, input.getTimestamps("family", "qual1").size());
   }
 
+  /*
   @Test
   public void testReadWithTimeRange() throws IOException {
     final List<KeyValue> kvs = Lists.newArrayList();
