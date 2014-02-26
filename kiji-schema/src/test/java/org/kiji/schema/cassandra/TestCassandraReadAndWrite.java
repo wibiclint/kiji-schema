@@ -54,7 +54,7 @@ public class TestCassandraReadAndWrite extends CassandraKijiClientTest {
     writer.put(eid0, "family", "column", 1L, "Value at timestamp 1.");
 
     final KijiDataRequest dataRequest = KijiDataRequest.builder()
-        .addColumns(ColumnsDef.create().add("family", "column"))
+        .addColumns(ColumnsDef.create().withMaxVersions(2).add("family", "column"))
         .build();
 
     // Try this as a get.
@@ -91,7 +91,7 @@ public class TestCassandraReadAndWrite extends CassandraKijiClientTest {
     writer.put(eid0, "family", "column", 0L, "Value at timestamp 0.");
 
     final KijiDataRequest dataRequest = KijiDataRequest.builder()
-        .addColumns(ColumnsDef.create().add("family", "column"))
+        .addColumns(ColumnsDef.create().withMaxVersions(100).add("family", "column"))
         .build();
 
     // Do a get and verify the value (only one value should be present now).
@@ -129,10 +129,10 @@ public class TestCassandraReadAndWrite extends CassandraKijiClientTest {
 
     EntityId eid0 = table.getEntityId("row0");
 
-    writer.put(eid0, "family", "column", "First value");
+    writer.put(eid0, "family", "column", HConstants.LATEST_TIMESTAMP, "First value");
 
     final KijiDataRequest dataRequest = KijiDataRequest.builder()
-        .addColumns(ColumnsDef.create().add("family", "column"))
+        .addColumns(ColumnsDef.create().withMaxVersions(100).add("family", "column"))
         .build();
 
     // Try this as a get.
@@ -171,7 +171,7 @@ public class TestCassandraReadAndWrite extends CassandraKijiClientTest {
     writer.put(eid0, "family", "column", 1L, "Value at timestamp 1.");
 
     final KijiDataRequest dataRequest = KijiDataRequest.builder()
-        .addColumns(ColumnsDef.create().add("family", "column"))
+        .addColumns(ColumnsDef.create().withMaxVersions(100).add("family", "column"))
         .build();
 
     // Try this as a get.
@@ -239,6 +239,7 @@ public class TestCassandraReadAndWrite extends CassandraKijiClientTest {
         .addColumns(
             ColumnsDef
                 .create()
+                .withMaxVersions(100)
                 .add(PETS, CAT)
                 .add(PETS, DOG)
                 .add(PETS, RABBIT)
@@ -291,4 +292,28 @@ public class TestCassandraReadAndWrite extends CassandraKijiClientTest {
     writer.close();
     kiji.release();
   }
+
+  // Attempt to read a value that is not there.  Should return null, not throw an exception!
+  @Test
+  public void testReadMissingValue() throws Exception {
+    final Kiji kiji = getKiji();
+    kiji.createTable(KijiTableLayouts.getLayout(KijiTableLayouts.SIMPLE));
+
+    final KijiTable table = kiji.openTable("table");
+    final KijiTableReader reader = table.openTableReader();
+
+    EntityId eid0 = table.getEntityId("row0");
+
+    final KijiDataRequest dataRequest = KijiDataRequest.builder()
+        .addColumns(ColumnsDef.create().withMaxVersions(100).add("family", "column"))
+        .build();
+
+    KijiRowData rowData = reader.get(eid0, dataRequest);
+    assertNull(rowData.getValue("family", "column", 0L));
+
+    reader.close();
+    kiji.release();
+  }
+
 }
+

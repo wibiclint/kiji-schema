@@ -19,12 +19,6 @@
 
 package org.kiji.schema;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
-
 import java.io.IOException;
 import java.util.Iterator;
 import java.util.List;
@@ -60,6 +54,8 @@ import org.kiji.schema.layout.CellSpec;
 import org.kiji.schema.layout.KijiTableLayouts;
 import org.kiji.schema.layout.impl.ColumnNameTranslator;
 import org.kiji.schema.util.InstanceBuilder;
+
+import static org.junit.Assert.*;
 
 public class TestHBaseKijiRowData extends KijiClientTest {
   private static final Logger LOG = LoggerFactory.getLogger(TestHBaseKijiRowData.class);
@@ -981,4 +977,21 @@ public class TestHBaseKijiRowData extends KijiClientTest {
     }
   }
 
+  @Test
+  public void testReadMissingValues() throws IOException {
+    final List<KeyValue> kvs = Lists.newArrayList();
+    final EntityId row0 = mEntityIdFactory.getEntityId("row0");
+    final byte[] hbaseRowKey = row0.getHBaseRowKey();
+    kvs.add(new KeyValue(hbaseRowKey, mHBaseFamily, mHBaseQual3, 1L, encodeInt(42)));
+    final Result result = new Result(kvs);
+
+    KijiDataRequestBuilder builder = KijiDataRequest.builder();
+    builder.newColumnsDef().addFamily("family");
+    KijiDataRequest dataRequest = builder.build();
+
+    HBaseKijiRowData input = new HBaseKijiRowData(mTable, dataRequest, row0, result, null);
+    input.getMap();
+    assertNull(input.getMostRecentValue("family", "qual0"));
+    assertNull(input.getValue("family", "qual0", 0L));
+  }
 }

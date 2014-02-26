@@ -26,6 +26,7 @@ import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
 import org.apache.avro.Schema;
 import org.apache.commons.math.analysis.solvers.UnivariateRealSolverUtils;
+import org.apache.hadoop.hbase.HConstants;
 import org.kiji.annotations.ApiAudience;
 import org.kiji.schema.*;
 import org.kiji.schema.filter.KijiColumnFilter;
@@ -270,7 +271,9 @@ public final class CassandraKijiRowData implements KijiRowData {
     // TODO: Do something with the filter for this data request.
     KijiColumnFilter filter = columnRequest.getFilter();
 
-    if (timestamp < mDataRequest.getMinTimestamp() || timestamp >= mDataRequest.getMaxTimestamp()) {
+    long maxTimestamp = mDataRequest.getMaxTimestamp();
+    if (timestamp < mDataRequest.getMinTimestamp() ||
+        timestamp >= maxTimestamp && maxTimestamp != HConstants.LATEST_TIMESTAMP) {
       return;
     }
 
@@ -486,6 +489,9 @@ public final class CassandraKijiRowData implements KijiRowData {
   public <T> T getValue(String family, String qualifier, long timestamp) throws IOException {
     final KijiCellDecoder<T> decoder = getDecoder(new KijiColumnName(family, qualifier));
     final byte[] bytes = getRawCell(family, qualifier, timestamp);
+    if (null == bytes) {
+      return null;
+    }
     return decoder.decodeValue(bytes);
   }
 
