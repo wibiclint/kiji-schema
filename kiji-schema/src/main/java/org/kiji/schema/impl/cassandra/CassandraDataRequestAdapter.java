@@ -145,9 +145,11 @@ public class CassandraDataRequestAdapter {
     // For now, to keep things simple, we have a separate request for each column (even if there
     // are multiple columns of interest in the same column family / C* table).
     for (KijiDataRequest.Column column : mKijiDataRequest.getColumns()) {
+      LOG.info("Processing data request for data request column " + column);
 
       if (!pagingEnabled && column.isPagingEnabled()) {
         // The user will have to use an explicit KijiPager to get this data.
+        LOG.info("...this column is paged, but this is not a KijiPager request, skipping...");
         continue;
       }
 
@@ -166,11 +168,15 @@ public class CassandraDataRequestAdapter {
 
       // Get the translated Kiji family and qualifier.
       KijiColumnName kijiColumnName = new KijiColumnName(column.getName());
+      LOG.info("Kiji column name for the requested column is " + kijiColumnName);
       String localityGroup = mColumnNameTranslator.toCassandraLocalityGroup(kijiColumnName);
       String family = mColumnNameTranslator.toCassandraColumnFamily(kijiColumnName);
       String qualifier = mColumnNameTranslator.toCassandraColumnQualifier(kijiColumnName);
-      LOG.info("family = " + family);
-      LOG.info("qualifier = " + qualifier);
+      if (null == qualifier) {
+        LOG.info("Column request is for an entire family.");
+      } else {
+        LOG.info("Column request is for a full-qualified, individual column.");
+      }
 
       // TODO: Support paging in data requests with paging in DataStax API.
       if (bIsScan && qualifier != null) {
