@@ -53,7 +53,7 @@ public class TestCassandraKijiBufferedWriter extends CassandraKijiClientTest {
     // These have not been flushed yet, so should not be present.
 
     final KijiDataRequest dataRequest = KijiDataRequest.builder()
-        .addColumns(ColumnsDef.create().add("family", "column"))
+        .addColumns(ColumnsDef.create().withMaxVersions(10).add("family", "column"))
         .build();
 
     KijiRowData rowData;

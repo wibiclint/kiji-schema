@@ -70,7 +70,7 @@ public class TestCassandraCreateKijiTable extends CassandraKijiClientTest {
         final KijiTableReader reader = table.openTableReader();
         try {
           final KijiDataRequest dataRequest = KijiDataRequest.builder()
-              .addColumns(ColumnsDef.create().add("family", "column"))
+              .addColumns(ColumnsDef.create().withMaxVersions(100).add("family", "column"))
               .build();
 
           // Try this as a get.
