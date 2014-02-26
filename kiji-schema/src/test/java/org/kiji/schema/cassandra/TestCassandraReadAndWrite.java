@@ -129,7 +129,7 @@ public class TestCassandraReadAndWrite extends CassandraKijiClientTest {
 
     EntityId eid0 = table.getEntityId("row0");
 
-    writer.put(eid0, "family", "column", HConstants.LATEST_TIMESTAMP, "First value");
+    writer.put(eid0, "family", "column", "First value");
 
     final KijiDataRequest dataRequest = KijiDataRequest.builder()
         .addColumns(ColumnsDef.create().withMaxVersions(100).add("family", "column"))
@@ -137,16 +137,17 @@ public class TestCassandraReadAndWrite extends CassandraKijiClientTest {
 
     // Try this as a get.
     KijiRowData rowData = reader.get(eid0, dataRequest);
-    assertTrue(rowData.containsCell("family", "column", HConstants.LATEST_TIMESTAMP));
+    assertNotNull(rowData.getMostRecentValue("family", "column"));
     assertEquals(
-      rowData.getValue("family", "column", HConstants.LATEST_TIMESTAMP).toString(),
+      rowData.getMostRecentValue("family", "column").toString(),
       "First value");
 
     writer.put(eid0, "family", "column", "Second value");
     rowData = reader.get(eid0, dataRequest);
-    assertTrue(rowData.containsCell("family", "column", HConstants.LATEST_TIMESTAMP));
+
+    assertNotNull(rowData.getMostRecentValue("family", "column"));
     assertEquals(
-        rowData.getValue("family", "column", HConstants.LATEST_TIMESTAMP).toString(),
+        rowData.getMostRecentValue("family", "column").toString(),
         "Second value");
 
     reader.close();

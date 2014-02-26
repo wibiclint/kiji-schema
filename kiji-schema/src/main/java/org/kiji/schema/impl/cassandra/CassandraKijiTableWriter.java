@@ -211,7 +211,8 @@ public final class CassandraKijiTableWriter implements KijiTableWriter {
   @Override
   public <T> void put(EntityId entityId, String family, String qualifier, T value)
       throws IOException {
-    put(entityId, family, qualifier, HConstants.LATEST_TIMESTAMP, value);
+    //put(entityId, family, qualifier, HConstants.LATEST_TIMESTAMP, value);
+    put(entityId, family, qualifier, System.currentTimeMillis(), value);
   }
 
   /** {@inheritDoc} */

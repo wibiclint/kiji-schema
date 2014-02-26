@@ -24,6 +24,7 @@ import com.datastax.driver.core.ResultSet;
 import com.datastax.driver.core.Session;
 import com.datastax.driver.core.Statement;
 import com.google.common.base.Preconditions;
+import org.apache.hadoop.hbase.HConstants;
 import org.kiji.annotations.ApiAudience;
 import org.kiji.schema.*;
 import org.kiji.schema.cassandra.KijiManagedCassandraTableName;
@@ -141,6 +142,10 @@ public class CassandraDataRequestAdapter {
       entityIdByteBuffer = CassandraByteUtil.bytesToByteBuffer(entityId.getHBaseRowKey());
     }
 
+    // Timestamp limits for queries.
+    long maxTimestamp = mKijiDataRequest.getMaxTimestamp();
+    long minTimestamp = mKijiDataRequest.getMinTimestamp();
+
     // Ignore everything for now except for column families and qualifiers.
     // For now, to keep things simple, we have a separate request for each column (even if there
     // are multiple columns of interest in the same column family / C* table).
@@ -181,6 +186,8 @@ public class CassandraDataRequestAdapter {
       // TODO: Support paging in data requests with paging in DataStax API.
       if (bIsScan && qualifier != null) {
         // Fully-qualified scan.
+        // Note - we cannot use "LIMIT" in this Cassandra query because we need to perform this
+        // query across multiple rows.
         String queryString = String.format(
             "SELECT token(%s), %s, %s, %s, %s, %s, %s FROM %s WHERE %s=? AND %s=? AND %s=? ALLOW FILTERING",
             CassandraKiji.CASSANDRA_KEY_COL,
@@ -226,13 +233,16 @@ public class CassandraDataRequestAdapter {
         if (qualifier != null) {
           // Fully-qualified get.
           String queryString = String.format(
-              "SELECT * FROM %s WHERE %s=? AND %s=? AND %s=? AND %s=? LIMIT ?",
+              "SELECT * FROM %s WHERE %s=? AND %s=? AND %s=? AND %s=? AND %s >= ? and %s < ? LIMIT ?",
               cassandraTableName,
               CassandraKiji.CASSANDRA_KEY_COL,
               CassandraKiji.CASSANDRA_LOCALITY_GROUP_COL,
               CassandraKiji.CASSANDRA_FAMILY_COL,
-              CassandraKiji.CASSANDRA_QUALIFIER_COL
+              CassandraKiji.CASSANDRA_QUALIFIER_COL,
+              CassandraKiji.CASSANDRA_VERSION_COL,
+              CassandraKiji.CASSANDRA_VERSION_COL
           );
+
           LOG.info("Preparing query string for single-row get of fully-qualified column: " + queryString);
           LOG.info(String.format("\tUsing limit %d", column.getMaxVersions()));
 
@@ -242,6 +252,8 @@ public class CassandraDataRequestAdapter {
               localityGroup,
               family,
               qualifier,
+              minTimestamp,
+              maxTimestamp,
               column.getMaxVersions());
         } else {
           String queryString = String.format(

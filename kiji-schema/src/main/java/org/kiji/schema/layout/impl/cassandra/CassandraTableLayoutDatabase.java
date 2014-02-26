@@ -357,7 +357,7 @@ public final class CassandraTableLayoutDatabase implements KijiTableLayoutDataba
       byte[] bytes = CassandraByteUtil.byteBuffertoBytes(blob);
       KijiTableLayout layout = KijiTableLayout.newLayout(decodeTableLayoutDesc(bytes));
 
-      Long timestamp = row.getLong(QUALIFIER_TIME);
+      Long timestamp = row.getDate(QUALIFIER_TIME).getTime();
       Preconditions.checkState(timedValues.put(timestamp, layout) == null);
     }
     return timedValues;
@@ -386,7 +386,7 @@ public final class CassandraTableLayoutDatabase implements KijiTableLayoutDataba
 
     Preconditions.checkNotNull(mPreparedStatementRemoveRecentTableLayoutVersions);
     for (Row row: rows) {
-      Long timestamp = row.getLong(QUALIFIER_TIME);
+      Long timestamp = row.getDate(QUALIFIER_TIME).getTime();
       session.execute(mPreparedStatementRemoveRecentTableLayoutVersions.bind(table, new Date(timestamp)));
     }
   }

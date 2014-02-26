@@ -25,18 +25,15 @@ import com.google.common.base.Preconditions;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
 import org.apache.avro.Schema;
-import org.apache.commons.math.analysis.solvers.UnivariateRealSolverUtils;
 import org.apache.hadoop.hbase.HConstants;
 import org.kiji.annotations.ApiAudience;
 import org.kiji.schema.*;
 import org.kiji.schema.filter.KijiColumnFilter;
-import org.kiji.schema.hbase.HBaseColumnName;
 import org.kiji.schema.impl.BoundColumnReaderSpec;
 import org.kiji.schema.impl.LayoutCapsule;
 import org.kiji.schema.layout.ColumnReaderSpec;
 import org.kiji.schema.layout.KijiTableLayout;
 import org.kiji.schema.layout.impl.CellDecoderProvider;
-import org.kiji.schema.layout.impl.ColumnNameTranslator;
 import org.kiji.schema.layout.impl.cassandra.CassandraColumnNameTranslator;
 import org.kiji.schema.util.TimestampComparator;
 import org.slf4j.Logger;
@@ -273,7 +270,8 @@ public final class CassandraKijiRowData implements KijiRowData {
 
     long maxTimestamp = mDataRequest.getMaxTimestamp();
     if (timestamp < mDataRequest.getMinTimestamp() ||
-        timestamp >= maxTimestamp && maxTimestamp != HConstants.LATEST_TIMESTAMP) {
+        //timestamp >= maxTimestamp && maxTimestamp != HConstants.LATEST_TIMESTAMP) {
+        timestamp >= maxTimestamp) {
       return;
     }
 
@@ -729,7 +727,7 @@ public final class CassandraKijiRowData implements KijiRowData {
     private final int mMaxVersions;
 
     /** An iterator over all of the columns. */
-    private final Iterator<Map.Entry<String, NavigableMap<Long, byte[]>>> mQualifierIterator;
+    private Iterator<Map.Entry<String, NavigableMap<Long, byte[]>>> mQualifierIterator;
 
     /** An iterator over values in the current qualified column. */
     private Iterator<Map.Entry<Long, byte[]>> mVersionIterator;
@@ -765,16 +763,38 @@ public final class CassandraKijiRowData implements KijiRowData {
       mNumVersions = 0;
       mDecoder = rowdata.getDecoder(columnName);
 
+      mNextCell = null;
+
+      LOG.info("------ Creating KijiCellIterator ------");
+
       // Initialize the qualifier iterator.
       NavigableMap<String, NavigableMap<Long, byte[]>> columnMap;
       if (mColumn.isFullyQualified()) {
+        LOG.info("Creating iterator for full-qualified column (" + mColumn + ").");
+
+        if (!rowdata.getMap().containsKey(mColumn.getFamily())) {
+          // This family is not present.
+          LOG.info("Don't even have any results for this family!");
+          return;
+        }
+        if (!rowdata.getMap().get(mColumn.getFamily()).containsKey(mColumn.getQualifier())) {
+          // This qualified column is not present (although the family is).
+          LOG.info("Don't have any results for this qualifier!");
+          return;
+        }
+
         // Create a single-entry map with just this one qualifier in it.  Doing so keeps the rest of
         // the code for this class agnostic to whether the column is fully-qualified or not.
-        NavigableMap<Long, byte[]> qualMap = rowdata.getMap().get(mColumn.getFamily()).get(mColumn.getQualifier());
+        NavigableMap<Long, byte[]> qualifierMap =
+            rowdata.getMap().get(mColumn.getFamily()).get(mColumn.getQualifier());
         columnMap = new TreeMap<String, NavigableMap<Long, byte[]>>();
-        columnMap.put(mColumn.getQualifier(), qualMap);
+        columnMap.put(mColumn.getQualifier(), qualifierMap);
       } else {
+        LOG.info("Creating iterator for entire column family (" + mColumn + ").");
         columnMap = rowdata.getMap().get(mColumn.getFamily());
+        if (null == columnMap) {
+          return;
+        }
       }
 
       mQualifierIterator = columnMap.entrySet().iterator();
@@ -783,6 +803,8 @@ public final class CassandraKijiRowData implements KijiRowData {
       Map.Entry<String, NavigableMap<Long, byte[]>> qualifierAndValues = mQualifierIterator.next();
 
       mCurrentQualifier = qualifierAndValues.getKey();
+      LOG.info("Current qualifier for iterator = " + mCurrentQualifier);
+
       mVersionIterator = qualifierAndValues.getValue().entrySet().iterator();
 
       mNextCell = getNextCell();
@@ -796,7 +818,10 @@ public final class CassandraKijiRowData implements KijiRowData {
     private KijiCell<T> getNextCell() {
       KijiCell<T> nextCell = null;
 
+      LOG.info("Getting next cell for iterator.");
+
       if (mVersionIterator.hasNext()) {
+        LOG.info("The version iterator has another value -> there are more values for the current qualifier");
         // If the current version-to-value iterator has another value, then create a cell from that
         // and return it.
         Map.Entry<Long, byte[]> nextVersionAndValue = mVersionIterator.next();
@@ -809,15 +834,18 @@ public final class CassandraKijiRowData implements KijiRowData {
               nextVersionAndValue.getKey(),
               mDecoder.decodeCell(nextVersionAndValue.getValue())
           );
+          LOG.info("Got the next cell!");
         } catch (IOException ex) {
           throw new KijiIOException(ex);
         }
         return nextCell;
       } else {
+        LOG.info("The iterator for the current qualifier is empty!");
         // If the current version-to-value iterator is empty, then try to get another
         // version-to-value iterator and repeat.
         if (!mQualifierIterator.hasNext()) {
           // We are done with this entire iterator.
+          LOG.info("This entire iterator is empty.");
           return null;
         }
 
@@ -826,6 +854,8 @@ public final class CassandraKijiRowData implements KijiRowData {
 
         mCurrentQualifier = qualifierAndValues.getKey();
         mVersionIterator = qualifierAndValues.getValue().entrySet().iterator();
+
+        LOG.info("Got a new qualifier (" + mCurrentQualifier + ")");
 
         nextCell = getNextCell();
         assert(nextCell != null);
@@ -836,8 +866,7 @@ public final class CassandraKijiRowData implements KijiRowData {
     /** {@inheritDoc} */
     @Override
     public boolean hasNext() {
-      //return (null != mNextCell);
-      return false;
+      return (null != mNextCell);
     }
 
     /** {@inheritDoc} */

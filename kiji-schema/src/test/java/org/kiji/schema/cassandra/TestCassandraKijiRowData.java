@@ -298,6 +298,7 @@ public class TestCassandraKijiRowData extends CassandraKijiClientTest {
   // A lot of test cases initialize a table with the same rows and then need to get all of the data
   // from those rows back into a set of Row objects to use in the creation of a KijiRowData.
   // Put all of the common code into this utility function!
+  // TODO: Speed up this entire class by doing all of this business here once for many tests.
   private HashSet<Row> getRowsAppleBananaCarrot(EntityId eid) throws IOException {
     // Put some data into the table.
     KijiTableWriter writer = mTable.getWriterFactory().openTableWriter();
@@ -594,32 +595,28 @@ public class TestCassandraKijiRowData extends CassandraKijiClientTest {
     }
   }
 
-  /*
   @Test
   public void testIterator() throws IOException {
-    final List<KeyValue> kvs = Lists.newArrayList();
     final EntityId eid = mEntityIdFactory.getEntityId("row0");
-    kvs.add(new KeyValue(eid.getHBaseRowKey(), mHBaseFamily, mHBaseQual0, encodeStr("value0")));
-    kvs.add(new KeyValue(eid.getHBaseRowKey(), mHBaseFamily, mHBaseQual0, encodeStr("value1")));
-    kvs.add(new KeyValue(eid.getHBaseRowKey(), mHBaseFamily, mHBaseQual0, encodeStr("value2")));
-    final Result result = new Result(kvs);
+    HashSet<Row> allRows = getRowsAppleBananaCarrot(eid);
 
     final KijiDataRequest dataRequest = KijiDataRequest.builder()
-        .addColumns(ColumnsDef.create().withMaxVersions(3).add("family", "qual0"))
+        .addColumns(ColumnsDef.create().withMaxVersions(3).add(FAMILY, QUAL0))
         .build();
-    final HBaseKijiRowData input = new HBaseKijiRowData(mTable, dataRequest, eid, result, null);
+
+    final CassandraKijiRowData input = new CassandraKijiRowData(mTable, dataRequest, eid, allRows, null);
     logDebugRow(input);
 
     assertFalse(input.containsColumn("not-a-family"));
-    assertTrue(input.containsColumn("family"));
-    assertTrue(input.containsColumn("family", "qual0"));
-    final Iterator<KijiCell<CharSequence>> cells = input.<CharSequence>iterator("family", "qual0");
+    assertTrue(input.containsColumn(FAMILY));
+    assertTrue(input.containsColumn(FAMILY, QUAL0));
+    final Iterator<KijiCell<CharSequence>> cells = input.<CharSequence>iterator(FAMILY, QUAL0);
     assertTrue(cells.hasNext());
-    assertEquals("value0", cells.next().getData().toString());
+    assertEquals("apple", cells.next().getData().toString());
     assertTrue(cells.hasNext());
-    assertEquals("value1", cells.next().getData().toString());
+    assertEquals("banana", cells.next().getData().toString());
     assertTrue(cells.hasNext());
-    assertEquals("value2", cells.next().getData().toString());
+    assertEquals("carrot", cells.next().getData().toString());
     assertFalse(cells.hasNext());
 
     try {
@@ -687,26 +684,22 @@ public class TestCassandraKijiRowData extends CassandraKijiClientTest {
 
   @Test
   public void testIteratorMaxVersion() throws IOException {
-    final List<KeyValue> kvs = Lists.newArrayList();
     final EntityId eid = mEntityIdFactory.getEntityId("row0");
-    kvs.add(new KeyValue(eid.getHBaseRowKey(), mHBaseFamily, mHBaseQual0, encodeStr("value0")));
-    kvs.add(new KeyValue(eid.getHBaseRowKey(), mHBaseFamily, mHBaseQual0, encodeStr("value1")));
-    kvs.add(new KeyValue(eid.getHBaseRowKey(), mHBaseFamily, mHBaseQual0, encodeStr("value2")));
-    final Result result = new Result(kvs);
+    HashSet<Row> allRows = getRowsAppleBananaCarrot(eid);
 
     final KijiDataRequest dataRequest = KijiDataRequest.builder()
         .addColumns(ColumnsDef.create().withMaxVersions(2).add("family", "qual0"))
         .build();
-    final HBaseKijiRowData input = new HBaseKijiRowData(mTable, dataRequest, eid, result, null);
+    final KijiRowData input = new CassandraKijiRowData(mTable, dataRequest, eid, allRows, null);
 
     assertFalse(input.containsColumn("not-a-family"));
     assertTrue(input.containsColumn("family"));
     assertTrue(input.containsColumn("family", "qual0"));
     final Iterator<KijiCell<CharSequence>> cells = input.<CharSequence>iterator("family", "qual0");
     assertTrue(cells.hasNext());
-    assertEquals("value0", cells.next().getData().toString());
+    assertEquals("apple", cells.next().getData().toString());
     assertTrue(cells.hasNext());
-    assertEquals("value1", cells.next().getData().toString());
+    assertEquals("banana", cells.next().getData().toString());
     assertFalse(cells.hasNext());
   }
 
@@ -773,18 +766,14 @@ public class TestCassandraKijiRowData extends CassandraKijiClientTest {
 
   @Test
   public void testGroupAsIterable() throws IOException {
-    final List<KeyValue> kvs = Lists.newArrayList();
     final EntityId eid = mEntityIdFactory.getEntityId("row0");
-    kvs.add(new KeyValue(eid.getHBaseRowKey(), mHBaseFamily, mHBaseQual0, encodeStr("value0")));
-    kvs.add(new KeyValue(eid.getHBaseRowKey(), mHBaseFamily, mHBaseQual0, encodeStr("value1")));
-    kvs.add(new KeyValue(eid.getHBaseRowKey(), mHBaseFamily, mHBaseQual0, encodeStr("value2")));
-    final Result result = new Result(kvs);
+    HashSet<Row> allRows = getRowsAppleBananaCarrot(eid);
 
     final KijiDataRequest dataRequest = KijiDataRequest.builder()
         .addColumns(ColumnsDef.create().withMaxVersions(3).add("family", "qual0"))
         .build();
 
-    final HBaseKijiRowData input = new HBaseKijiRowData(mTable, dataRequest, eid, result, null);
+    final CassandraKijiRowData input = new CassandraKijiRowData(mTable, dataRequest, eid, allRows, null);
     logDebugRow(input);
 
     assertFalse(input.containsColumn("not-a-family"));
@@ -859,6 +848,8 @@ public class TestCassandraKijiRowData extends CassandraKijiClientTest {
 
   @Test
   public void testEmptyResult() throws IOException {
+    // TODO: Test having results for a family, but not for a particular qualifier.
+    // TODO: Test not having results for family or qualifier.
     new InstanceBuilder(getKiji())
         .withTable(mTable)
             .withRow("row1")
@@ -918,7 +909,7 @@ public class TestCassandraKijiRowData extends CassandraKijiClientTest {
     kiji.modifyTableLayout(update);
 
     mTable.release();
-    mTable = (HBaseKijiTable) kiji.openTable(TABLE_NAME);
+    mTable = (CassandraKijiTable) kiji.openTable(TABLE_NAME);
 
     final KijiDataRequest dataRequest = KijiDataRequest.builder()
         .addColumns(ColumnsDef.create().addFamily("family"))
@@ -942,7 +933,7 @@ public class TestCassandraKijiRowData extends CassandraKijiClientTest {
   //    TODO(SCHEMA-295) the user may force using the writer schemas by overriding the
   //        declared reader schemas. This test will be updated accordingly.
   @Test
-  public void testWriterSchemaWhenSpecificRecordClassNotFound() throws Exception {
+  public void testWSchemaWhenSpecRecClassNF() throws Exception {
     final Kiji kiji = getKiji();  // not owned
     kiji.createTable(KijiTableLayouts.getLayout(WRITER_SCHEMA_TEST));
     final KijiTable table = kiji.openTable("writer_schema");
@@ -981,6 +972,5 @@ public class TestCassandraKijiRowData extends CassandraKijiClientTest {
       table.release();
     }
   }
-  */
 
 }

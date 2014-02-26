@@ -30,6 +30,7 @@ import org.apache.avro.Schema;
 import org.apache.avro.Schema.Field;
 import org.apache.avro.generic.GenericData;
 import org.apache.avro.generic.GenericRecordBuilder;
+import org.apache.hadoop.hbase.HConstants;
 import org.apache.hadoop.hbase.KeyValue;
 import org.apache.hadoop.hbase.client.Result;
 import org.apache.hadoop.hbase.util.Bytes;
@@ -994,4 +995,32 @@ public class TestHBaseKijiRowData extends KijiClientTest {
     assertNull(input.getMostRecentValue("family", "qual0"));
     assertNull(input.getValue("family", "qual0", 0L));
   }
+
+
+  @Test
+  public void testPutDefaultTimestamp() throws IOException {
+    final EntityId row0 = mEntityIdFactory.getEntityId("row0");
+    KijiTableWriter writer = mTable.openTableWriter();
+
+    writer.put(row0, "family", "qual0", "foo");
+    writer.flush();
+    writer.close();
+
+    KijiDataRequestBuilder builder = KijiDataRequest.builder();
+      builder.newColumnsDef().add("family", "qual0");
+    KijiDataRequest dataRequest = builder.build();
+    assertEquals(KConstants.END_OF_TIME, dataRequest.getMaxTimestamp());
+
+    KijiTableReader reader = mTable.openTableReader();
+    KijiRowData input = reader.get(row0, dataRequest);
+
+    // Check what the timestamp is.
+    KijiCell cell = input.getMostRecentCell("family", "qual0");
+    assertEquals(HConstants.LATEST_TIMESTAMP, cell.getTimestamp());
+
+    assertTrue(input.containsCell("family", "qual0", KConstants.END_OF_TIME));
+
+    assertNull(input.getMostRecentValue("family", "qual0"));
+  }
+
 }
