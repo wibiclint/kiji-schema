@@ -217,6 +217,7 @@ public class CassandraDataRequestAdapter {
         PreparedStatement preparedStatement = session.prepare(queryString);
         ResultSet res = session.execute(preparedStatement.bind(localityGroup, family, qualifier));
         results.add(res);
+        numScanQueries++;
       } else if (bIsScan && qualifier == null) {
         String queryString = String.format(
             "SELECT token(%s), %s, %s, %s, %s, %s, %s FROM %s WHERE %s=? AND %s=? ALLOW FILTERING",
@@ -289,10 +290,10 @@ public class CassandraDataRequestAdapter {
       }
     }
 
-    if (bIsScan && 0 == numScanQueries) {
+    if (bIsScan && (0 == numScanQueries)) {
       // Need to add a dummy scan here to make sure that we get back some data for every row.
       String queryString = String.format(
-          "SELECT token(%s), %s FROM %s ALLOW FILTERING",
+          "SELECT token(%s), %s FROM %s",
           CassandraKiji.CASSANDRA_KEY_COL,
           CassandraKiji.CASSANDRA_KEY_COL,
           cassandraTableName
