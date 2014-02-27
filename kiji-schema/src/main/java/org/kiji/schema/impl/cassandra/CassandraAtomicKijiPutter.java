@@ -323,7 +323,8 @@ public final class CassandraAtomicKijiPutter implements AtomicKijiPutter {
   /** {@inheritDoc} */
   @Override
   public <T> void put(String family, String qualifier, T value) throws IOException {
-    put(family, qualifier, HConstants.LATEST_TIMESTAMP, value);
+    //put(family, qualifier, HConstants.LATEST_TIMESTAMP, value);
+    put(family, qualifier, System.currentTimeMillis(), value);
   }
 
   /** {@inheritDoc} */
