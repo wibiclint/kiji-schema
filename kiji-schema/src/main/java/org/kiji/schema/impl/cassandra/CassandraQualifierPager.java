@@ -145,14 +145,20 @@ public final class CassandraQualifierPager implements Iterator<String[]>, Closea
     Session session = mTable.getAdmin().getSession();
     BoundStatement boundStatement;
     // TODO: prepare this statement only once.
+
+    // Need to get versions here so that we can filter out versions that don't match the data
+    // request.  Sadly, there is no way to put the version range restriction into this query, since
+    // we aren't restricting the qualifiers at all.
     String queryString = String.format(
-        "SELECT %s from %s WHERE %s=? AND %s=? AND %s=?",
+        "SELECT %s, %s from %s WHERE %s=? AND %s=? AND %s=?",
         CassandraKiji.CASSANDRA_QUALIFIER_COL,
+        CassandraKiji.CASSANDRA_VERSION_COL,
         cassandraTableName,
         CassandraKiji.CASSANDRA_KEY_COL,
         CassandraKiji.CASSANDRA_LOCALITY_GROUP_COL,
         CassandraKiji.CASSANDRA_FAMILY_COL
     );
+
 
     // TODO: Make this code more robust for different kinds of filters.
     KijiColumnFilter columnFilter = mColumnRequest.getFilter();
@@ -293,8 +299,17 @@ public final class CassandraQualifierPager implements Iterator<String[]>, Closea
 
     LinkedHashSet<String> qualifiers = new LinkedHashSet<String>();
 
+    // Only return qualifiers that fall within the time range specified in the data request.
+    long minTimestamp = mDataRequest.getMinTimestamp();
+    long maxTimestamp = mDataRequest.getMaxTimestamp();
+
     while (qualifiers.size() < pageSize && mRowIterator.hasNext()) {
-      mMinQualifier = mRowIterator.next().getString(CassandraKiji.CASSANDRA_QUALIFIER_COL);
+
+      // Check whether *any* of the cells for this qualifier meet the time
+      // range criteria.
+      boolean bAtLeastOneExistsInTimeRange = false;
+
+      mMinQualifier = mRowIterator.peek().getString(CassandraKiji.CASSANDRA_QUALIFIER_COL);
       assert(null != mMinQualifier);
 
       // Remove all of the duplicates.
@@ -302,9 +317,16 @@ public final class CassandraQualifierPager implements Iterator<String[]>, Closea
           .peek()
           .getString(CassandraKiji.CASSANDRA_QUALIFIER_COL)
           .equals(mMinQualifier)) {
+
+        long timestamp = mRowIterator.peek().getLong(CassandraKiji.CASSANDRA_VERSION_COL);
+        if (timestamp >= minTimestamp && timestamp < maxTimestamp) {
+          bAtLeastOneExistsInTimeRange = true;
+        }
         mRowIterator.next();
       }
-      qualifiers.add(mMinQualifier);
+      if (bAtLeastOneExistsInTimeRange) {
+        qualifiers.add(mMinQualifier);
+      }
     }
 
     mHasNext = mRowIterator.hasNext();
