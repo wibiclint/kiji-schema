@@ -158,4 +158,20 @@ public class KijiColumnRangeFilter extends KijiColumnFilter {
         .add("include-max", mIncludeMax)
         .toString();
   }
+
+  public String getMinQualifier() {
+    return mMinQualifier;
+  }
+
+  public String getMaxQualifier() {
+    return mMaxQualifier;
+  }
+
+  public boolean isIncludeMin() {
+    return mIncludeMin;
+  }
+
+  public boolean isIncludeMax() {
+    return mIncludeMax;
+  }
 }

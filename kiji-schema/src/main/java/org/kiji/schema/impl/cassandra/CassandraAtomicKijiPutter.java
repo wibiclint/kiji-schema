@@ -62,6 +62,10 @@ import java.util.concurrent.atomic.AtomicReference;
  */
 @ApiAudience.Private
 public final class CassandraAtomicKijiPutter implements AtomicKijiPutter {
+  // TODO: Implement compare-and-set.  Should be possible in C* 2.0.6.
+  // See this thread on the C* user list:
+  // http://mail-archives.apache.org/mod_mbox/cassandra-user/201402.mbox/%3CCAKkz8Q3Q9KC0uhX5-XmZ4w8HXyL8Bt_-A1iJbn3xGW7uYvJ0xw%40mail.gmail.com%3E
+
   private static final Logger LOG = LoggerFactory.getLogger(CassandraAtomicKijiPutter.class);
 
   /** The Kiji table instance. */

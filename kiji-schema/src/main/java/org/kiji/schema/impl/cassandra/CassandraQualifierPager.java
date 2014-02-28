@@ -24,24 +24,14 @@ import com.datastax.driver.core.PreparedStatement;
 import com.datastax.driver.core.Row;
 import com.datastax.driver.core.Session;
 import com.google.common.base.Preconditions;
-import org.apache.hadoop.hbase.KeyValue;
-import org.apache.hadoop.hbase.client.Get;
-import org.apache.hadoop.hbase.client.HTableInterface;
-import org.apache.hadoop.hbase.client.Result;
+import com.google.common.collect.Iterators;
+import com.google.common.collect.PeekingIterator;
 import org.kiji.annotations.ApiAudience;
 import org.kiji.schema.*;
-import org.kiji.schema.KijiDataRequestBuilder.ColumnsDef;
 import org.kiji.schema.cassandra.KijiManagedCassandraTableName;
-import org.kiji.schema.filter.Filters;
 import org.kiji.schema.filter.KijiColumnFilter;
 import org.kiji.schema.filter.KijiColumnRangeFilter;
-import org.kiji.schema.filter.StripValueColumnFilter;
-import org.kiji.schema.hbase.HBaseColumnName;
-import org.kiji.schema.impl.KijiPaginationFilter;
-import org.kiji.schema.impl.LayoutCapsule;
-import org.kiji.schema.impl.hbase.HBaseDataRequestAdapter;
 import org.kiji.schema.layout.impl.cassandra.CassandraColumnNameTranslator;
-import org.kiji.schema.util.Debug;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -49,6 +39,7 @@ import java.io.Closeable;
 import java.io.IOException;
 import java.util.HashSet;
 import java.util.Iterator;
+import java.util.LinkedHashSet;
 import java.util.NoSuchElementException;
 
 /**
@@ -82,7 +73,7 @@ public final class CassandraQualifierPager implements Iterator<String[]>, Closea
   private boolean mHasNext;
 
   /** Paged Iterator over all of the Rows coming back from Cassandra. */
-  private Iterator<Row> mRowIterator;
+  private PeekingIterator<Row> mRowIterator;
 
   /**
    * Highest qualifier (according to the HBase bytes comparator) returned so far.
@@ -151,12 +142,11 @@ public final class CassandraQualifierPager implements Iterator<String[]>, Closea
       assert(false);
       return;
     }
-
+    Session session = mTable.getAdmin().getSession();
+    BoundStatement boundStatement;
     // TODO: prepare this statement only once.
-    // Note that there is no way to get distinct qualifiers (without creating a new,
-    // qualifier-only table of course.
     String queryString = String.format(
-        "SELECT %s from %s WHERE %s=? AND %s=? AND %s=? AND %s=?",
+        "SELECT %s from %s WHERE %s=? AND %s=? AND %s=?",
         CassandraKiji.CASSANDRA_QUALIFIER_COL,
         cassandraTableName,
         CassandraKiji.CASSANDRA_KEY_COL,
@@ -164,17 +154,113 @@ public final class CassandraQualifierPager implements Iterator<String[]>, Closea
         CassandraKiji.CASSANDRA_FAMILY_COL
     );
 
-    Session session = mTable.getAdmin().getSession();
+    // TODO: Make this code more robust for different kinds of filters.
+    KijiColumnFilter columnFilter = mColumnRequest.getFilter();
+
+    if (null == columnFilter) {
+
+      PreparedStatement preparedStatement = session.prepare(queryString);
+      boundStatement = preparedStatement.bind(
+          CassandraByteUtil.bytesToByteBuffer(mEntityId.getHBaseRowKey()),
+          translatedLocalityGroup,
+          translatedFamily
+      );
+    } else if (columnFilter instanceof KijiColumnRangeFilter) {
+      KijiColumnRangeFilter rangeFilter = (KijiColumnRangeFilter) columnFilter;
+      boundStatement = createBoundStatementForFilter(
+          session,
+          rangeFilter,
+          queryString,
+          translatedLocalityGroup,
+          translatedFamily
+      );
+
+    } else {
+      throw new UnsupportedOperationException(
+          "CassandraQualifierPager supports only column ranger filters, not " +
+              columnFilter.getClass()
+      );
+    }
+    boundStatement.setFetchSize(mColumnRequest.getPageSize());
+    mRowIterator = Iterators.peekingIterator(session.execute(boundStatement).iterator());
+  }
+
+  private BoundStatement createBoundStatementForFilter(
+      Session session,
+      KijiColumnRangeFilter rangeFilter,
+      String queryString,
+      String translatedLocalityGroup,
+      String translatedFamily
+  ) {
+
+    String minQualifier = rangeFilter.getMinQualifier();
+    String maxQualifier = rangeFilter.getMaxQualifier();
+
+    if (null != minQualifier && rangeFilter.isIncludeMin()) {
+      queryString += String.format(
+          " AND %s >= ? ",
+          CassandraKiji.CASSANDRA_QUALIFIER_COL
+      );
+    }
+
+    if (null != minQualifier && !rangeFilter.isIncludeMin()) {
+      queryString += String.format(
+          " AND %s > ? ",
+          CassandraKiji.CASSANDRA_QUALIFIER_COL
+      );
+    }
+
+    if (null != maxQualifier && rangeFilter.isIncludeMax()) {
+      queryString += String.format(
+          " AND %s <= ? ",
+          CassandraKiji.CASSANDRA_QUALIFIER_COL
+      );
+    }
+
+    if (null != maxQualifier && !rangeFilter.isIncludeMax()) {
+      queryString += String.format(
+          " AND %s < ? ",
+          CassandraKiji.CASSANDRA_QUALIFIER_COL
+      );
+    }
+
     PreparedStatement preparedStatement = session.prepare(queryString);
-    BoundStatement boundStatement = preparedStatement.bind(
+    BoundStatement boundStatement = null;
+
+    if (null == minQualifier && null == maxQualifier) {
+      boundStatement = preparedStatement.bind(
         CassandraByteUtil.bytesToByteBuffer(mEntityId.getHBaseRowKey()),
         translatedLocalityGroup,
         translatedFamily
-    );
-    boundStatement.setFetchSize(mColumnRequest.getPageSize());
-    mRowIterator = session.execute(boundStatement).iterator();
-  }
+      );
+    } else if (null != minQualifier && null == maxQualifier) {
+      boundStatement = preparedStatement.bind(
+          CassandraByteUtil.bytesToByteBuffer(mEntityId.getHBaseRowKey()),
+          translatedLocalityGroup,
+          translatedFamily,
+          minQualifier
+      );
+    } else if (null == minQualifier && null != maxQualifier) {
+      boundStatement = preparedStatement.bind(
+          CassandraByteUtil.bytesToByteBuffer(mEntityId.getHBaseRowKey()),
+          translatedLocalityGroup,
+          translatedFamily,
+          maxQualifier
+      );
+    } else if (null != minQualifier && null != maxQualifier) {
+      boundStatement = preparedStatement.bind(
+          CassandraByteUtil.bytesToByteBuffer(mEntityId.getHBaseRowKey()),
+          translatedLocalityGroup,
+          translatedFamily,
+          minQualifier,
+          maxQualifier
+      );
+    } else {
+      assert(false);
+    }
 
+    return boundStatement;
+  }
 
   /** {@inheritDoc} */
   @Override
@@ -200,12 +286,35 @@ public final class CassandraQualifierPager implements Iterator<String[]>, Closea
     }
     Preconditions.checkArgument(pageSize > 0, "Page size must be >= 1, got %s", pageSize);
 
-    HashSet<String> qualifiers = new HashSet<String>();
+    // Verify that we properly finished off all of the repeated qualifier values during the last
+    // call to this method.
+    assert(null == mMinQualifier ||
+        !mMinQualifier.equals(mRowIterator.peek().getString(CassandraKiji.CASSANDRA_QUALIFIER_COL)));
+
+    LinkedHashSet<String> qualifiers = new LinkedHashSet<String>();
 
     while (qualifiers.size() < pageSize && mRowIterator.hasNext()) {
-      qualifiers.add(mRowIterator.next().getString(CassandraKiji.CASSANDRA_QUALIFIER_COL));
+      mMinQualifier = mRowIterator.next().getString(CassandraKiji.CASSANDRA_QUALIFIER_COL);
+      assert(null != mMinQualifier);
+
+      // Remove all of the duplicates.
+      while (mRowIterator.hasNext() && mRowIterator
+          .peek()
+          .getString(CassandraKiji.CASSANDRA_QUALIFIER_COL)
+          .equals(mMinQualifier)) {
+        mRowIterator.next();
+      }
+      qualifiers.add(mMinQualifier);
     }
-     return qualifiers.toArray(new String[0]);
+
+    mHasNext = mRowIterator.hasNext();
+
+    // Sanity check if we think there are more qualifiers to get that this set of results is full!
+    if (mHasNext) {
+      assert(qualifiers.size() == pageSize);
+    }
+
+    return qualifiers.toArray(new String[0]);
   }
 
   /** {@inheritDoc} */

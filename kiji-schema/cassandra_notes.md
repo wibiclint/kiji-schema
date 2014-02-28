@@ -65,13 +65,16 @@ Open TODOs
 
 ### General code organization
 
+- Think about refactoring some code that is shared between HBase and Cassandra implementations of
+  some components into new abstract superclasses or elsewhere.
+  - There is lots of copy-paste code now, not good!
 - Clean up / expand `KijiManagedCassandraTableName`
   - This is a total mess right now, with a mixture of static and non-static methods.
   - Make the methods in `KijiManagedCassandraTableName` more explicit about whether they are
     returning names in the Kiji namespace or in the C* namespace.
-- Think about refactoring some code that is shared between HBase and Cassandra implementations of
-  some components into new abstract superclasses or elsewhere.
-  - There is lots of copy-paste code now, not good!
+- We should put all of the code that directly interacts with Cassandra (especially INSERT and SELECT
+  statements) into a single class so that we can easily make changes to how we map Kiji to C*,
+  preparing statements, etc.)
 - Think about limiting the number of places from which we can call `Session#execute`.
   - Might be good to put all of these calls within `CassandraAdmin`, for example.
   - That would make it easier to manage prepared queries, since the queries are prepared
