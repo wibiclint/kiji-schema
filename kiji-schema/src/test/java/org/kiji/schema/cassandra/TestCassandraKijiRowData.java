@@ -27,22 +27,19 @@ import org.apache.avro.Schema.Field;
 import org.apache.avro.generic.GenericData;
 import org.apache.avro.generic.GenericRecordBuilder;
 import org.apache.hadoop.hbase.KeyValue;
-import org.apache.hadoop.hbase.client.Result;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.junit.After;
 import org.junit.Before;
+import org.junit.BeforeClass;
 import org.junit.Test;
 import org.kiji.schema.*;
 import org.kiji.schema.KijiDataRequestBuilder.ColumnsDef;
 import org.kiji.schema.avro.*;
-import org.kiji.schema.hbase.HBaseColumnName;
 import org.kiji.schema.impl.AvroCellEncoder;
 import org.kiji.schema.impl.LayoutCapsule;
 import org.kiji.schema.impl.cassandra.CassandraDataRequestAdapter;
 import org.kiji.schema.impl.cassandra.CassandraKijiRowData;
 import org.kiji.schema.impl.cassandra.CassandraKijiTable;
-import org.kiji.schema.impl.hbase.HBaseKijiRowData;
-import org.kiji.schema.impl.hbase.HBaseKijiTable;
 import org.kiji.schema.layout.CellSpec;
 import org.kiji.schema.layout.KijiTableLayout;
 import org.kiji.schema.layout.KijiTableLayouts;
@@ -78,78 +75,28 @@ public class TestCassandraKijiRowData extends CassandraKijiClientTest {
 
   private static final String TABLE_NAME = "row_data_test_table";
 
-  private String FAMILY = "family";
-  private String EMPTY = "empty";
-  private String QUAL0 = "qual0";
-  private String QUAL1 = "qual1";
-  private String QUAL2 = "qual2";
-  private String QUAL3 = "qual3";
-  private String NODEQUAL0 = "nodequal0";
-  private String NODEQUAL1 = "nodequal1";
-  private String MAP = "map";
-  private String KEY0 = "key0";
-  private String KEY1 = "key1";
+  private static String FAMILY = "family";
+  private static String EMPTY = "empty";
+  private static String QUAL0 = "qual0";
+  private static String QUAL1 = "qual1";
+  private static String QUAL2 = "qual2";
+  private static String QUAL3 = "qual3";
+  private static String NODEQUAL0 = "nodequal0";
+  private static String NODEQUAL1 = "nodequal1";
+  private static String MAP = "map";
+  private static String KEY0 = "key0";
+  private static String KEY1 = "key1";
 
-  private final int KEY0_VAL = 100;
-  private final int KEY1_VAL = 101;
+  private final static int KEY0_VAL = 100;
+  private final static int KEY1_VAL = 101;
 
   private EntityIdFactory mEntityIdFactory;
 
-  /** Cell encoders. */
-  private KijiCellEncoder mStringCellEncoder;
-  private KijiCellEncoder mIntCellEncoder;
-  private KijiCellEncoder mNodeCellEncoder;
-
-  /** HBase KijiTable used for the test (named TABLE_NAME). */
+  /** KijiTable used for some tests (named TABLE_NAME). */
   private CassandraKijiTable mTable;
 
-  private final Node mNode0 = Node.newBuilder().setLabel("node0").build();
-  private final Node mNode1 = Node.newBuilder().setLabel("node1").build();
-
-  @Before
-  public final void initDecoders() throws Exception {
-    final CellSchema stringCellSchema = CellSchema.newBuilder()
-        .setStorage(SchemaStorage.HASH)
-        .setType(SchemaType.INLINE)
-        .setValue("\"string\"")
-        .build();
-    final CellSpec stringCellSpec = CellSpec.create()
-        .setCellSchema(stringCellSchema)
-        .setSchemaTable(getKiji().getSchemaTable());
-    mStringCellEncoder = new AvroCellEncoder(stringCellSpec);
-
-    final CellSchema intCellSchema = CellSchema.newBuilder()
-        .setStorage(SchemaStorage.HASH)
-        .setType(SchemaType.INLINE)
-        .setValue("\"int\"")
-        .build();
-    final CellSpec intCellSpec = CellSpec.create()
-        .setCellSchema(intCellSchema)
-        .setSchemaTable(getKiji().getSchemaTable());
-    mIntCellEncoder = new AvroCellEncoder(intCellSpec);
-
-    final CellSchema nodeCellSchema = CellSchema.newBuilder()
-        .setStorage(SchemaStorage.HASH)
-        .setType(SchemaType.CLASS)
-        .setValue(Node.SCHEMA$.getFullName())
-        .build();
-    final CellSpec nodeCellSpec = CellSpec.create()
-        .setCellSchema(nodeCellSchema)
-        .setSchemaTable(getKiji().getSchemaTable());
-    mNodeCellEncoder = new AvroCellEncoder(nodeCellSpec);
-  }
-
-  protected byte[] encodeStr(String str) throws IOException {
-    return mStringCellEncoder.encode(str);
-  }
-
-  protected byte[] encodeInt(int integer) throws IOException {
-    return mIntCellEncoder.encode(integer);
-  }
-
-  private byte[] encodeNode(Node node) throws IOException {
-    return mNodeCellEncoder.encode(node);
-  }
+  private static final Node mNode0 = Node.newBuilder().setLabel("node0").build();
+  private static final Node mNode1 = Node.newBuilder().setLabel("node1").build();
 
   @Before
   public final void setupTestHBaseKijiRowData() throws Exception {
@@ -169,9 +116,10 @@ public class TestCassandraKijiRowData extends CassandraKijiClientTest {
   }
 
   // -----------------------------------------------------------------------------------------------
+  // Test cases that need to interact with an actual Kiji table.
 
   @Test
-  public void testEntityId() throws IOException {
+  public void testEntityId() throws Exception {
     final List<KeyValue> kvs = Lists.newArrayList();
     final EntityId foo = mEntityIdFactory.getEntityId("foo");
 
@@ -191,7 +139,7 @@ public class TestCassandraKijiRowData extends CassandraKijiClientTest {
   }
 
   @Test
-  public void testReadInts() throws IOException {
+  public void testReadInts() throws Exception {
     final EntityId row0 = mEntityIdFactory.getEntityId("row0");
 
     // Put some data into the table.
@@ -214,7 +162,7 @@ public class TestCassandraKijiRowData extends CassandraKijiClientTest {
   }
 
   @Test
-  public void testGetReaderSchema() throws IOException {
+  public void testGetReaderSchema() throws Exception {
     final KijiDataRequest dataRequest = KijiDataRequest.builder().build();
 
     // Read data for an entity ID that does not exist.
@@ -226,7 +174,7 @@ public class TestCassandraKijiRowData extends CassandraKijiClientTest {
   }
 
   @Test
-  public void testGetReaderSchemaNoSuchColumn() throws IOException {
+  public void testGetReaderSchemaNoSuchColumn() throws Exception {
     final KijiDataRequest dataRequest = KijiDataRequest.builder().build();
 
     // Read data for an entity ID that does not exist.
@@ -275,538 +223,27 @@ public class TestCassandraKijiRowData extends CassandraKijiClientTest {
       table.release();
     }
   }
-
-  // This test was created in response to WIBI-41.  If your KijiDataRequest doesn't contain
-  // one of the columns in the Result map, you used to a get a NullPointerException.
-  @Test
-  public void testGetMap() throws IOException {
-    final EntityId eid = mEntityIdFactory.getEntityId("foo");
-
-    // Put some data into the table.
-    KijiTableWriter writer = mTable.getWriterFactory().openTableWriter();
-    writer.put(eid, FAMILY, QUAL0, Bytes.toBytes("bot"));
-    writer.put(eid, FAMILY, EMPTY, Bytes.toBytes("car"));
-    writer.close();
-
-    final KijiDataRequest dataRequest = KijiDataRequest.builder().build();
-    KijiTableReader reader = mTable.getReaderFactory().openTableReader();
-    // We didn't request any data, so the map should be null.
-    final KijiRowData input = reader.get(mEntityIdFactory.getEntityId("hmm"), dataRequest);
-    assertTrue(((CassandraKijiRowData)input).getMap().isEmpty());
-  }
-
-  // A lot of test cases initialize a table with the same rows and then need to get all of the data
-  // from those rows back into a set of Row objects to use in the creation of a KijiRowData.
-  // Put all of the common code into this utility function!
-  // TODO: Speed up this entire class by doing all of this business here once for many tests.
-  // Could probably use @BeforeClass, just need a static way to get a Kiji, etc.
-  private HashSet<Row> getRowsAppleBananaCarrot(EntityId eid) throws IOException {
-    // Put some data into the table.
-    KijiTableWriter writer = mTable.getWriterFactory().openTableWriter();
-    writer.put(eid, FAMILY, QUAL0, 3L, "apple");
-    writer.put(eid, FAMILY, QUAL0, 2L, "banana");
-    writer.put(eid, FAMILY, QUAL0, 1L, "carrot");
-    writer.put(eid, FAMILY, QUAL1, 6L, "antelope");
-    writer.put(eid, FAMILY, QUAL1, 5L, "bear");
-    writer.put(eid, FAMILY, QUAL1, 4L, "cat");
-
-    // Add something to the map-type family also!
-    writer.put(eid, MAP, KEY0, 0L, KEY0_VAL);
-    writer.put(eid, MAP, KEY1, 0L, KEY1_VAL);
-
-    // And the node values.
-    writer.put(eid, FAMILY, NODEQUAL0, 0L, mNode0);
-    writer.put(eid, FAMILY, NODEQUAL1, 100L, mNode0);
-    writer.put(eid, FAMILY, NODEQUAL1, 200L, mNode1);
-
-    writer.close();
-
-    // Create a big set of Rows with a data request without max versions.
-    KijiDataRequestBuilder builder = KijiDataRequest.builder();
-    builder.newColumnsDef()
-        .withMaxVersions(Integer.MAX_VALUE)
-        .addFamily(FAMILY)
-        .addFamily(MAP);
-    final KijiDataRequest dataRequestAllVersions = builder.build();
-
-    final KijiTableLayout tableLayout = mTable.getLayout();
-
-    CassandraDataRequestAdapter adapter = new CassandraDataRequestAdapter(
-        dataRequestAllVersions,
-        (CassandraColumnNameTranslator)mTable.getColumnNameTranslator()
-    );
-
-    List<ResultSet> results = adapter.doGet(mTable, eid, tableLayout);
-    HashSet<Row> allRows = new HashSet<Row>();
-
-    // Note that we do not order the results there, since the other classes in Kiji do not preserve
-    // row ordering in results from Cassandra either.  We could modify that behavior to retain row
-    // ordering (and in doing so, possibly improve performance for some client-side filtering).
-    for (ResultSet res : results) {
-      for (Row row : res.all()) {
-        allRows.add(row);
-      }
-    }
-    return allRows;
-  }
-
-  @Test
-  public void testReadWithMaxVersions() throws IOException {
-    final EntityId eid = mEntityIdFactory.getEntityId("row0");
-
-    HashSet<Row> allRows = getRowsAppleBananaCarrot(eid);
-
-    final KijiDataRequest dataRequest = KijiDataRequest.builder()
-        .addColumns(ColumnsDef.create().withMaxVersions(1).add("family", "qual0"))
-        .addColumns(ColumnsDef.create().withMaxVersions(2).add("family", "qual1"))
-        .build();
-
-    final KijiRowData input = new CassandraKijiRowData(mTable, dataRequest, eid, allRows, null);
-
-    assertEquals(1, input.getValues("family", "qual0").size());
-    assertEquals("apple", input.getMostRecentValue("family",  "qual0").toString());
-    assertEquals(2, input.getValues("family", "qual1").size());
-    assertEquals("antelope", input.getValues("family", "qual1").get(6L).toString());
-    assertEquals("bear", input.getValues(FAMILY, "qual1").get(5L).toString());
-  }
-
-  @Test
-  public void testTypedReadWithMaxVersions() throws IOException {
-    // Begin by inserting some data into the table.
-    final EntityId eid = mEntityIdFactory.getEntityId("row0");
-
-    HashSet<Row> allRows = getRowsAppleBananaCarrot(eid);
-
-    final KijiDataRequest dataRequest = KijiDataRequest.builder()
-        .addColumns(ColumnsDef.create().withMaxVersions(1).add("family", "qual0"))
-        .addColumns(ColumnsDef.create().withMaxVersions(2).add("family", "qual1"))
-        .build();
-
-    final KijiRowData input = new CassandraKijiRowData(mTable, dataRequest, eid, allRows, null);
-    assertEquals(1, input.getValues("family", "qual0").size());
-    final NavigableMap<Long, CharSequence> typedValues = input.getValues("family", "qual0");
-    assertEquals("apple", typedValues.get(3L).toString());
-    assertEquals(2, input.getTimestamps("family", "qual1").size());
-  }
-
-  @Test
-  public void testReadWithTimeRange() throws IOException {
-    final EntityId eid = mEntityIdFactory.getEntityId("row0");
-    HashSet<Row> allRows = getRowsAppleBananaCarrot(eid);
-
-    final KijiDataRequest dataRequest = KijiDataRequest.builder()
-        .withTimeRange(2L, 6L)
-        .addColumns(ColumnsDef.create().withMaxVersions(1).add("family", "qual0"))
-        .addColumns(ColumnsDef.create().withMaxVersions(2).add("family", "qual1"))
-        .build();
-    final KijiRowData input = new CassandraKijiRowData(mTable, dataRequest, eid, allRows, null);
-    assertEquals(1, input.getTimestamps("family", "qual0").size());
-    assertEquals("apple", input.getMostRecentValue("family", "qual0").toString());
-    assertEquals(2, input.getTimestamps("family", "qual1").size());
-    assertEquals("bear", input.getMostRecentValue("family", "qual1").toString());
-    assertEquals("cat", input.getValue("family", "qual1", 4L).toString());
-  }
-
-  // Logs the content of an CassandraKijiRowData (debug log-level).
-  // @param row CassandraKijiRowData to dump.
-  private static void logDebugRow(CassandraKijiRowData row) {
-    if (!LOG.isDebugEnabled()) {
-      return;
-    }
-    LOG.debug("Dumping content of CassandraKijiRowData {}", row);
-    for (String family : row.getMap().keySet()) {
-      for (String qualifier : row.getMap().get(family).keySet()) {
-        for (Map.Entry<Long, byte[]> entry : row.getMap().get(family).get(qualifier).entrySet()) {
-          final long timestamp = entry.getKey();
-          final byte[] bytes = entry.getValue();
-          LOG.debug("\tcolumn={}:{}\ttimestamp={}\tvalue={}",
-              family, qualifier, timestamp, Bytes.toStringBinary(bytes));
-        }
-      }
-    }
-  }
-
-  @Test
-  public void testReadColumnTypes() throws IOException {
-    final EntityId eid = mEntityIdFactory.getEntityId("row0");
-    HashSet<Row> allRows = getRowsAppleBananaCarrot(eid);
-
-    final KijiDataRequest dataRequest = KijiDataRequest.builder()
-        .addColumns(ColumnsDef.create().withMaxVersions(1).add("family", "qual0"))
-        .build();
-    final CassandraKijiRowData input = new CassandraKijiRowData(mTable, dataRequest, eid, allRows, null);
-    logDebugRow(input);
-
-    assertFalse(input.containsColumn("not-a-family"));
-    assertTrue(input.containsColumn("family"));
-    assertTrue(input.containsColumn("family", "qual0"));
-    assertEquals("apple", input.getMostRecentValue("family", "qual0").toString());
-  }
-
-  @Test
-  public void testReadFamilyTypes() throws IOException {
-    final EntityId eid = mEntityIdFactory.getEntityId("row0");
-    HashSet<Row> allRows = getRowsAppleBananaCarrot(eid);
-
-    final KijiDataRequest dataRequest = KijiDataRequest.builder()
-        .addColumns(ColumnsDef.create().add(FAMILY, QUAL0))
-        .addColumns(ColumnsDef.create().add(FAMILY, QUAL1))
-        .build();
-
-    final KijiRowData input = new CassandraKijiRowData(mTable, dataRequest, eid, allRows, null);
-    assertTrue(input.containsColumn(FAMILY, QUAL0));
-    assertEquals("apple", input.getMostRecentValue(FAMILY, QUAL0).toString());
-    assertTrue(input.containsColumn(FAMILY, QUAL1));
-    assertEquals("antelope", input.getMostRecentValue(FAMILY, QUAL1).toString());
-  }
-
-  @Test
-  public void testReadMapFamilyTypes() throws IOException {
-    final EntityId eid = mEntityIdFactory.getEntityId("row0");
-    HashSet<Row> allRows = getRowsAppleBananaCarrot(eid);
-
-    final KijiDataRequest dataRequest = KijiDataRequest.builder()
-        .addColumns(ColumnsDef.create().addFamily(MAP))
-        .build();
-
-    final KijiRowData input = new CassandraKijiRowData(mTable, dataRequest, eid, allRows, null);
-    final NavigableMap<String, NavigableMap<Long, Integer>> stringsByTime =
-        input.getValues(MAP);
-
-    // Should have only two families.
-    assertEquals(2, stringsByTime.size());
-    assertTrue(stringsByTime.containsKey(KEY0));
-    assertTrue(stringsByTime.containsKey(KEY1));
-
-    final NavigableMap<Long, Integer> key0map = stringsByTime.get(KEY0);
-    assertTrue(key0map.size() == 1);
-    assertTrue(key0map.containsKey(0L));
-    assertEquals(KEY0_VAL, (int)(key0map.get(0L)));
-
-    final NavigableMap<Long, Integer> key1map = stringsByTime.get(KEY1);
-    assertTrue(key0map.size() == 1);
-    assertTrue(key0map.containsKey(0L));
-    assertEquals(KEY1_VAL, (int)(key1map.get(0L)));
-
-  }
-
-  @Test
-  public void testReadSpecificFamilyTypes() throws IOException {
-    final EntityId eid = mEntityIdFactory.getEntityId("row0");
-    HashSet<Row> allRows = getRowsAppleBananaCarrot(eid);
-
-    final KijiDataRequest dataRequest = KijiDataRequest.builder()
-        .addColumns(ColumnsDef.create().withMaxVersions(1).addFamily("family"))
-        .build();
-    final KijiRowData input = new CassandraKijiRowData(mTable, dataRequest, eid, allRows, null);
-    assertTrue(input.containsColumn(FAMILY, NODEQUAL0));
-    assertTrue(input.containsColumn(FAMILY, NODEQUAL1));
-
-    final Node value0 = input.getMostRecentValue(FAMILY, NODEQUAL0);
-    assertEquals("node0", value0.getLabel());
-    final Node value1 = input.getMostRecentValue(FAMILY, NODEQUAL1);
-    assertEquals("node1", value1.getLabel());
-  }
-
-  @Test
-  public void testReadSpecificTimestampTypes() throws IOException {
-    final EntityId eid = mEntityIdFactory.getEntityId("row0");
-    HashSet<Row> allRows = getRowsAppleBananaCarrot(eid);
-
-    final KijiDataRequest dataRequest = KijiDataRequest.builder()
-        .addColumns(
-            ColumnsDef.create().withMaxVersions(Integer.MAX_VALUE).add(FAMILY, NODEQUAL1))
-        .build();
-    final KijiRowData input = new CassandraKijiRowData(mTable, dataRequest, eid, allRows, null);
-
-    assertTrue(input.containsColumn(FAMILY, NODEQUAL1));
-    final NavigableMap<Long, Node> values = input.getValues(FAMILY, NODEQUAL1);
-    assertNotNull(values);
-    assertEquals(2, values.size());
-    assertEquals("node0", values.get(100L).getLabel());
-    assertEquals("node1", values.get(200L).getLabel());
-
-    // Make sure they come in reverse chronological order.
-    final Iterator<NavigableMap.Entry<Long, Node>> iter = values.entrySet().iterator();
-    assertTrue(iter.hasNext());
-    assertEquals(200L, iter.next().getKey().longValue());
-    assertEquals(100L, iter.next().getKey().longValue());
-    assertFalse(iter.hasNext());
-  }
-
-  @Test
-  public void testReadWithTimestamp() throws IOException {
-    final EntityId eid = mEntityIdFactory.getEntityId("row0");
-    HashSet<Row> allRows = getRowsAppleBananaCarrot(eid);
-
-    final KijiDataRequest dataRequest = KijiDataRequest.builder()
-        .addColumns(
-            ColumnsDef.create().withMaxVersions(Integer.MAX_VALUE).add(FAMILY, NODEQUAL1))
-        .build();
-
-    final KijiRowData input = new CassandraKijiRowData(mTable, dataRequest, eid, allRows, null);
-    assertTrue(input.containsColumn(FAMILY, NODEQUAL1));
-    assertEquals(
-        "node0",
-        ((Node) input.getValue(FAMILY, NODEQUAL1, 100L)).getLabel());
-    assertEquals(
-        "node1",
-        ((Node) input.getValue(FAMILY, NODEQUAL1, 200L)).getLabel());
-  }
-
-  @Test
-  public void testReadSpecificTypes() throws IOException {
-    final EntityId eid = mEntityIdFactory.getEntityId("row0");
-    HashSet<Row> allRows = getRowsAppleBananaCarrot(eid);
-
-    final KijiDataRequest dataRequest = KijiDataRequest.builder()
-        .addColumns(ColumnsDef.create().add(FAMILY, NODEQUAL0))
-        .build();
-
-    final KijiRowData input = new CassandraKijiRowData(mTable, dataRequest, eid, allRows, null);
-
-    assertTrue(input.containsColumn(FAMILY, NODEQUAL0));
-    final Node actual = input.getMostRecentValue(FAMILY, NODEQUAL0);
-    assertEquals("node0", actual.getLabel());
-  }
-
-  @Test
-  public void testContainsColumn() throws Exception {
-    final long timestamp = 1L;
-    final Kiji kiji = new InstanceBuilder(getKiji())
-        .withTable(KijiTableLayouts.getLayout(TEST_LAYOUT_V1))
-            .withRow("row1")
-                .withFamily(FAMILY).withQualifier(QUAL0).withValue(timestamp, "foo1")
-        .build();
-    final KijiTable table = kiji.openTable(TABLE_NAME);
-    try {
-      final KijiTableReader reader = table.openTableReader();
-      try {
-        final KijiRowData row1 = reader.get(table.getEntityId("row1"),
-            KijiDataRequest.create(FAMILY, QUAL0));
-        assertTrue(row1.containsCell(FAMILY, QUAL0, timestamp));
-        assertFalse(row1.containsCell(FAMILY, QUAL0, 2L));
-        assertFalse(row1.containsCell("blope", QUAL0, timestamp));
-        assertFalse(row1.containsCell(FAMILY, "blope", timestamp));
-      } finally {
-        reader.close();
-      }
-    } finally {
-      table.release();
-    }
-  }
-
-  @Test
-  public void testIterator() throws IOException {
-    final EntityId eid = mEntityIdFactory.getEntityId("row0");
-    HashSet<Row> allRows = getRowsAppleBananaCarrot(eid);
-
-    final KijiDataRequest dataRequest = KijiDataRequest.builder()
-        .addColumns(ColumnsDef.create().withMaxVersions(3).add(FAMILY, QUAL0))
-        .build();
-
-    final CassandraKijiRowData input = new CassandraKijiRowData(mTable, dataRequest, eid, allRows, null);
-    logDebugRow(input);
-
-    assertFalse(input.containsColumn("not-a-family"));
-    assertTrue(input.containsColumn(FAMILY));
-    assertTrue(input.containsColumn(FAMILY, QUAL0));
-    final Iterator<KijiCell<CharSequence>> cells = input.<CharSequence>iterator(FAMILY, QUAL0);
-    assertTrue(cells.hasNext());
-    assertEquals("apple", cells.next().getData().toString());
-    assertTrue(cells.hasNext());
-    assertEquals("banana", cells.next().getData().toString());
-    assertTrue(cells.hasNext());
-    assertEquals("carrot", cells.next().getData().toString());
-    assertFalse(cells.hasNext());
-
-    try {
-      input.iterator("unknown_family");
-      fail("HBaseKijiRowData.iterator() should fail on columns with no data request.");
-    } catch (IllegalArgumentException iae) {
-      LOG.info("Expected error: {}", iae.getMessage());
-      assertTrue(iae.getMessage().contains("Column unknown_family has no data request."));
-    }
-
-    try {
-      input.iterator("family", "qual1");
-      fail("HBaseKijiRowData.iterator() should fail on columns with no data request.");
-    } catch (IllegalArgumentException iae) {
-      LOG.info("Expected error: {}", iae.getMessage());
-      assertTrue(iae.getMessage().contains("Column family:qual1 has no data request."));
-    }
-  }
-
-  @Test
-  public void testIteratorMapFamilyTypes() throws IOException {
-    new InstanceBuilder(getKiji())
-        .withTable(mTable)
-            .withRow("row1")
-              .withFamily("map")
-                  .withQualifier("key0").withValue(1L, 0)
-                  .withQualifier("key1").withValue(1L, 1)
-                  .withQualifier("key2").withValue(1L, 2)
-              .withFamily("family")
-                  .withQualifier("qual0").withValue(1L, "string1")
-                  .withQualifier("qual0").withValue(2L, "string2")
-        .build();
-
-    final KijiDataRequest dataRequest = KijiDataRequest.builder()
-        .addColumns(ColumnsDef.create().withMaxVersions(1).addFamily("map"))
-        .build();
-
-    final KijiTableReader reader = mTable.openTableReader();
-    try {
-      final KijiRowData row1 = reader.get(mTable.getEntityId("row1"), dataRequest);
-      final Iterator<KijiCell<Integer>> cells = row1.iterator("map");
-      assertTrue(cells.hasNext());
-      final KijiCell<?> cell0 = cells.next();
-      assertEquals("Wrong first cell!", "key0", cell0.getQualifier());
-      assertTrue(cells.hasNext());
-      final KijiCell<?> cell1 = cells.next();
-      assertEquals("Wrong second cell!", "key1", cell1.getQualifier());
-      assertTrue(cells.hasNext());
-      final KijiCell<?> cell2 = cells.next();
-      assertEquals("Wrong third cell!", "key2", cell2.getQualifier());
-      assertFalse(cells.hasNext());
-
-      final Iterator<KijiCell<Integer>> cellsKey1 = row1.iterator("map", "key1");
-      assertTrue(cellsKey1.hasNext());
-      final KijiCell<Integer> key1Cell = cellsKey1.next();
-      assertEquals("key1", key1Cell.getQualifier());
-      assertEquals(1L, key1Cell.getTimestamp());
-      assertEquals((Integer) 1, key1Cell.getData());
-      assertFalse(cellsKey1.hasNext());
-
-    } finally {
-      reader.close();
-    }
-  }
-
-  @Test
-  public void testIteratorMaxVersion() throws IOException {
-    final EntityId eid = mEntityIdFactory.getEntityId("row0");
-    HashSet<Row> allRows = getRowsAppleBananaCarrot(eid);
-
-    final KijiDataRequest dataRequest = KijiDataRequest.builder()
-        .addColumns(ColumnsDef.create().withMaxVersions(2).add("family", "qual0"))
-        .build();
-    final KijiRowData input = new CassandraKijiRowData(mTable, dataRequest, eid, allRows, null);
-
-    assertFalse(input.containsColumn("not-a-family"));
-    assertTrue(input.containsColumn("family"));
-    assertTrue(input.containsColumn("family", "qual0"));
-    final Iterator<KijiCell<CharSequence>> cells = input.<CharSequence>iterator("family", "qual0");
-    assertTrue(cells.hasNext());
-    assertEquals("apple", cells.next().getData().toString());
-    assertTrue(cells.hasNext());
-    assertEquals("banana", cells.next().getData().toString());
-    assertFalse(cells.hasNext());
-  }
-
-  @Test
-  public void testIteratorMapFamilyMaxVersionsTypes() throws IOException {
-    new InstanceBuilder(getKiji())
-        .withTable(mTable)
-            .withRow("row1")
-                .withFamily("map")
-                  .withQualifier("key0")
-                    .withValue(1L, 0)
-                    .withValue(2L, 1)
-                    .withValue(3L, 2)
-        .build();
-
-    final KijiDataRequest dataRequest = KijiDataRequest.builder()
-        .addColumns(ColumnsDef.create().withMaxVersions(2).addFamily("map"))
-        .build();
-
-    final KijiTableReader reader = mTable.openTableReader();
-    try {
-      final KijiRowData row1 = reader.get(mTable.getEntityId("row1"), dataRequest);
-      final Iterator<KijiCell<Integer>> cells = row1.iterator("map");
-      assertTrue(cells.hasNext());
-      final KijiCell<Integer> cell0 = cells.next();
-      assertEquals("Wrong first cell!", 2, cell0.getData().intValue());
-      assertTrue(cells.hasNext());
-      final KijiCell<Integer> cell1 = cells.next();
-      assertEquals("Wrong second cell!", 1, cell1.getData().intValue());
-      assertFalse(cells.hasNext());
-    } finally {
-      reader.close();
-    }
-  }
-
-  @Test
-  public void testMapAsIterable() throws IOException {
-    new InstanceBuilder(getKiji())
-        .withTable(mTable)
-            .withRow("row1")
-              .withFamily("map")
-                  .withQualifier("key0").withValue(1L, 0)
-                  .withQualifier("key1").withValue(1L, 1)
-                  .withQualifier("key2").withValue(1L, 2)
-              .withFamily("family")
-                  .withQualifier("qual0").withValue(1L, "string1")
-                  .withQualifier("qual0").withValue(2L, "string2")
-        .build();
-
-    final KijiDataRequest dataRequest = KijiDataRequest.builder()
-        .addColumns(ColumnsDef.create().withMaxVersions(3).addFamily("map"))
-        .build();
-
-    final KijiTableReader reader = mTable.openTableReader();
-    try {
-      final KijiRowData row1 = reader.get(mTable.getEntityId("row1"), dataRequest);
-      final List<KijiCell<Integer>> cells = Lists.newArrayList(row1.<Integer>asIterable("map"));
-      final int cellCount = cells.size();
-      assertEquals("Wrong number of cells returned by asIterable.", 3, cellCount);
-    } finally {
-      reader.close();
-    }
-  }
-
-  @Test
-  public void testGroupAsIterable() throws IOException {
-    final EntityId eid = mEntityIdFactory.getEntityId("row0");
-    HashSet<Row> allRows = getRowsAppleBananaCarrot(eid);
-
-    final KijiDataRequest dataRequest = KijiDataRequest.builder()
-        .addColumns(ColumnsDef.create().withMaxVersions(3).add("family", "qual0"))
-        .build();
-
-    final CassandraKijiRowData input = new CassandraKijiRowData(mTable, dataRequest, eid, allRows, null);
-    logDebugRow(input);
-
-    assertFalse(input.containsColumn("not-a-family"));
-    assertTrue(input.containsColumn("family"));
-    assertTrue(input.containsColumn("family", "qual0"));
-    final List<KijiCell<CharSequence>> cells =
-        Lists.newArrayList(input.<CharSequence>asIterable("family", "qual0"));
-    final int cellCount = cells.size();
-    assertEquals("Wrong number of cells returned by asIterable.", 3, cellCount);
-  }
-
   @Test
   public void testReadMiddleTimestamp() throws IOException {
     // Test that we can select a timestamped value that is not the most recent value.
     new InstanceBuilder(getKiji())
         .withTable(mTable)
-            .withRow("row1")
-                .withFamily("family")
-                    .withQualifier("qual0")
-                        .withValue(4L, "oldest")
-                        .withValue(6L, "middle")
-                        .withValue(8L, "newest")
-                    .withQualifier("qual1")
-                        .withValue(1L, "one")
-                        .withValue(2L, "two")
-                        .withValue(3L, "three")
-                        .withValue(4L, "four")
-                        .withValue(8L, "eight")
-                    .withQualifier("qual2")
-                        .withValue(3L, "q2-three")
-                        .withValue(4L, "q2-four")
-                        .withValue(6L, "q2-six")
+        .withRow("row1")
+        .withFamily("family")
+        .withQualifier("qual0")
+        .withValue(4L, "oldest")
+        .withValue(6L, "middle")
+        .withValue(8L, "newest")
+        .withQualifier("qual1")
+        .withValue(1L, "one")
+        .withValue(2L, "two")
+        .withValue(3L, "three")
+        .withValue(4L, "four")
+        .withValue(8L, "eight")
+        .withQualifier("qual2")
+        .withValue(3L, "q2-three")
+        .withValue(4L, "q2-four")
+        .withValue(6L, "q2-six")
         .build();
 
     final KijiDataRequest dataRequest = KijiDataRequest.builder()
@@ -853,10 +290,10 @@ public class TestCassandraKijiRowData extends CassandraKijiClientTest {
     // TODO: Test not having results for family or qualifier.
     new InstanceBuilder(getKiji())
         .withTable(mTable)
-            .withRow("row1")
-              .withFamily("family")
-                  .withQualifier("qual0").withValue(1L, "string1")
-                  .withQualifier("qual0").withValue(2L, "string2")
+        .withRow("row1")
+        .withFamily("family")
+        .withQualifier("qual0").withValue(1L, "string1")
+        .withQualifier("qual0").withValue(2L, "string2")
         .build();
 
     final KijiDataRequest dataRequest = KijiDataRequest.builder()
@@ -899,10 +336,10 @@ public class TestCassandraKijiRowData extends CassandraKijiClientTest {
     final Kiji kiji = getKiji();
     new InstanceBuilder(kiji)
         .withTable(mTable)
-            .withRow("row1")
-              .withFamily("family")
-                  .withQualifier("qual0").withValue(1L, "string1")
-                  .withQualifier("qual0").withValue(2L, "string2")
+        .withRow("row1")
+        .withFamily("family")
+        .withQualifier("qual0").withValue(1L, "string1")
+        .withQualifier("qual0").withValue(2L, "string2")
         .build();
 
     final TableLayoutDesc update = KijiTableLayouts.getLayout(TEST_LAYOUT_V2);
@@ -974,4 +411,154 @@ public class TestCassandraKijiRowData extends CassandraKijiClientTest {
     }
   }
 
+  // This test was created in response to WIBI-41.  If your KijiDataRequest doesn't contain
+  // one of the columns in the Result map, you used to a get a NullPointerException.
+  @Test
+  public void testGetMap() throws Exception {
+    final EntityId eid = mEntityIdFactory.getEntityId("foo");
+
+    // Put some data into the table.
+    KijiTableWriter writer = mTable.getWriterFactory().openTableWriter();
+    writer.put(eid, FAMILY, QUAL0, Bytes.toBytes("bot"));
+    writer.put(eid, FAMILY, EMPTY, Bytes.toBytes("car"));
+    writer.close();
+
+    final KijiDataRequest dataRequest = KijiDataRequest.builder().build();
+    KijiTableReader reader = mTable.getReaderFactory().openTableReader();
+    // We didn't request any data, so the map should be null.
+    final KijiRowData input = reader.get(mEntityIdFactory.getEntityId("hmm"), dataRequest);
+    assertTrue(((CassandraKijiRowData)input).getMap().isEmpty());
+  }
+
+  @Test
+  public void testContainsColumn() throws Exception {
+    final long timestamp = 1L;
+    final Kiji kiji = new InstanceBuilder(getKiji())
+        .withTable(KijiTableLayouts.getLayout(TEST_LAYOUT_V1))
+        .withRow("row1")
+        .withFamily(FAMILY).withQualifier(QUAL0).withValue(timestamp, "foo1")
+        .build();
+    final KijiTable table = kiji.openTable(TABLE_NAME);
+    try {
+      final KijiTableReader reader = table.openTableReader();
+      try {
+        final KijiRowData row1 = reader.get(table.getEntityId("row1"),
+            KijiDataRequest.create(FAMILY, QUAL0));
+        assertTrue(row1.containsCell(FAMILY, QUAL0, timestamp));
+        assertFalse(row1.containsCell(FAMILY, QUAL0, 2L));
+        assertFalse(row1.containsCell("blope", QUAL0, timestamp));
+        assertFalse(row1.containsCell(FAMILY, "blope", timestamp));
+      } finally {
+        reader.close();
+      }
+    } finally {
+      table.release();
+    }
+  }
+
+  @Test
+  public void testIteratorMapFamilyTypes() throws IOException {
+    new InstanceBuilder(getKiji())
+        .withTable(mTable)
+        .withRow("row1")
+        .withFamily("map")
+        .withQualifier("key0").withValue(1L, 0)
+        .withQualifier("key1").withValue(1L, 1)
+        .withQualifier("key2").withValue(1L, 2)
+        .withFamily("family")
+        .withQualifier("qual0").withValue(1L, "string1")
+        .withQualifier("qual0").withValue(2L, "string2")
+        .build();
+
+    final KijiDataRequest dataRequest = KijiDataRequest.builder()
+        .addColumns(ColumnsDef.create().withMaxVersions(1).addFamily("map"))
+        .build();
+
+    final KijiTableReader reader = mTable.openTableReader();
+    try {
+      final KijiRowData row1 = reader.get(mTable.getEntityId("row1"), dataRequest);
+      final Iterator<KijiCell<Integer>> cells = row1.iterator("map");
+      assertTrue(cells.hasNext());
+      final KijiCell<?> cell0 = cells.next();
+      assertEquals("Wrong first cell!", "key0", cell0.getQualifier());
+      assertTrue(cells.hasNext());
+      final KijiCell<?> cell1 = cells.next();
+      assertEquals("Wrong second cell!", "key1", cell1.getQualifier());
+      assertTrue(cells.hasNext());
+      final KijiCell<?> cell2 = cells.next();
+      assertEquals("Wrong third cell!", "key2", cell2.getQualifier());
+      assertFalse(cells.hasNext());
+
+      final Iterator<KijiCell<Integer>> cellsKey1 = row1.iterator("map", "key1");
+      assertTrue(cellsKey1.hasNext());
+      final KijiCell<Integer> key1Cell = cellsKey1.next();
+      assertEquals("key1", key1Cell.getQualifier());
+      assertEquals(1L, key1Cell.getTimestamp());
+      assertEquals((Integer) 1, key1Cell.getData());
+      assertFalse(cellsKey1.hasNext());
+
+    } finally {
+      reader.close();
+    }
+  }
+  @Test
+  public void testIteratorMapFamilyMaxVersionsTypes() throws IOException {
+    new InstanceBuilder(getKiji())
+        .withTable(mTable)
+        .withRow("row1")
+        .withFamily("map")
+        .withQualifier("key0")
+        .withValue(1L, 0)
+        .withValue(2L, 1)
+        .withValue(3L, 2)
+        .build();
+
+    final KijiDataRequest dataRequest = KijiDataRequest.builder()
+        .addColumns(ColumnsDef.create().withMaxVersions(2).addFamily("map"))
+        .build();
+
+    final KijiTableReader reader = mTable.openTableReader();
+    try {
+      final KijiRowData row1 = reader.get(mTable.getEntityId("row1"), dataRequest);
+      final Iterator<KijiCell<Integer>> cells = row1.iterator("map");
+      assertTrue(cells.hasNext());
+      final KijiCell<Integer> cell0 = cells.next();
+      assertEquals("Wrong first cell!", 2, cell0.getData().intValue());
+      assertTrue(cells.hasNext());
+      final KijiCell<Integer> cell1 = cells.next();
+      assertEquals("Wrong second cell!", 1, cell1.getData().intValue());
+      assertFalse(cells.hasNext());
+    } finally {
+      reader.close();
+    }
+  }
+
+  @Test
+  public void testMapAsIterable() throws IOException {
+    new InstanceBuilder(getKiji())
+        .withTable(mTable)
+        .withRow("row1")
+        .withFamily("map")
+        .withQualifier("key0").withValue(1L, 0)
+        .withQualifier("key1").withValue(1L, 1)
+        .withQualifier("key2").withValue(1L, 2)
+        .withFamily("family")
+        .withQualifier("qual0").withValue(1L, "string1")
+        .withQualifier("qual0").withValue(2L, "string2")
+        .build();
+
+    final KijiDataRequest dataRequest = KijiDataRequest.builder()
+        .addColumns(ColumnsDef.create().withMaxVersions(3).addFamily("map"))
+        .build();
+
+    final KijiTableReader reader = mTable.openTableReader();
+    try {
+      final KijiRowData row1 = reader.get(mTable.getEntityId("row1"), dataRequest);
+      final List<KijiCell<Integer>> cells = Lists.newArrayList(row1.<Integer>asIterable("map"));
+      final int cellCount = cells.size();
+      assertEquals("Wrong number of cells returned by asIterable.", 3, cellCount);
+    } finally {
+      reader.close();
+    }
+  }
 }

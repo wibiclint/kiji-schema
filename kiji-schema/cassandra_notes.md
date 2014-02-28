@@ -11,21 +11,32 @@ Open TODOs
 ### Major missing features
 
 - Add support for counters (CQL requires counters to be in separate tables, annoying...)
+
 - Security / permission checking is not implemented at all now.
+
 - Add support for filters (even if everything has to happen on the client for now).
   - We may also need to modify the KijiColumnFilter interface to have a method like:
     `filterCell(qualifier, family, timestamp, value)`.
+  - The filters are going to need additional getter methods so that the C* code can get information
+    about the filters (e.g., the min and max qualifiers for a column range filter).
+
 - We need a C* version of `KijiTableAnnotator`.
+
 - `CassandraKijiTableReader` has a few missing functions that should be easy to add (e.g.,
   `bulkGet`).
+
 - We need a C* version of `AtomicKijiPutter`.
   - The only trick here is figuring out how to do the compare-and-set
   - CQL has support for "lightweight transactions" that perform compare-and-set, but it does not
     currently support batch operations.
-  - I started a thread about this on the users list.  C* 2.0.6 will have some additional support for
-    batch compare-and-set, but likely not what we need.
+  - I started a
+    [thread](http://mail-archives.apache.org/mod_mbox/cassandra-user/201402.mbox/%3CCAKkz8Q3Q9KC0uhX5-XmZ4w8HXyL8Bt_-A1iJbn3xGW7uYvJ0xw%40mail.gmail.com%3E)
+    about this on the users list.  C* 2.0.6 will have some additional support for batch
+    compare-and-set via static columns.
+
 - The various table readers and writers are still missing some functionality (e.g., different
   flavors of deletes).  These shouldn't be too hard to add.
+
 - There are still some HBase-specific classes that need to be refactored into `impl` packages.
 
 ### General cleanup:
@@ -143,8 +154,10 @@ Open TODOs
 
 - Do we need to make an interface for MetadataRestorer and then create HBase and C* versions?
   - Could have a static "get" method in KijiMetaTable that can get the appropriate restorer
+
 - Figure out what to do about hashing entity IDs.  Right now we are really hashing twice
-  (once in Kiji, once in Cassandra).
+  (once in Kiji, once in Cassandra).  Do we want to rely on Kiji to hash entity IDs, and use a
+  simple order-preserving hash in Cassandra?  That would allow us to implement row scans.
 
 - `CassandraKijiRowData` does not need to use all of its fetched data to populate a map in its
   `getMap` method.  It should look at the data request and populate only those values that are valid
