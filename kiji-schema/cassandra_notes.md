@@ -65,24 +65,31 @@ Open TODOs
 
 ### General code organization
 
-- Think about refactoring some code that is shared between HBase and Cassandra implementations of
-  some components into new abstract superclasses or elsewhere.
-  - There is lots of copy-paste code now, not good!
+- Before adding C* support, most of the schema components had an interface and a single implementing
+  class.  Now we have an interface and two implementing classes (one for HBase, one for C*).  In
+  most cases, the two implementing classes share *a lot* of code.  We may want to refactor all of
+  the shared code into an abstract superclass from which both the HBase and C* implementations can
+  inherit.
+
 - Clean up / expand `KijiManagedCassandraTableName`
   - This is a total mess right now, with a mixture of static and non-static methods.
   - Make the methods in `KijiManagedCassandraTableName` more explicit about whether they are
     returning names in the Kiji namespace or in the C* namespace.
-- We should put all of the code that directly interacts with Cassandra (especially INSERT and SELECT
-  statements) into a single class so that we can easily make changes to how we map Kiji to C*,
-  preparing statements, etc.)
+
 - Think about limiting the number of places from which we can call `Session#execute`.
   - Might be good to put all of these calls within `CassandraAdmin`, for example.
   - That would make it easier to manage prepared queries, since the queries are prepared
     per-`Session` (double-check that this is true) and the `CassandraAdmin` manages the active
     Cassandra `Session`.
+  - Such a refactoring would also make it easier to modify the way in which we map Kiji to C*, since
+    we'd likely have to change only a single file.
+  - We could remove the `getSession` method entirely from `CassandraAdmin` if we want to really
+    tighten this up.
+
 - Do we want to refactor `CassandraAdmin` into multiple classes?  Should we add or remove some
   functionality to or from it?  The class as it is now is somewhat arbitrary -- I created it mostly
   as a wrapper around an open Cassandra `Session` to try to future-proof the code.
+
 - Do we need the `CassandraTableInterface` class?  It is basically just a table name and a pointer
   to a `CassandraAdmin` (which may be useful by itself).
   - We may want to keep this class around to manage reference counting for open sessions.
@@ -90,6 +97,12 @@ Open TODOs
     `CassandraTableInterface`, rather than getting a `Session` from `CassandraAdmin`.  Such a
     restriction would make it easier to manage what objects are doing what with the currently open
     `Session.`
+
+- The DataStax Java driver has builder methods for creating queries.  I could not find much
+  documentation about them, however, so I have not used them yet.  Using builders would make some of
+  the code a lot more compact (e.g., in cases in which we have to conditionally add clauses to a
+  query).
+
 - The code for column-name translation is kind of a mess right now.  I wanted to share the layout
   capsule code as much as possible between the HBase and Cassandra Kiji implementations.  The
   layout capsule contains a `ColumnNameTranslator` already, so to share that code, but to enable a
