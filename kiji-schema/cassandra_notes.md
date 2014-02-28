@@ -10,14 +10,6 @@ Open TODOs
 
 ### Major missing features
 
-- Support paging!
-  - Paging should come "for free" from the DataStax Java driver (you can iterate over paged data
-    just as you would over non-paged data)
-  - If we are going to change how paging works for KijiSchema 2.0, then maybe we don't need to
-    support the full paging API now anyway.
-  - In KijiSchema, we specify page size in terms of the number of cells to retrieve per page.  The
-    DataStax driver does the same (thank goodness!)
-- `KijiCellIterator` in `CassandraKijiRowData` is missing.
 - Add support for counters (CQL requires counters to be in separate tables, annoying...)
 - Security / permission checking is not implemented at all now.
 - Add support for filters (even if everything has to happen on the client for now).
@@ -117,8 +109,21 @@ Open TODOs
 - Add some performance tests!
   - How does this perform versus HBase?
   - How does this perform versus bare-bones Cassandra?
+
 - The `CassandraKijiBufferedWriter` should be aware of the replica nodes for different key ranges
   and send requests directly to the replica nodes.
+
+- We can likely improve the implementation of the `MapFamilyPager` for Cassandra.  The HBase
+  implementation works like the following:
+
+  - Create a paged iterator of column qualifiers (for a given family)
+  - For each qualifier, create a paged version iterator
+
+  This implementation is inefficient if many of the qualifiers will have much less than a full page
+  of data, because we will be doing a separate page request for each of them no matter what.  In C*
+  Kiji, we could implement the map-family pager instead by issues one big query across all of the
+  qualifiers.
+
 
 ### Resource management
 

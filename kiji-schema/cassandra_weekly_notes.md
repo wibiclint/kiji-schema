@@ -645,3 +645,37 @@ We may need to refactor how we organize the various calls to
   - We can probably do other assertion checks for the `KijiDataRequest` for a paged operation, e.g.,
     that it should not have more than one column (or at least more than one family).
   - A paged get should (for now) return only a single ResultSet, not a collection of them.
+
+##### Qualifier pager
+
+The code for this is pretty simple, but would be a lot simpler if Cassandra had a way to filter out
+duplicate results in a query on the server.  To get a list of all of the qualifiers for a column, we
+have to do something like:
+
+    SELECT qualifier, version FROM <table> WHERE key=<key> AND family=<family> AND qualifier <=
+    <maxqual> AND qualifier >= <minqual>
+
+We select `version` so that we can filter out any results for which the timestamp is out of the
+bounds specified in the user's data request.  We could put the timestamp range in the query as we
+have put the qualifier range into the query, starting with C* 2.0.6 (see this
+[ticket](https://issues.apache.org/jira/browse/CASSANDRA-4851)).
+
+In any case, we'll get back a separate qualifier result for every cell that has the qualifier that
+we're looking for.
+
+
+
+...
+
+The iterator stuff was not that hard to get done.  The C* iterator code actually is simpler than the
+HBase iterator code, just because the DataStax Java driver does so much of the work.
+
+The HBase implementation of the map family version iterator works like this:
+
+- Get a paged iterator of every qualifier in the map family
+- For each qualifier, we a paged iterator over cells
+
+If we can figure out a way to support max versions in our queries, then we can probably build one
+entire big query for the entire multi-qualifier, multi-version pager.  Doing so would possibly allow
+us to save a lot of RPCs, since many qualifiers may not have enough versions to max out a version
+pager by themselves.
