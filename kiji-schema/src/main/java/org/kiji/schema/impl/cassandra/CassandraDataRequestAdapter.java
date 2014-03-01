@@ -245,6 +245,9 @@ public class CassandraDataRequestAdapter {
         Statement boundStatement;
         if (qualifier != null) {
           // Fully-qualified get.
+          // TODO: Depending on filters, we may have to drop the LIMIT here.
+          // Let's say that a client makes a data request with a filter with a qualifier regex and
+          // specifies maxVersions.  We cannot put the qualifier regex into
           String queryString = String.format(
               "SELECT * FROM %s WHERE %s=? AND %s=? AND %s=? AND %s=? AND %s >= ? and %s < ? LIMIT ?",
               cassandraTableName,

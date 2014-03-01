@@ -679,3 +679,47 @@ If we can figure out a way to support max versions in our queries, then we can p
 entire big query for the entire multi-qualifier, multi-version pager.  Doing so would possibly allow
 us to save a lot of RPCs, since many qualifiers may not have enough versions to max out a version
 pager by themselves.
+
+
+Refactoring the code to put all CQL into `CassandraAdmin`
+---------------------------------------------------------
+
+Over the last few weeks I've occasionally changed the way in which we map Kiji tables to Cassandra
+tables.  These changes haven't been difficult to make, but as we implement more and more of the Kiji
+functionality in C*, we are getting more and more classes that include CQL calls.  We also have more
+and more statements that need to be prepared once and used many times.
+
+To simplify some of the bookkeeping in C* Kiji (keeping track of what CQL statements we have cached,
+for example) and to make any future changes to our underlying C* implementation easier, I'd like to
+put all of the CQL commands into a single class, likely `CassandraAdmin` or maybe
+`CassandraTableInterface` (which doesn't do anything right now).
+
+A change like this might also allow us to refactor the boilerplate for translating column names into
+separate, shared methods.
+
+From where do we currently execute CQL statements?
+
+- `CassandraAtomicKijiPutter`
+  - Batch write based on accumulated key-value object.  This is a little bit tricky because we have
+    to use a C* `Session` first to create the various INSERT statements (one per key-value object),
+    and then again to create and execute the batch INSERT.
+- `CassandraDataRequestAdapter`
+  - This class has a method `queryCassandraTables`, which turns a data request into a read.
+  - We have multiple flavors of SELECT statements, for paged and non-paged scans and gets.
+
+I'm not sure if this is worthwhile.  I'll punt for now.
+
+
+Counters
+--------
+
+Counters in CQL have to go into their own table.  So for every Kiji table, we'll have to create a C*
+table for non-counter values and a C* table for counter values.  Then during every read, we have to
+determine whether to read from the non-counter table, the counter table, or both.  We already have
+mechanisms in place to combine multiple sets of `ResultSet` objects together to form `KijiRowData`,
+etc., which is nice, but now we'll have to be able to handle reading back non-blob values (a counter
+is a `bigint`).
+
+During writes, we have to figure out whether we are writing to a counter.  If we are setting a
+counter (instead of incrementing it), then we may have to do a read followed by a (negative)
+increment.  Or a delete followed by an increment (to whatever the starting value is).

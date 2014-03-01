@@ -45,6 +45,8 @@ public final class KConstants {
   public static final long END_OF_TIME = Long.MAX_VALUE;
   public static final long BEGINNING_OF_TIME = 0;
 
+  public static final long CASSANDRA_COUNTER_TIMESTAMP = Long.MAX_VALUE;
+
   /** Utility classes cannot be instantiated. */
   private KConstants() {
   }

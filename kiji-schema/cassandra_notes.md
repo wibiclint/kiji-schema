@@ -8,7 +8,10 @@ every week into `cassandra_weekly_notes.md`.
 Open TODOs
 ==========
 
+
 ### Major missing features
+
+- Bulk importers!
 
 - Add support for counters (CQL requires counters to be in separate tables, annoying...)
 
@@ -38,6 +41,8 @@ Open TODOs
   flavors of deletes).  These shouldn't be too hard to add.
 
 - There are still some HBase-specific classes that need to be refactored into `impl` packages.
+
+- TTL, keeping parts of a database in-memory, etc.
 
 ### General cleanup:
 
@@ -117,6 +122,9 @@ Open TODOs
 
 ### Performance
 
+- We can use the asynchronous `Session#executeAsync` method whenever we are issuing multiple
+  requests for data to the Cassandra cluster.
+
 - Add some performance tests!
   - How does this perform versus HBase?
   - How does this perform versus bare-bones Cassandra?
@@ -135,6 +143,8 @@ Open TODOs
   Kiji, we could implement the map-family pager instead by issues one big query across all of the
   qualifiers.
 
+- Milo mentioned three areas in which performance is important: bulk import, modeling training, and
+  score function latency.
 
 ### Resource management
 
@@ -461,8 +471,13 @@ Paging
 
 The Java drivers for Cassandra already support paging.  There is a little bit more information in
 [this blog post](http://www.datastax.com/dev/blog/client-side-improvements-in-cassandra-2-0) about
-paging in Cassandra 2.0.  Our challenge will be figuring out how to map the Cassandra paging
-mechanism into the Kiji paging interface.
+paging in Cassandra 2.0.
 
-A Kiji user can specify paging options on a per-column basis.
+Implementing paging for C* Kiji was straightforward.  The code is actually simpler than it was in
+HBase in a lot of ways because the Java driver does so much of the heavy lifting.  The Kiji pagers
+operate on a single column at a time, we didn't run into any of the difficulties that we normally
+encounter (e.g., with regard to fetching data from lots of different columns at once, each column
+having different filters, max versions, etc.).
+
+
 
