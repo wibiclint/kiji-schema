@@ -69,10 +69,10 @@ public class TestCassandraCounters extends CassandraKijiClientTest {
         .withRow("foo")
         .withFamily("info")
         .withQualifier("name").withValue(1L, USERNAME)
-        .withQualifier("visits").withValue(42L)
+        //.withQualifier("visits").withValue(42L)
         .withRow("bar")
         .withFamily("info")
-        .withQualifier("visits").withValue(100L)
+        //.withQualifier("visits").withValue(100L)
         .build();
 
     // Fill local variables.
@@ -96,6 +96,8 @@ public class TestCassandraCounters extends CassandraKijiClientTest {
   // Test incrementing a counter that has already been initialized.
   @Test
   public void testIncrementInitialized() throws Exception {
+    mWriter.put(mEntityId, "info", "visits", 42L);
+
     KijiCell<Long> incrementResult = mWriter.increment(mEntityId, "info", "visits", 5L);
     final KijiDataRequest request = KijiDataRequest.create("info", "visits");
     final long postIncrementValue = incrementResult.getData();
@@ -126,6 +128,7 @@ public class TestCassandraCounters extends CassandraKijiClientTest {
     mWriter.put(mEntityId, "info", "visits", 5L);
     final KijiDataRequest request = KijiDataRequest.create("info", "visits");
     KijiCell<Long> counter = mReader.get(mEntityId, request).getMostRecentCell("info", "visits");
+    assertNotNull(counter);
     final long actual = counter.getData();
     assertEquals(5L, actual);
     assertEquals(KConstants.CASSANDRA_COUNTER_TIMESTAMP, counter.getTimestamp());
@@ -222,6 +225,7 @@ public class TestCassandraCounters extends CassandraKijiClientTest {
   // Test reading a family with counters and non-counters.
   @Test
   public void testReadMixedFamily() throws Exception {
+    mWriter.put(mEntityId, "info", "visits", 42L);
     final KijiDataRequest dataRequest = KijiDataRequest.create("info");
     KijiRowData rowData = mReader.get(mEntityId, dataRequest);
 
@@ -240,6 +244,9 @@ public class TestCassandraCounters extends CassandraKijiClientTest {
   public void testReadMultipleFamilies() throws Exception {
     // Initialize a counter in the map-type family.
     mWriter.increment(mEntityId, MAP, Q0, 1L);
+
+    // Initialize a counter in the group-type family.
+    mWriter.put(mEntityId, "info", "visits", 42L);
 
     final KijiDataRequest dataRequest = KijiDataRequest.builder()
         .addColumns(ColumnsDef.create().addFamily(MAP))

@@ -594,18 +594,23 @@ public final class CassandraKiji implements Kiji {
     Preconditions.checkState(state == State.OPEN,
         "Cannot delete table in Kiji instance %s in state %s.", this, state);
     // Delete from Cassandra.
-    String cTable = KijiManagedCassandraTableName.getKijiTableName(mURI, tableName).toString();
+    String mainTable = KijiManagedCassandraTableName.getKijiTableName(mURI, tableName).toString();
+    String counterTable =
+        KijiManagedCassandraTableName.getKijiCounterTableName(mURI, tableName).toString();
     CassandraAdmin admin = getCassandraAdmin();
 
-    admin.disableTable(cTable);
-    admin.deleteTable(cTable);
+    admin.disableTable(mainTable);
+    admin.deleteTable(mainTable);
+
+    admin.disableTable(counterTable);
+    admin.deleteTable(counterTable);
 
     // Delete from the meta table.
     getMetaTable().deleteTable(tableName);
 
     // If the table persists immediately after deletion attempt, then give up.
-    if (admin.tableExists(cTable)) {
-      LOG.warn("C* table " + cTable + " survives deletion attempt. Giving up...");
+    if (admin.tableExists(mainTable)) {
+      LOG.warn("C* table " + mainTable + " survives deletion attempt. Giving up...");
     }
   }
 
@@ -834,8 +839,32 @@ public final class CassandraKiji implements Kiji {
 
     mAdmin.getSession().execute(query);
 
-    //LOG.debug("Creating HBase table '{}'.", desc.getNameAsString());
-    //throw new KijiAlreadyExistsException(String.format("Kiji table '%s' already exists.", tableURI), tableURI);
+    // Also create a second table, which we can use for counters.
+    // Create a C* table name for this Kiji table.
+    KijiManagedCassandraTableName counterTableName =
+        KijiManagedCassandraTableName.getKijiCounterTableName(mURI, kijiTableName);
+
+    String counterTableLayout = String.format(
+        "(%s blob, %s text, %s text, %s text, %s bigint, %s counter, PRIMARY KEY (%s, %s, %s, %s, %s)) WITH CLUSTERING ORDER BY (%s ASC, %s ASC, %s ASC, %s DESC);",
+        CASSANDRA_KEY_COL,
+        CASSANDRA_LOCALITY_GROUP_COL,
+        CASSANDRA_FAMILY_COL,
+        CASSANDRA_QUALIFIER_COL,
+        CASSANDRA_VERSION_COL,
+        CASSANDRA_VALUE_COL,
+        CASSANDRA_KEY_COL,
+        CASSANDRA_LOCALITY_GROUP_COL,
+        CASSANDRA_FAMILY_COL,
+        CASSANDRA_QUALIFIER_COL,
+        CASSANDRA_VERSION_COL,
+        CASSANDRA_LOCALITY_GROUP_COL,
+        CASSANDRA_FAMILY_COL,
+        CASSANDRA_QUALIFIER_COL,
+        CASSANDRA_VERSION_COL
+    );
+
+    // Create the table!
+    mAdmin.createTable(counterTableName.toString(), counterTableLayout);
 
   }
 

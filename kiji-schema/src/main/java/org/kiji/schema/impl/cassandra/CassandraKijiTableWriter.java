@@ -19,39 +19,30 @@
 
 package org.kiji.schema.impl.cassandra;
 
+import com.datastax.driver.core.ResultSet;
+import com.datastax.driver.core.Row;
 import com.datastax.driver.core.Session;
 import com.datastax.driver.core.PreparedStatement;
 import com.google.common.base.Objects;
 import com.google.common.base.Preconditions;
 import org.apache.hadoop.hbase.HConstants;
-import org.apache.hadoop.hbase.client.*;
-import org.apache.hadoop.hbase.filter.ColumnPrefixFilter;
-import org.apache.hadoop.hbase.filter.FilterList;
-import org.apache.hadoop.hbase.filter.KeyOnlyFilter;
-import org.apache.hadoop.hbase.util.Bytes;
 import org.kiji.annotations.ApiAudience;
 import org.kiji.schema.*;
-import org.kiji.schema.avro.SchemaType;
 import org.kiji.schema.cassandra.KijiManagedCassandraTableName;
-import org.kiji.schema.hbase.HBaseColumnName;
 import org.kiji.schema.impl.DefaultKijiCellEncoderFactory;
 import org.kiji.schema.impl.LayoutConsumer;
-import org.kiji.schema.impl.hbase.HBaseKijiTable;
 import org.kiji.schema.impl.LayoutCapsule;
 import org.kiji.schema.layout.KijiTableLayout;
 import org.kiji.schema.layout.KijiTableLayout.LocalityGroupLayout.FamilyLayout;
-import org.kiji.schema.layout.KijiTableLayout.LocalityGroupLayout.FamilyLayout.ColumnLayout;
 import org.kiji.schema.layout.impl.CellEncoderProvider;
 import org.kiji.schema.layout.impl.ColumnNameTranslator;
 import org.kiji.schema.layout.impl.cassandra.CassandraColumnNameTranslator;
-import org.kiji.schema.platform.SchemaPlatformBridge;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
-import java.util.Map;
-import java.util.NavigableMap;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
@@ -211,8 +202,15 @@ public final class CassandraKijiTableWriter implements KijiTableWriter {
   @Override
   public <T> void put(EntityId entityId, String family, String qualifier, T value)
       throws IOException {
-    //put(entityId, family, qualifier, HConstants.LATEST_TIMESTAMP, value);
-    put(entityId, family, qualifier, System.currentTimeMillis(), value);
+    // Check whether this col is a counter; if so, do special counter write.
+    if (mWriterLayoutCapsule
+        .getLayout()
+        .getCellSpec(new KijiColumnName(family, qualifier))
+        .isCounter()) {
+      doCounterPut(entityId, family, qualifier, value);
+    } else {
+      put(entityId, family, qualifier, System.currentTimeMillis(), value);
+    }
   }
 
   /** {@inheritDoc} */
@@ -223,10 +221,14 @@ public final class CassandraKijiTableWriter implements KijiTableWriter {
     Preconditions.checkState(state == State.OPEN,
         "Cannot put cell to KijiTableWriter instance %s in state %s.", this, state);
 
-    // TODO: Refactor Kiji/C* mapping code to common place.
+    final WriterLayoutCapsule capsule = mWriterLayoutCapsule;
+
+    // Check whether this col is a counter; if so, do special counter write.
+    if (capsule.getLayout().getCellSpec(new KijiColumnName(family, qualifier)).isCounter()) {
+      throw new UnsupportedOperationException("Cannot specify a timestamp during a counter put.");
+    }
 
     // Encode the value to write into the table as a ByteBuffer for C*.
-    final WriterLayoutCapsule capsule = mWriterLayoutCapsule;
     final KijiCellEncoder cellEncoder =
         capsule.getCellEncoderProvider().getEncoder(family, qualifier);
     final byte[] encoded = cellEncoder.encode(value);
@@ -241,7 +243,6 @@ public final class CassandraKijiTableWriter implements KijiTableWriter {
         mTable.getURI(),
         mTable.getName()
     );
-
 
     // TODO: Refactor this query text (and preparation for it) elsewhere.
     // Create the CQL statement to insert data.
@@ -271,6 +272,119 @@ public final class CassandraKijiTableWriter implements KijiTableWriter {
         timestamp,
         encodedByteBuffer
     ));
+  }
+
+  private long getCounterValue(
+      EntityId entityId,
+      String family,
+      String qualifier
+  ) throws IOException {
+    // Encode the EntityId as a ByteBuffer for C*.
+    final ByteBuffer rowKey = CassandraByteUtil.bytesToByteBuffer(entityId.getHBaseRowKey());
+
+    // Get a reference to the full name of the C* table for this column.
+    KijiManagedCassandraTableName cTableName =
+        KijiManagedCassandraTableName.getKijiCounterTableName(mTable.getURI(), mTable.getName());
+
+    // TODO: Refactor this query text (and preparation for it) elsewhere.
+    // Create the CQL statement to read back the counter value.
+    String queryText = String.format(
+        "SELECT * FROM %s WHERE %s=? AND %s=? AND %s=? AND %s=?",
+        cTableName.toString(),
+        CassandraKiji.CASSANDRA_KEY_COL,
+        CassandraKiji.CASSANDRA_LOCALITY_GROUP_COL,
+        CassandraKiji.CASSANDRA_FAMILY_COL,
+        CassandraKiji.CASSANDRA_QUALIFIER_COL);
+
+    Session session = mAdmin.getSession();
+
+    final KijiColumnName columnName = new KijiColumnName(family, qualifier);
+    final CassandraColumnNameTranslator translator =
+        (CassandraColumnNameTranslator) mWriterLayoutCapsule.getColumnNameTranslator();
+
+    PreparedStatement preparedStatement = session.prepare(queryText);
+    ResultSet resultSet = session.execute(preparedStatement.bind(
+        rowKey,
+        translator.toCassandraLocalityGroup(columnName),
+        translator.toCassandraColumnFamily(columnName),
+        translator.toCassandraColumnQualifier(columnName)
+    ));
+
+    List<Row> readCounterResults = resultSet.all();
+    long currentCounterValue = 0;
+
+    if (0 == readCounterResults.size()) {
+      // Uninitialized counter, effectively a counter at 0.
+    } else if (1 == readCounterResults.size()) {
+      currentCounterValue = readCounterResults.get(0).getLong(CassandraKiji.CASSANDRA_VALUE_COL);
+    } else {
+      // TODO: Handle this appropriately, this should never happen!
+      throw new KijiIOException("Should not have multiple values for a counter!");
+    }
+    return currentCounterValue;
+  }
+
+  private <T> void doCounterPut(
+      EntityId entityId,
+      String family,
+      String qualifier,
+      T value) throws IOException {
+    final State state = mState.get();
+    Preconditions.checkState(state == State.OPEN,
+        "Cannot put cell to KijiTableWriter instance %s in state %s.", this, state);
+
+    LOG.info("-------------------- Performing a put to a counter. --------------------");
+    LOG.info(String.format("(%s, %s, %s) := %s", entityId, family, qualifier, value));
+
+    // TODO: Assert that "value" is a long.
+
+    // Read back the current value of the counter.
+    long currentCounterValue = getCounterValue(entityId, family, qualifier);
+    LOG.info("Current value of counter is " + currentCounterValue);
+
+    // Increment the counter appropriately to get the new value.
+    long counterIncrement = (Long) value - currentCounterValue;
+    LOG.info("Incrementing the counter by " + counterIncrement);
+
+    // Encode the EntityId as a ByteBuffer for C*.
+    final ByteBuffer rowKey = CassandraByteUtil.bytesToByteBuffer(entityId.getHBaseRowKey());
+
+    // Get a reference to the full name of the C* table for this column.
+    KijiManagedCassandraTableName cTableName =
+        KijiManagedCassandraTableName.getKijiCounterTableName(mTable.getURI(), mTable.getName());
+
+    // TODO: Refactor this query text (and preparation for it) elsewhere.
+    // Create the CQL statement to insert data.
+    String queryText = String.format(
+        "UPDATE %s SET %s = %s + ? WHERE %s=? AND %s=? AND %s=? AND %s=? AND %s=?",
+        cTableName.toString(),
+        CassandraKiji.CASSANDRA_VALUE_COL,
+        CassandraKiji.CASSANDRA_VALUE_COL,
+        CassandraKiji.CASSANDRA_KEY_COL,
+        CassandraKiji.CASSANDRA_LOCALITY_GROUP_COL,
+        CassandraKiji.CASSANDRA_FAMILY_COL,
+        CassandraKiji.CASSANDRA_QUALIFIER_COL,
+        CassandraKiji.CASSANDRA_VERSION_COL);
+
+    Session session = mTable.getAdmin().getSession();
+
+    final KijiColumnName columnName = new KijiColumnName(family, qualifier);
+    final CassandraColumnNameTranslator translator =
+        (CassandraColumnNameTranslator) mWriterLayoutCapsule.getColumnNameTranslator();
+
+    PreparedStatement preparedStatement = session.prepare(queryText);
+    session.execute(preparedStatement.bind(
+        counterIncrement,
+        rowKey,
+        translator.toCassandraLocalityGroup(columnName),
+        translator.toCassandraColumnFamily(columnName),
+        translator.toCassandraColumnQualifier(columnName),
+        KConstants.CASSANDRA_COUNTER_TIMESTAMP
+    ));
+
+    // Read back the current value of the counter.
+    currentCounterValue = getCounterValue(entityId, family, qualifier);
+    LOG.info("Current value of counter after increment is " + currentCounterValue);
   }
 
   // ----------------------------------------------------------------------------------------------

@@ -135,8 +135,13 @@ public class CassandraDataRequestAdapter {
 
     Session session = table.getAdmin().getSession();
 
-    // Get the Cassandra table name for this column family
-    String cassandraTableName = KijiManagedCassandraTableName.getKijiTableName(
+    // Get the Cassandra table name for non-counter values.
+    String nonCounterTableName = KijiManagedCassandraTableName.getKijiTableName(
+        table.getURI(),
+        table.getName()).toString();
+
+    // Get the counter table name.
+    String counterTableName = KijiManagedCassandraTableName.getKijiCounterTableName(
         table.getURI(),
         table.getName()).toString();
 
@@ -193,6 +198,19 @@ public class CassandraDataRequestAdapter {
       } else {
         LOG.info("Column request is for a full-qualified, individual column.");
       }
+
+      // Pick a table name depending on whether this column is a counter or not.
+      boolean isCounter = table
+          .getLayoutCapsule()
+          .getLayout()
+          .getCellSpec(kijiColumnName)
+          .isCounter();
+
+      if (isCounter) {
+        LOG.info("This column contains a counter.");
+      }
+
+      String cassandraTableName = isCounter ? counterTableName : nonCounterTableName;
 
       // TODO: Support paging in data requests with paging in DataStax API.
       if (bIsScan && qualifier != null) {
@@ -299,7 +317,7 @@ public class CassandraDataRequestAdapter {
           "SELECT token(%s), %s FROM %s",
           CassandraKiji.CASSANDRA_KEY_COL,
           CassandraKiji.CASSANDRA_KEY_COL,
-          cassandraTableName
+          nonCounterTableName
       );
       LOG.info("Preparing query string " + queryString);
       ResultSet res = session.execute(queryString);

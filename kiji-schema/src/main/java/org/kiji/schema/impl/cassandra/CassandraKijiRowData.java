@@ -20,12 +20,15 @@
 package org.kiji.schema.impl.cassandra;
 
 import com.datastax.driver.core.Row;
+import com.datastax.driver.core.exceptions.InvalidTypeException;
 import com.google.common.base.Objects;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
 import org.apache.avro.Schema;
+import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.hadoop.hbase.HConstants;
+import org.apache.hadoop.hbase.util.Bytes;
 import org.kiji.annotations.ApiAudience;
 import org.kiji.schema.*;
 import org.kiji.schema.filter.KijiColumnFilter;
@@ -198,7 +201,6 @@ public final class CassandraKijiRowData implements KijiRowData {
       // Get the Cassandra key (entity Id), qualifier, timestamp, and value.
       ByteBuffer eidByteBuffer = row.getBytes(CassandraKiji.CASSANDRA_KEY_COL);
       Long timestamp = row.getLong(CassandraKiji.CASSANDRA_VERSION_COL);
-      ByteBuffer value = row.getBytes(CassandraKiji.CASSANDRA_VALUE_COL);
 
       String cassandraRawLocalityGroup = row.getString(CassandraKiji.CASSANDRA_LOCALITY_GROUP_COL);
       String cassandraRawFamily = row.getString(CassandraKiji.CASSANDRA_FAMILY_COL);
@@ -222,12 +224,26 @@ public final class CassandraKijiRowData implements KijiRowData {
       String family = kijiColumnName.getFamily();
       String qualifier = kijiColumnName.getQualifier();
 
+
       LOG.info(String.format(
           "Got back data from table for family:qualifier %s:%s, timestamp %s",
           family,
           qualifier,
           timestamp
       ));
+
+      // Most values will not be from counters, so we use getBytes.
+      ByteBuffer value;
+      try {
+        value = row.getBytes(CassandraKiji.CASSANDRA_VALUE_COL);
+      } catch (InvalidTypeException e) {
+        if (e.getMessage().equals("Column value is of type counter")) {
+          long counter =  row.getLong(CassandraKiji.CASSANDRA_VALUE_COL);
+          value = ByteBufferUtil.bytes(counter);
+        } else {
+          throw new KijiIOException(e);
+        }
+      }
 
       checkDataRequestAndInsertValueIntoMap(family, qualifier, timestamp, value);
     }

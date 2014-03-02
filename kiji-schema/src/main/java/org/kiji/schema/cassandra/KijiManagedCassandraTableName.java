@@ -115,9 +115,11 @@ public final class KijiManagedCassandraTableName {
   /** The name component used for all user-space Kiji tables. */
   private static final String KIJI_TABLE_COMPONENT = "table";
 
+  /** The name component used for all storing counters for user-space Kiji tables. */
+  private static final String KIJI_COUNTER_COMPONENT = "counter";
+
   /** The Cassandra table name. */
   private final String mCassandraTableName;
-
 
   /** The Kiji instance name. */
   private final String mKijiInstanceName;
@@ -229,6 +231,20 @@ public final class KijiManagedCassandraTableName {
    */
   public static KijiManagedCassandraTableName getKijiTableName(KijiURI kijiURI, String tableName) {
     return new KijiManagedCassandraTableName(kijiURI.getInstance(), KIJI_TABLE_COMPONENT, tableName);
+  }
+
+  /**
+   * Gets a new instance of a Kiji-managed Cassandra table that holds counters for a user-space
+   * Kiji table.
+   *
+   * @param kijiURI The name of the Kiji instance.
+   * @param tableName The name of the user-space Kiji table.
+   * @return The name of the Cassandra table used to store the user-space Kiji table.
+   */
+  public static KijiManagedCassandraTableName getKijiCounterTableName(
+      KijiURI kijiURI,
+      String tableName) {
+    return new KijiManagedCassandraTableName(kijiURI.getInstance(), KIJI_COUNTER_COMPONENT, tableName);
   }
 
   /**
