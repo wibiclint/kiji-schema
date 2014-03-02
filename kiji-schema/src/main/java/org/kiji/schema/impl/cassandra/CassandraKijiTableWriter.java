@@ -392,11 +392,11 @@ public final class CassandraKijiTableWriter implements KijiTableWriter {
     final State state = mState.get();
     Preconditions.checkState(state == State.OPEN,
         "Cannot delete row while KijiTableWriter %s is in state %s.", this, state);
-    List<Statement> statementList = mWriterCommon.getStatementsDeleteRow(entityId);
-    // TODO: Execute async or in batch.
-    for (Statement statement : statementList) {
-      mAdmin.getSession().execute(statement);
-    }
+    Session session = mAdmin.getSession();
+    // TODO: Execute async?
+    // TODO: Could check whether this family has an non-counter / counter columns before delete.
+    session.execute(mWriterCommon.getStatementDeleteRow(entityId));
+    session.execute(mWriterCommon.getStatementDeleteRowCounter(entityId));
   }
 
   /** {@inheritDoc} */
@@ -411,11 +411,12 @@ public final class CassandraKijiTableWriter implements KijiTableWriter {
     final State state = mState.get();
     Preconditions.checkState(state == State.OPEN,
         "Cannot delete family while KijiTableWriter %s is in state %s.", this, state);
-    List<Statement> statementList = mWriterCommon.getStatementsDeleteFamily(entityId, family);
-    // TODO: Execute async or in batch.
-    for (Statement statement : statementList) {
-      mAdmin.getSession().execute(statement);
-    }
+
+    Session session = mAdmin.getSession();
+    // TODO: Execute async?
+    // TODO: Could check whether this family has an non-counter / counter columns before delete.
+    session.execute(mWriterCommon.getStatementDeleteFamily(entityId, family));
+    session.execute(mWriterCommon.getStatementDeleteFamilyCounter(entityId, family));
   }
 
   /** {@inheritDoc} */
@@ -461,7 +462,9 @@ public final class CassandraKijiTableWriter implements KijiTableWriter {
     if (isCounterColumn(family, qualifier)) {
       doDeleteCell(entityId, family, qualifier, KConstants.CASSANDRA_COUNTER_TIMESTAMP);
     } else {
-      deleteCell(entityId, family, qualifier, HConstants.LATEST_TIMESTAMP);
+      throw new UnsupportedOperationException(
+        "Cannot delete only most-recent version of a cell in Cassandra Kiji."
+      );
     }
   }
 

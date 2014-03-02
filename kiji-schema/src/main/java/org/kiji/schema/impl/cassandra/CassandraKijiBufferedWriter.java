@@ -62,6 +62,7 @@ public class CassandraKijiBufferedWriter implements KijiBufferedWriter {
   // TODO: Improve performance by tracking what cluster nodes own what rows (based on partition key)
   // We can then bypass the client node and write directly to one of the data nodes.  The Cassandra
   // Hadoop output format does this already.
+  // (The DataStax Java driver may already do this automatically by using token-aware routing.)
 
   private static final Logger LOG = LoggerFactory.getLogger(CassandraKijiBufferedWriter.class);
 
@@ -91,6 +92,8 @@ public class CassandraKijiBufferedWriter implements KijiBufferedWriter {
   /** Local write buffers. */
   private ArrayList<Statement> mPutBuffer = Lists.newArrayList();
   private ArrayList<Statement> mDeleteBuffer = Lists.newArrayList();
+  // Counter operations have to go into a separate Cassandra batch statement.
+  private ArrayList<Statement> mCounterDeleteBuffer = Lists.newArrayList();
 
   /** Local write buffer size. */
   private long mMaxWriteBufferSize = 100L;
@@ -232,6 +235,7 @@ public class CassandraKijiBufferedWriter implements KijiBufferedWriter {
           "Cannot write to BufferedWriter instance in state %s.", mState);
 
       mPutBuffer.add(putStatement);
+      // TODO: Figure out how much space in the buffer this put actually takes.
       mCurrentWriteBufferSize += 1;
       if (mCurrentWriteBufferSize > mMaxWriteBufferSize) {
         flush();
@@ -249,8 +253,20 @@ public class CassandraKijiBufferedWriter implements KijiBufferedWriter {
    * @throws java.io.IOException in case of an error on flush.
    */
   private void updateBufferWithDelete(Statement statement) throws IOException {
+    // TODO: Figure out how big a delete actually is.
     synchronized (mInternalLock) {
       mDeleteBuffer.add(statement);
+      mCurrentWriteBufferSize += 1;
+      if (mCurrentWriteBufferSize > mMaxWriteBufferSize) {
+        flush();
+      }
+    }
+  }
+
+  private void updateBufferWithCounterDelete(Statement statement) throws IOException {
+    // TODO: Figure out how big a delete actually is.
+    synchronized (mInternalLock) {
+      mCounterDeleteBuffer.add(statement);
       mCurrentWriteBufferSize += 1;
       if (mCurrentWriteBufferSize > mMaxWriteBufferSize) {
         flush();
@@ -261,10 +277,8 @@ public class CassandraKijiBufferedWriter implements KijiBufferedWriter {
   /** {@inheritDoc} */
   @Override
   public void deleteRow(EntityId entityId) throws IOException {
-    List<Statement> statementList = mWriterCommon.getStatementsDeleteRow(entityId);
-    for (Statement statement : statementList) {
-      updateBufferWithDelete(statement);
-    }
+    updateBufferWithDelete(mWriterCommon.getStatementDeleteRow(entityId));
+    updateBufferWithCounterDelete(mWriterCommon.getStatementDeleteRowCounter(entityId));
   }
 
   /** {@inheritDoc} */
@@ -278,10 +292,8 @@ public class CassandraKijiBufferedWriter implements KijiBufferedWriter {
   /** {@inheritDoc} */
   @Override
   public void deleteFamily(EntityId entityId, String family) throws IOException {
-    List<Statement> statementList = mWriterCommon.getStatementsDeleteFamily(entityId, family);
-    for (Statement statement : statementList) {
-      updateBufferWithDelete(statement);
-    }
+    updateBufferWithDelete(mWriterCommon.getStatementDeleteFamily(entityId, family));
+    updateBufferWithCounterDelete(mWriterCommon.getStatementDeleteFamilyCounter(entityId, family));
   }
 
   /** {@inheritDoc} */
@@ -296,7 +308,12 @@ public class CassandraKijiBufferedWriter implements KijiBufferedWriter {
   /** {@inheritDoc} */
   @Override
   public void deleteColumn(EntityId entityId, String family, String qualifier) throws IOException {
-    deleteColumn(entityId, family, qualifier, HConstants.LATEST_TIMESTAMP);
+    Statement statement = mWriterCommon.getStatementDeleteColumn(entityId, family, qualifier);
+    if (mWriterCommon.isCounterColumn(family, qualifier)) {
+      updateBufferWithCounterDelete(statement);
+    } else {
+      updateBufferWithDelete(statement);
+    }
   }
 
   /** {@inheritDoc} */
@@ -311,7 +328,9 @@ public class CassandraKijiBufferedWriter implements KijiBufferedWriter {
   /** {@inheritDoc} */
   @Override
   public void deleteCell(EntityId entityId, String family, String qualifier) throws IOException {
-    deleteCell(entityId, family, qualifier, HConstants.LATEST_TIMESTAMP);
+    throw new UnsupportedOperationException(
+        "Cannot delete only most-recent version of a cell in Cassandra Kiji."
+    );
   }
 
   /** {@inheritDoc} */
@@ -319,7 +338,11 @@ public class CassandraKijiBufferedWriter implements KijiBufferedWriter {
   public void deleteCell(EntityId entityId, String family, String qualifier, long timestamp)
       throws IOException {
     Statement statement = mWriterCommon.getStatementDeleteCell(entityId, family, qualifier, timestamp);
-    updateBufferWithDelete(statement);
+    if (mWriterCommon.isCounterColumn(family, qualifier)) {
+      updateBufferWithCounterDelete(statement);
+    } else {
+      updateBufferWithDelete(statement);
+    }
   }
 
   // ----------------------------------------------------------------------------------------------
@@ -346,14 +369,25 @@ public class CassandraKijiBufferedWriter implements KijiBufferedWriter {
     // Seems like there could be some event-ordering problems.
     // TODO: Check for potential delete/put event-ordering issues in this implementation.
     // Possibly put everything in to one big put/delete combined queue.
+
+    LOG.info("Flushing CassandraKijiBufferedWriter.");
+
     synchronized (mInternalLock) {
       Preconditions.checkState(mState == State.OPEN,
           "Cannot flush BufferedWriter instance %s in state %s.", this, mState);
       if (mDeleteBuffer.size() > 0) {
+        LOG.info("Delete buffer has " + mDeleteBuffer.size() + " entries.");
         BatchStatement deleteStatement = new BatchStatement(BatchStatement.Type.UNLOGGED);
         deleteStatement.addAll(mDeleteBuffer);
         mSession.execute(deleteStatement);
         mDeleteBuffer.clear();
+      }
+      if (mCounterDeleteBuffer.size() > 0) {
+        LOG.info("Counter delete buffer has " + mCounterDeleteBuffer.size() + " entries.");
+        BatchStatement deleteStatement = new BatchStatement(BatchStatement.Type.COUNTER);
+        deleteStatement.addAll(mCounterDeleteBuffer);
+        mSession.execute(deleteStatement);
+        mCounterDeleteBuffer.clear();
       }
       if (mPutBuffer.size() > 0) {
         BatchStatement putStatement = new BatchStatement(BatchStatement.Type.UNLOGGED);

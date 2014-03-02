@@ -20,9 +20,12 @@
 package org.kiji.schema.cassandra;
 
 import org.apache.hadoop.hbase.HConstants;
+import org.junit.After;
+import org.junit.Before;
 import org.junit.Test;
 import org.kiji.schema.*;
 import org.kiji.schema.KijiDataRequestBuilder.ColumnsDef;
+import org.kiji.schema.impl.cassandra.CassandraKijiTable;
 import org.kiji.schema.layout.KijiTableLayouts;
 import org.kiji.schema.util.VersionInfo;
 import org.slf4j.Logger;
@@ -36,41 +39,49 @@ import static org.junit.Assert.*;
 public class TestCassandraReadAndWrite extends CassandraKijiClientTest {
   private static final Logger LOG = LoggerFactory.getLogger(TestCassandraReadAndWrite.class);
 
-  @Test
-  public void testBasicReadAndWrite() throws Exception {
-    LOG.info("Opening an in-memory kiji instance");
-    final Kiji kiji = getKiji();
+  private KijiTable mTable;
+  private KijiTableWriter mWriter;
+  private KijiTableReader mReader;
+  private EntityId mEntityId;
 
-    LOG.info(String.format("Opened fake Kiji '%s'.", kiji.getURI()));
+  @Before
+  public void setup() throws Exception {
+    final Kiji kiji = getKiji();
     kiji.createTable(KijiTableLayouts.getLayout(KijiTableLayouts.SIMPLE));
 
-    final KijiTable table = kiji.openTable("table");
-    final KijiTableWriter writer = table.openTableWriter();
-    final KijiTableReader reader = table.openTableReader();
+    mTable = kiji.openTable("table");
+    mWriter = mTable.openTableWriter();
+    mReader = mTable.openTableReader();
+    mEntityId = mTable.getEntityId("row0");
+  }
 
-    EntityId eid0 = table.getEntityId("row0");
+  @After
+  public void tearDown() throws Exception {
+    mWriter.close();
+    mReader.close();
+    mTable.release();
+  }
 
-    writer.put(eid0, "family", "column", 0L, "Value at timestamp 0.");
-    writer.put(eid0, "family", "column", 1L, "Value at timestamp 1.");
+  @Test
+  public void testBasicReadAndWrite() throws Exception {
+
+    mWriter.put(mEntityId, "family", "column", 0L, "Value at timestamp 0.");
+    mWriter.put(mEntityId, "family", "column", 1L, "Value at timestamp 1.");
 
     final KijiDataRequest dataRequest = KijiDataRequest.builder()
         .addColumns(ColumnsDef.create().withMaxVersions(2).add("family", "column"))
         .build();
 
     // Try this as a get.
-    KijiRowData rowData = reader.get(eid0, dataRequest);
+    KijiRowData rowData = mReader.get(mEntityId, dataRequest);
     String s = rowData.getValue("family", "column", 0L).toString();
     assertEquals(s, "Value at timestamp 0.");
 
     // Delete the cell and make sure that this value is missing.
-    writer.deleteCell(eid0, "family", "column", 0L);
+    mWriter.deleteCell(mEntityId, "family", "column", 0L);
 
-    rowData = reader.get(eid0, dataRequest);
+    rowData = mReader.get(mEntityId, dataRequest);
     assertFalse(rowData.containsCell("family", "column", 0L));
-
-    reader.close();
-    writer.close();
-    kiji.release();
   }
 
   /**
@@ -78,41 +89,28 @@ public class TestCassandraReadAndWrite extends CassandraKijiClientTest {
    */
   @Test
   public void testReadLatestValue() throws Exception {
-    final Kiji kiji = getKiji();
-    kiji.createTable(KijiTableLayouts.getLayout(KijiTableLayouts.SIMPLE));
-
-    final KijiTable table = kiji.openTable("table");
-    final KijiTableWriter writer = table.openTableWriter();
-    final KijiTableReader reader = table.openTableReader();
-
-    EntityId eid0 = table.getEntityId("row0");
-
     // Write just a value at timestamp 0.
-    writer.put(eid0, "family", "column", 0L, "Value at timestamp 0.");
+    mWriter.put(mEntityId, "family", "column", 0L, "Value at timestamp 0.");
 
     final KijiDataRequest dataRequest = KijiDataRequest.builder()
         .addColumns(ColumnsDef.create().withMaxVersions(100).add("family", "column"))
         .build();
 
     // Do a get and verify the value (only one value should be present now).
-    KijiRowData rowData = reader.get(eid0, dataRequest);
+    KijiRowData rowData = mReader.get(mEntityId, dataRequest);
     String s = rowData.getValue("family", "column", 0L).toString();
     assertEquals(s, "Value at timestamp 0.");
 
     // Write a second value, with a more-recent timestamp.
-    writer.put(eid0, "family", "column", 1L, "Value at timestamp 1.");
+    mWriter.put(mEntityId, "family", "column", 1L, "Value at timestamp 1.");
 
     // Do a get and verify that both values are present.
-    rowData = reader.get(eid0, dataRequest);
+    rowData = mReader.get(mEntityId, dataRequest);
     assertTrue(rowData.containsCell("family", "column", 0L));
     assertTrue(rowData.containsCell("family", "column", 1L));
 
     // The most-recent value should be the one with the highest timestamp!
     assertEquals("Value at timestamp 1.", rowData.getMostRecentValue("family", "column").toString());
-
-    reader.close();
-    writer.close();
-    kiji.release();
   }
 
   /**
@@ -120,77 +118,50 @@ public class TestCassandraReadAndWrite extends CassandraKijiClientTest {
    */
   @Test
   public void testDefaultTimestamp() throws Exception {
-    final Kiji kiji = getKiji();
-    kiji.createTable(KijiTableLayouts.getLayout(KijiTableLayouts.SIMPLE));
-
-    final KijiTable table = kiji.openTable("table");
-    final KijiTableWriter writer = table.openTableWriter();
-    final KijiTableReader reader = table.openTableReader();
-
-    EntityId eid0 = table.getEntityId("row0");
-
-    writer.put(eid0, "family", "column", "First value");
+    mWriter.put(mEntityId, "family", "column", "First value");
 
     final KijiDataRequest dataRequest = KijiDataRequest.builder()
         .addColumns(ColumnsDef.create().withMaxVersions(100).add("family", "column"))
         .build();
 
     // Try this as a get.
-    KijiRowData rowData = reader.get(eid0, dataRequest);
+    KijiRowData rowData = mReader.get(mEntityId, dataRequest);
     assertNotNull(rowData.getMostRecentValue("family", "column"));
     assertEquals(
       rowData.getMostRecentValue("family", "column").toString(),
       "First value");
 
-    writer.put(eid0, "family", "column", "Second value");
-    rowData = reader.get(eid0, dataRequest);
+    mWriter.put(mEntityId, "family", "column", "Second value");
+    rowData = mReader.get(mEntityId, dataRequest);
 
     assertNotNull(rowData.getMostRecentValue("family", "column"));
     assertEquals(
         rowData.getMostRecentValue("family", "column").toString(),
         "Second value");
-
-    reader.close();
-    writer.close();
-    kiji.release();
   }
-
 
   /** Try deleting an entire column. */
    @Test
   public void testDeleteColumn() throws Exception {
-    final Kiji kiji = getKiji();
-    kiji.createTable(KijiTableLayouts.getLayout(KijiTableLayouts.SIMPLE));
-
-    final KijiTable table = kiji.openTable("table");
-    final KijiTableWriter writer = table.openTableWriter();
-    final KijiTableReader reader = table.openTableReader();
-
-    EntityId eid0 = table.getEntityId("row0");
-
-    writer.put(eid0, "family", "column", 0L, "Value at timestamp 0.");
-    writer.put(eid0, "family", "column", 1L, "Value at timestamp 1.");
+    mWriter.put(mEntityId, "family", "column", 0L, "Value at timestamp 0.");
+    mWriter.put(mEntityId, "family", "column", 1L, "Value at timestamp 1.");
 
     final KijiDataRequest dataRequest = KijiDataRequest.builder()
         .addColumns(ColumnsDef.create().withMaxVersions(100).add("family", "column"))
         .build();
 
     // Try this as a get.
-    KijiRowData rowData = reader.get(eid0, dataRequest);
+    KijiRowData rowData = mReader.get(mEntityId, dataRequest);
     String s = rowData.getValue("family", "column", 0L).toString();
     assertEquals(s, "Value at timestamp 0.");
 
     // Delete the entire column.
-    writer.deleteColumn(eid0, "family", "column");
+    mWriter.deleteColumn(mEntityId, "family", "column");
 
-    rowData = reader.get(eid0, dataRequest);
+    rowData = mReader.get(mEntityId, dataRequest);
 
     // Should not get any data back!
     assertFalse( rowData.containsColumn("family", "column") );
-
-    reader.close();
-    writer.close();
-    kiji.release();
   }
 
   /**
@@ -208,7 +179,6 @@ public class TestCassandraReadAndWrite extends CassandraKijiClientTest {
   public void testRowScannerSparseData() throws Exception {
     final Kiji kiji = getKiji();
     kiji.createTable(KijiTableLayouts.getLayout(KijiTableLayouts.SIMPLE_MAP_TYPE));
-
     final KijiTable table = kiji.openTable("users");
     final KijiTableWriter writer = table.openTableWriter();
 
@@ -290,31 +260,96 @@ public class TestCassandraReadAndWrite extends CassandraKijiClientTest {
     assertFalse(allData.get(DAVID).containsColumn(PETS, RABBIT));
     assertFalse(allData.get(DAVID).containsColumn(PETS, FISH));
 
-    writer.close();
-    kiji.release();
+    scanner.close();
   }
 
   // Attempt to read a value that is not there.  Should return null, not throw an exception!
   @Test
   public void testReadMissingValue() throws Exception {
-    final Kiji kiji = getKiji();
-    kiji.createTable(KijiTableLayouts.getLayout(KijiTableLayouts.SIMPLE));
+    final KijiDataRequest dataRequest = KijiDataRequest.builder()
+        .addColumns(ColumnsDef.create().withMaxVersions(100).add("family", "column"))
+        .build();
 
-    final KijiTable table = kiji.openTable("table");
-    final KijiTableReader reader = table.openTableReader();
+    KijiRowData rowData = mReader.get(mEntityId, dataRequest);
+    assertNull(rowData.getValue("family", "column", 0L));
+  }
 
-    EntityId eid0 = table.getEntityId("row0");
+  @Test
+  public void testDeleteFamily() throws Exception {
+    mWriter.put(mEntityId, "family", "column", 0L, "Value at timestamp 0.");
+    mWriter.put(mEntityId, "family", "column", 1L, "Value at timestamp 1.");
 
     final KijiDataRequest dataRequest = KijiDataRequest.builder()
         .addColumns(ColumnsDef.create().withMaxVersions(100).add("family", "column"))
         .build();
 
-    KijiRowData rowData = reader.get(eid0, dataRequest);
-    assertNull(rowData.getValue("family", "column", 0L));
+    // Try this as a get.
+    KijiRowData rowData = mReader.get(mEntityId, dataRequest);
+    String s = rowData.getValue("family", "column", 0L).toString();
+    assertEquals(s, "Value at timestamp 0.");
 
-    reader.close();
-    kiji.release();
+    // Delete the entire family.
+    mWriter.deleteFamily(mEntityId, "family");
+
+    rowData = mReader.get(mEntityId, dataRequest);
+
+    // Should not get any data back!
+    assertFalse( rowData.containsColumn("family", "column") );
   }
 
+  @Test
+  public void testDeleteFamilyWithTimestamp() throws Exception {
+    try {
+      // Delete the entire family.
+      mWriter.deleteFamily(mEntityId, "family", 0L);
+      fail("Exception should have occurred.");
+    } catch (UnsupportedOperationException e) {
+      assertNotNull(e);
+    }
+  }
+
+  @Test
+  public void testDeleteColumnWithTimestamp() throws Exception {
+    try {
+      // Delete the entire family.
+      mWriter.deleteColumn(mEntityId, "family", "column", 0L);
+      fail("Exception should have occurred.");
+    } catch (UnsupportedOperationException e) {
+      assertNotNull(e);
+    }
+  }
+
+  @Test
+  public void testDeleteRow() throws Exception {
+    mWriter.put(mEntityId, "family", "column", 0L, "Value at timestamp 0.");
+    mWriter.put(mEntityId, "family", "column", 1L, "Value at timestamp 1.");
+
+    final KijiDataRequest dataRequest = KijiDataRequest.builder()
+        .addColumns(ColumnsDef.create().withMaxVersions(100).add("family", "column"))
+        .build();
+
+    // Try this as a get.
+    KijiRowData rowData = mReader.get(mEntityId, dataRequest);
+    String s = rowData.getValue("family", "column", 0L).toString();
+    assertEquals(s, "Value at timestamp 0.");
+
+    // Delete the entire row.
+    mWriter.deleteRow(mEntityId);
+
+    rowData = mReader.get(mEntityId, dataRequest);
+
+    // Should not get any data back!
+    assertFalse( rowData.containsColumn("family", "column") );
+  }
+
+  @Test
+  public void testDeleteRowWithTimestamp() throws Exception {
+    try {
+      mWriter.deleteRow(mEntityId, 0L);
+      fail("Exception should have occurred.");
+    } catch (UnsupportedOperationException e) {
+      assertNotNull(e);
+    }
+  }
 }
 

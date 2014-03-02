@@ -186,9 +186,39 @@ class CassandraKijiWriterCommon {
     );
   }
 
-  public List<Statement> getStatementsDeleteFamily(EntityId entityId, String family) throws IOException {
+  /**
+   * Does the non-counter deletes.
+   * @param entityId
+   * @param family
+   * @return
+   * @throws IOException
+   */
+  public Statement getStatementDeleteFamily(EntityId entityId, String family) throws IOException {
+    return getStatementDeleteFamilyWithTableName(mTableName, entityId, family);
+  }
+
+  public Statement getStatementDeleteFamilyCounter(
+      EntityId entityId,
+      String family) throws IOException {
+    return getStatementDeleteFamilyWithTableName(mCounterTableName, entityId, family);
+  }
+
+  /**
+   * Common code for deleting counter and non-counter cells.
+   *
+   * @param tableName
+   * @param entityId
+   * @param family
+   * @return
+   * @throws IOException
+   */
+  private Statement getStatementDeleteFamilyWithTableName(
+      String tableName,
+      EntityId entityId,
+      String family) throws IOException {
     final WriterLayoutCapsule capsule = mWriterLayoutCapsule;
-    final KijiTableLayout.LocalityGroupLayout.FamilyLayout familyLayout = capsule.getLayout().getFamilyMap().get(family);
+    final KijiTableLayout.LocalityGroupLayout.FamilyLayout familyLayout =
+        capsule.getLayout().getFamilyMap().get(family);
     if (null == familyLayout) {
       throw new NoSuchColumnException(String.format("Family '%s' not found.", family));
     }
@@ -199,57 +229,46 @@ class CassandraKijiWriterCommon {
 
     final ByteBuffer rowKey = CassandraByteUtil.bytesToByteBuffer(entityId.getHBaseRowKey());
 
-    List<Statement> statementList = new ArrayList<Statement>();
+    // TODO: Prepare this statement first.
+    String queryString = String.format(
+        "DELETE FROM %s WHERE %s=? AND %s=? AND %s=?",
+        tableName,
+        CassandraKiji.CASSANDRA_KEY_COL,
+        CassandraKiji.CASSANDRA_LOCALITY_GROUP_COL,
+        CassandraKiji.CASSANDRA_FAMILY_COL
+    );
 
-    for (String tableName : Arrays.asList(mTableName, mCounterTableName)) {
-
-      // TODO: Prepare this statement first.
-      String queryString = String.format(
-          "DELETE FROM %s WHERE %s=? AND %s=? AND %s=?",
-          tableName,
-          CassandraKiji.CASSANDRA_KEY_COL,
-          CassandraKiji.CASSANDRA_LOCALITY_GROUP_COL,
-          CassandraKiji.CASSANDRA_FAMILY_COL
-      );
-
-      Session session = mSession;
-      PreparedStatement preparedStatement = session.prepare(queryString);
-      statementList.add(preparedStatement.bind(
-            rowKey,
-            translator.toCassandraLocalityGroup(kijiColumnName),
-            translator.toCassandraColumnFamily(kijiColumnName)
-      ));
-    }
-    return statementList;
+    Session session = mSession;
+    PreparedStatement preparedStatement = session.prepare(queryString);
+    return preparedStatement.bind(
+        rowKey,
+        translator.toCassandraLocalityGroup(kijiColumnName),
+        translator.toCassandraColumnFamily(kijiColumnName)
+    );
   }
 
-  public List<Statement> getStatementsDeleteRow(EntityId entityId) throws IOException {
-    final WriterLayoutCapsule capsule = mWriterLayoutCapsule;
+  public Statement getStatementDeleteRow(EntityId entityId) throws IOException {
+    return getStatementDeleteRowWithTableName(mTableName, entityId);
+  }
 
+  public Statement getStatementDeleteRowCounter(EntityId entityId) throws IOException {
+    return getStatementDeleteRowWithTableName(mCounterTableName, entityId);
+  }
+
+  private Statement getStatementDeleteRowWithTableName(
+      String tableName,
+      EntityId entityId) throws IOException {
     final ByteBuffer rowKey = CassandraByteUtil.bytesToByteBuffer(entityId.getHBaseRowKey());
 
     // TODO: Prepare this statement first.
     String queryString = String.format(
         "DELETE FROM %s WHERE %s=?",
-        mTableName,
+        tableName,
         CassandraKiji.CASSANDRA_KEY_COL
     );
-
 
     PreparedStatement preparedStatement = mSession.prepare(queryString);
-
-    List<Statement> statementList = new ArrayList<Statement>();
-    statementList.add(preparedStatement.bind(rowKey));
-
-    queryString = String.format(
-        "DELETE FROM %s WHERE %s=?",
-        mCounterTableName,
-        CassandraKiji.CASSANDRA_KEY_COL
-    );
-    preparedStatement = mSession.prepare(queryString);
-    statementList.add(preparedStatement.bind(rowKey));
-
-    return statementList;
+    return preparedStatement.bind(rowKey);
   }
 
   // Get the Statement for an increment to a counter cell.
