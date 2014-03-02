@@ -19,10 +19,7 @@
 
 package org.kiji.schema.impl.cassandra;
 
-import com.datastax.driver.core.ResultSet;
-import com.datastax.driver.core.Row;
-import com.datastax.driver.core.Session;
-import com.datastax.driver.core.PreparedStatement;
+import com.datastax.driver.core.*;
 import com.google.common.base.Objects;
 import com.google.common.base.Preconditions;
 import org.apache.hadoop.hbase.HConstants;
@@ -43,6 +40,7 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
@@ -63,6 +61,9 @@ public final class CassandraKijiTableWriter implements KijiTableWriter {
 
   /** C* Admin instance, used for executing CQL commands. */
   private final CassandraAdmin mAdmin;
+
+  /** Contains shared code with BufferedWriter. */
+  private final CassandraKijiWriterCommon mWriterCommon;
 
   /** States of a writer instance. */
   private static enum State {
@@ -196,6 +197,7 @@ public final class CassandraKijiTableWriter implements KijiTableWriter {
     final State oldState = mState.getAndSet(State.OPEN);
     Preconditions.checkState(oldState == State.UNINITIALIZED,
         "Cannot open KijiTableWriter instance in state %s.", oldState);
+    mWriterCommon = new CassandraKijiWriterCommon(mTable, mWriterLayoutCapsule);
   }
 
   /** {@inheritDoc} */
@@ -203,10 +205,7 @@ public final class CassandraKijiTableWriter implements KijiTableWriter {
   public <T> void put(EntityId entityId, String family, String qualifier, T value)
       throws IOException {
     // Check whether this col is a counter; if so, do special counter write.
-    if (mWriterLayoutCapsule
-        .getLayout()
-        .getCellSpec(new KijiColumnName(family, qualifier))
-        .isCounter()) {
+    if (isCounterColumn(family, qualifier)) {
       doCounterPut(entityId, family, qualifier, value);
     } else {
       put(entityId, family, qualifier, System.currentTimeMillis(), value);
@@ -221,57 +220,25 @@ public final class CassandraKijiTableWriter implements KijiTableWriter {
     Preconditions.checkState(state == State.OPEN,
         "Cannot put cell to KijiTableWriter instance %s in state %s.", this, state);
 
-    final WriterLayoutCapsule capsule = mWriterLayoutCapsule;
-
     // Check whether this col is a counter; if so, do special counter write.
-    if (capsule.getLayout().getCellSpec(new KijiColumnName(family, qualifier)).isCounter()) {
+    if (isCounterColumn(family, qualifier)) {
       throw new UnsupportedOperationException("Cannot specify a timestamp during a counter put.");
     }
 
-    // Encode the value to write into the table as a ByteBuffer for C*.
-    final KijiCellEncoder cellEncoder =
-        capsule.getCellEncoderProvider().getEncoder(family, qualifier);
-    final byte[] encoded = cellEncoder.encode(value);
-    final ByteBuffer encodedByteBuffer = CassandraByteUtil.bytesToByteBuffer(encoded);
-
-    // Encode the EntityId as a ByteBuffer for C*.
-    final ByteBuffer rowKey = CassandraByteUtil.bytesToByteBuffer(entityId.getHBaseRowKey());
-
-    // Get a reference to the full name of the C* table for this column.
-    // TODO: Refactor this name-creation code somewhere cleaner.
-    KijiManagedCassandraTableName cTableName = KijiManagedCassandraTableName.getKijiTableName(
-        mTable.getURI(),
-        mTable.getName()
-    );
-
-    // TODO: Refactor this query text (and preparation for it) elsewhere.
-    // Create the CQL statement to insert data.
-    String queryText = String.format(
-        "INSERT INTO %s (%s, %s, %s, %s, %s, %s) VALUES (?, ?, ?, ?, ?, ?);",
-        cTableName.toString(),
-        CassandraKiji.CASSANDRA_KEY_COL,
-        CassandraKiji.CASSANDRA_LOCALITY_GROUP_COL,
-        CassandraKiji.CASSANDRA_FAMILY_COL,
-        CassandraKiji.CASSANDRA_QUALIFIER_COL,
-        CassandraKiji.CASSANDRA_VERSION_COL,
-        CassandraKiji.CASSANDRA_VALUE_COL);
-    LOG.info(queryText);
-
+    Statement putStatement = mWriterCommon.getStatementPutNotCounter(
+        entityId, family, qualifier, timestamp, value);
     Session session = mAdmin.getSession();
+    session.execute(putStatement);
+  }
 
-    final KijiColumnName columnName = new KijiColumnName(family, qualifier);
-    final CassandraColumnNameTranslator translator =
-        (CassandraColumnNameTranslator) capsule.getColumnNameTranslator();
+  // ----------------------------------------------------------------------------------------------
+  // Counter set, get, increment.
 
-    PreparedStatement preparedStatement = session.prepare(queryText);
-    session.execute(preparedStatement.bind(
-        rowKey,
-        translator.toCassandraLocalityGroup(columnName),
-        translator.toCassandraColumnFamily(columnName),
-        translator.toCassandraColumnQualifier(columnName),
-        timestamp,
-        encodedByteBuffer
-    ));
+  private boolean isCounterColumn(String family, String qualifier) throws IOException {
+    return mWriterLayoutCapsule
+        .getLayout()
+        .getCellSpec(new KijiColumnName(family, qualifier))
+        .isCounter();
   }
 
   private long getCounterValue(
@@ -324,26 +291,11 @@ public final class CassandraKijiTableWriter implements KijiTableWriter {
     return currentCounterValue;
   }
 
-  private <T> void doCounterPut(
+  private <T> void incrementCounterValue(
       EntityId entityId,
       String family,
       String qualifier,
-      T value) throws IOException {
-    final State state = mState.get();
-    Preconditions.checkState(state == State.OPEN,
-        "Cannot put cell to KijiTableWriter instance %s in state %s.", this, state);
-
-    LOG.info("-------------------- Performing a put to a counter. --------------------");
-    LOG.info(String.format("(%s, %s, %s) := %s", entityId, family, qualifier, value));
-
-    // TODO: Assert that "value" is a long.
-
-    // Read back the current value of the counter.
-    long currentCounterValue = getCounterValue(entityId, family, qualifier);
-    LOG.info("Current value of counter is " + currentCounterValue);
-
-    // Increment the counter appropriately to get the new value.
-    long counterIncrement = (Long) value - currentCounterValue;
+      long counterIncrement) throws IOException {
     LOG.info("Incrementing the counter by " + counterIncrement);
 
     // Encode the EntityId as a ByteBuffer for C*.
@@ -381,14 +333,30 @@ public final class CassandraKijiTableWriter implements KijiTableWriter {
         translator.toCassandraColumnQualifier(columnName),
         KConstants.CASSANDRA_COUNTER_TIMESTAMP
     ));
-
-    // Read back the current value of the counter.
-    currentCounterValue = getCounterValue(entityId, family, qualifier);
-    LOG.info("Current value of counter after increment is " + currentCounterValue);
   }
 
-  // ----------------------------------------------------------------------------------------------
-  // Counter increment
+  private <T> void doCounterPut(
+      EntityId entityId,
+      String family,
+      String qualifier,
+      T value) throws IOException {
+    final State state = mState.get();
+    Preconditions.checkState(state == State.OPEN,
+        "Cannot put cell to KijiTableWriter instance %s in state %s.", this, state);
+
+    LOG.info("-------------------- Performing a put to a counter. --------------------");
+    LOG.info(String.format("(%s, %s, %s) := %s", entityId, family, qualifier, value));
+
+    // TODO: Assert that "value" is a long.
+
+    // Read back the current value of the counter.
+    long currentCounterValue = getCounterValue(entityId, family, qualifier);
+    LOG.info("Current value of counter is " + currentCounterValue);
+    // Increment the counter appropriately to get the new value.
+    long counterIncrement = (Long) value - currentCounterValue;
+    incrementCounterValue(entityId, family, qualifier, counterIncrement);
+
+  }
 
   /** {@inheritDoc} */
   @Override
@@ -398,50 +366,21 @@ public final class CassandraKijiTableWriter implements KijiTableWriter {
     Preconditions.checkState(state == State.OPEN,
         "Cannot increment cell to KijiTableWriter instance %s in state %s.", this, state);
 
-    verifyIsCounter(family, qualifier);
-
-    // TODO: Write actual implementation for incrementing C* Kiji counter.
-
-    /*
-    // Translate the Kiji column name to an HBase column name.
-    final HBaseColumnName hbaseColumnName = mWriterLayoutCapsule.getColumnNameTranslator().
-        toHBaseColumnName(new KijiColumnName(family, qualifier));
-
-    // Send the increment to the HBase HTable.
-    final Increment increment = new Increment(entityId.getHBaseRowKey());
-    increment.addColumn(
-        hbaseColumnName.getFamily(),
-        hbaseColumnName.getQualifier(),
-        amount);
-    final Result result = mHTable.increment(increment);
-    final NavigableMap<Long, byte[]> counterEntries =
-        result.getMap().get(hbaseColumnName.getFamily()).get(hbaseColumnName.getQualifier());
-    assert null != counterEntries;
-    assert 1 == counterEntries.size();
-
-    final Map.Entry<Long, byte[]> counterEntry = counterEntries.firstEntry();
-    final DecodedCell<Long> counter =
-        new DecodedCell<Long>(null, Bytes.toLong(counterEntry.getValue()));
-    return new KijiCell<Long>(family, qualifier, counterEntry.getKey(), counter);
-    */
-    return null;
-  }
-
-  /**
-   * Verifies that a column is a counter.
-   *
-   * @param family A column family.
-   * @param qualifier A column qualifier.
-   * @throws java.io.IOException If the column is not a counter, or it does not exist.
-   */
-  private void verifyIsCounter(String family, String qualifier) throws IOException {
-    // TODO: Write actual implementation for verifying that a column is a C* counter.
-    /*
-    final KijiColumnName column = new KijiColumnName(family, qualifier);
-    if (mWriterLayoutCapsule.getLayout().getCellSchema(column).getType() != SchemaType.COUNTER) {
-      throw new IOException(String.format("Column '%s' is not a counter", column));
+    if (!isCounterColumn(family, qualifier)) {
+      throw new UnsupportedOperationException(String.format("Column '%s:%s' is not a counter", family, qualifier));
     }
-    */
+
+    // Increment the counter appropriately to get the new value.
+    long counterIncrement = (Long) amount;
+    incrementCounterValue(entityId, family, qualifier, counterIncrement);
+
+    // Read back the current value of the counter.
+    long currentCounterValue = getCounterValue(entityId, family, qualifier);
+    LOG.info("Value of counter after increment is " + currentCounterValue);
+
+    final DecodedCell<Long> counter =
+        new DecodedCell<Long>(null, currentCounterValue);
+    return new KijiCell<Long>(family, qualifier, KConstants.CASSANDRA_COUNTER_TIMESTAMP, counter);
   }
 
   // ----------------------------------------------------------------------------------------------
@@ -450,81 +389,40 @@ public final class CassandraKijiTableWriter implements KijiTableWriter {
   /** {@inheritDoc} */
   @Override
   public void deleteRow(EntityId entityId) throws IOException {
-    deleteRow(entityId, HConstants.LATEST_TIMESTAMP);
+    final State state = mState.get();
+    Preconditions.checkState(state == State.OPEN,
+        "Cannot delete row while KijiTableWriter %s is in state %s.", this, state);
+    List<Statement> statementList = mWriterCommon.getStatementsDeleteRow(entityId);
+    // TODO: Execute async or in batch.
+    for (Statement statement : statementList) {
+      mAdmin.getSession().execute(statement);
+    }
   }
 
   /** {@inheritDoc} */
   @Override
   public void deleteRow(EntityId entityId, long upToTimestamp) throws IOException {
-    final State state = mState.get();
-    Preconditions.checkState(state == State.OPEN,
-        "Cannot delete row while KijiTableWriter %s is in state %s.", this, state);
-
-    final ByteBuffer rowKey = CassandraByteUtil.bytesToByteBuffer(entityId.getHBaseRowKey());
-    KijiManagedCassandraTableName cTableName = KijiManagedCassandraTableName.getKijiTableName(
-        mTable.getURI(),
-        mTable.getName()
-    );
-
-    // TODO: Prepare this statement first.
-    String queryString = String.format(
-        "DELETE FROM %s WHERE %s=?",
-        cTableName.toString(),
-        CassandraKiji.CASSANDRA_KEY_COL
-    );
-
-    Session session = mAdmin.getSession();
-    PreparedStatement preparedStatement = session.prepare(queryString);
-    session.execute(preparedStatement.bind(rowKey));
+    throw new UnsupportedOperationException("Cannot delete with up-to timestamp in Cassandra Kiji.");
   }
 
   /** {@inheritDoc} */
   @Override
   public void deleteFamily(EntityId entityId, String family) throws IOException {
-    deleteFamily(entityId, family, HConstants.LATEST_TIMESTAMP);
+    final State state = mState.get();
+    Preconditions.checkState(state == State.OPEN,
+        "Cannot delete family while KijiTableWriter %s is in state %s.", this, state);
+    List<Statement> statementList = mWriterCommon.getStatementsDeleteFamily(entityId, family);
+    // TODO: Execute async or in batch.
+    for (Statement statement : statementList) {
+      mAdmin.getSession().execute(statement);
+    }
   }
 
   /** {@inheritDoc} */
   @Override
   public void deleteFamily(EntityId entityId, String family, long upToTimestamp)
       throws IOException {
-    final State state = mState.get();
-    Preconditions.checkState(state == State.OPEN,
-        "Cannot delete family while KijiTableWriter %s is in state %s.", this, state);
-
-    final WriterLayoutCapsule capsule = mWriterLayoutCapsule;
-    final FamilyLayout familyLayout = capsule.getLayout().getFamilyMap().get(family);
-    if (null == familyLayout) {
-      throw new NoSuchColumnException(String.format("Family '%s' not found.", family));
-    }
-
-    final CassandraColumnNameTranslator translator =
-        (CassandraColumnNameTranslator) capsule.getColumnNameTranslator();
-    final KijiColumnName kijiColumnName = new KijiColumnName(family);
-
-    final ByteBuffer rowKey = CassandraByteUtil.bytesToByteBuffer(entityId.getHBaseRowKey());
-    KijiManagedCassandraTableName cTableName = KijiManagedCassandraTableName.getKijiTableName(
-        mTable.getURI(),
-        mTable.getName()
-    );
-
-    // TODO: Prepare this statement first.
-    String queryString = String.format(
-        "DELETE FROM %s WHERE %s=? AND %s=? AND %s=? AND %s <= ?",
-        cTableName.toString(),
-        CassandraKiji.CASSANDRA_KEY_COL,
-        CassandraKiji.CASSANDRA_LOCALITY_GROUP_COL,
-        CassandraKiji.CASSANDRA_FAMILY_COL,
-        CassandraKiji.CASSANDRA_VERSION_COL
-    );
-
-    Session session = mAdmin.getSession();
-    PreparedStatement preparedStatement = session.prepare(queryString);
-    session.execute(preparedStatement.bind(
-        rowKey,
-        translator.toCassandraLocalityGroup(kijiColumnName),
-        translator.toCassandraColumnFamily(kijiColumnName),
-        upToTimestamp));
+    throw new UnsupportedOperationException("Cannot delete with up-to timestamp in Cassandra Kiji.");
   }
 
   /** {@inheritDoc} */
@@ -533,95 +431,38 @@ public final class CassandraKijiTableWriter implements KijiTableWriter {
     final State state = mState.get();
     Preconditions.checkState(state == State.OPEN,
         "Cannot delete column while KijiTableWriter %s is in state %s.", this, state);
-
-    final ByteBuffer rowKey = CassandraByteUtil.bytesToByteBuffer(entityId.getHBaseRowKey());
-    KijiManagedCassandraTableName cTableName = KijiManagedCassandraTableName.getKijiTableName(
-        mTable.getURI(),
-        mTable.getName()
-    );
-
-    // TODO: Prepare this statement first.
-    String queryString = String.format(
-        "DELETE FROM %s WHERE %s=? AND %s=? AND %s=? AND %s=?",
-        cTableName.toString(),
-        CassandraKiji.CASSANDRA_KEY_COL,
-        CassandraKiji.CASSANDRA_LOCALITY_GROUP_COL,
-        CassandraKiji.CASSANDRA_FAMILY_COL,
-        CassandraKiji.CASSANDRA_QUALIFIER_COL
-    );
-
-    final WriterLayoutCapsule capsule = mWriterLayoutCapsule;
-    final FamilyLayout familyLayout = capsule.getLayout().getFamilyMap().get(family);
-    if (null == familyLayout) {
-      throw new NoSuchColumnException(String.format("Family '%s' not found.", family));
-    }
-    final CassandraColumnNameTranslator translator =
-        (CassandraColumnNameTranslator) capsule.getColumnNameTranslator();
-    final KijiColumnName kijiColumnName = new KijiColumnName(family, qualifier);
-
-    Session session = mAdmin.getSession();
-    PreparedStatement preparedStatement = session.prepare(queryString);
-    session.execute(preparedStatement.bind(
-        rowKey,
-        translator.toCassandraLocalityGroup(kijiColumnName),
-        translator.toCassandraColumnFamily(kijiColumnName),
-        translator.toCassandraColumnQualifier(kijiColumnName)
-    ));
+    Statement statement = mWriterCommon.getStatementDeleteColumn(entityId, family, qualifier);
+    mAdmin.getSession().execute(statement);
   }
 
   /** {@inheritDoc} */
   @Override
   public void deleteColumn(EntityId entityId, String family, String qualifier, long upToTimestamp)
       throws IOException {
-    final State state = mState.get();
-    Preconditions.checkState(state == State.OPEN,
-        "Cannot delete column while KijiTableWriter %s is in state %s.", this, state);
+    throw new UnsupportedOperationException("Cannot delete with up-to timestamp in Cassandra Kiji.");
+  }
 
-    // Sadly, the code below won't work, because C* does not yet support inequalities on deletes!
-    throw new UnsupportedOperationException(
-        "C* does not support deletes with inequalities in primary keys yet."
-    );
-
-    /*
-    final WriterLayoutCapsule capsule = mWriterLayoutCapsule;
-    final FamilyLayout familyLayout = capsule.getLayout().getFamilyMap().get(family);
-    if (null == familyLayout) {
-      throw new NoSuchColumnException(String.format("Family '%s' not found.", family));
-    }
-    final HBaseColumnName hbaseColumnName = capsule.getColumnNameTranslator()
-        .toHBaseColumnName(new KijiColumnName(family));
-
-    final ByteBuffer rowKey = CassandraByteUtil.bytesToByteBuffer(entityId.getHBaseRowKey());
-    KijiManagedCassandraTableName cTableName = KijiManagedCassandraTableName.getKijiTableName(
-        mTable.getURI(),
-        mTable.getName()
-    );
-
-    // TODO: Prepare this statement first.
-    String queryString = String.format(
-        "DELETE FROM %s WHERE %s=? AND %s=? AND %s=? AND %s <= ?",
-        cTableName.toString(),
-        CassandraKiji.CASSANDRA_KEY_COL,
-        CassandraKiji.CASSANDRA_FAMILY_COL,
-        CassandraKiji.CASSANDRA_QUALIFIER_COL,
-        CassandraKiji.CASSANDRA_VERSION_COL
-    );
-
-    Session session = mAdmin.getSession();
-    PreparedStatement preparedStatement = session.prepare(queryString);
-    session.execute(preparedStatement.bind(
-        rowKey,
-        hbaseColumnName.getFamilyAsString(),
-        hbaseColumnName.getQualifierAsString(),
-        upToTimestamp
-    ));
-    */
+  /**
+   * Handles deleting individual cells in counter or non-counter Cassandra tables.
+   *
+   * @param entityId
+   * @param family
+   * @param qualifier
+   * @throws IOException
+   */
+  private void doDeleteCell(EntityId entityId, String family, String qualifier, long timestamp) throws IOException {
+    Statement statement = mWriterCommon.getStatementDeleteCell(entityId, family, qualifier, timestamp);
+    mAdmin.getSession().execute(statement);
   }
 
   /** {@inheritDoc} */
   @Override
   public void deleteCell(EntityId entityId, String family, String qualifier) throws IOException {
-    deleteCell(entityId, family, qualifier, HConstants.LATEST_TIMESTAMP);
+    if (isCounterColumn(family, qualifier)) {
+      doDeleteCell(entityId, family, qualifier, KConstants.CASSANDRA_COUNTER_TIMESTAMP);
+    } else {
+      deleteCell(entityId, family, qualifier, HConstants.LATEST_TIMESTAMP);
+    }
   }
 
   /** {@inheritDoc} */
@@ -632,41 +473,12 @@ public final class CassandraKijiTableWriter implements KijiTableWriter {
     Preconditions.checkState(state == State.OPEN,
         "Cannot delete cell while KijiTableWriter %s is in state %s.", this, state);
 
-    final WriterLayoutCapsule capsule = mWriterLayoutCapsule;
-    final FamilyLayout familyLayout = capsule.getLayout().getFamilyMap().get(family);
-    if (null == familyLayout) {
-      throw new NoSuchColumnException(String.format("Family '%s' not found.", family));
+    if (isCounterColumn(family, qualifier)) {
+      // TODO: Better error message.
+      throw new UnsupportedOperationException("Cannot delete counter with specified timestamp.");
     }
-    final CassandraColumnNameTranslator translator =
-        (CassandraColumnNameTranslator) capsule.getColumnNameTranslator();
-    final KijiColumnName kijiColumnName = new KijiColumnName(family, qualifier);
 
-    final ByteBuffer rowKey = CassandraByteUtil.bytesToByteBuffer(entityId.getHBaseRowKey());
-    KijiManagedCassandraTableName cTableName = KijiManagedCassandraTableName.getKijiTableName(
-        mTable.getURI(),
-        mTable.getName()
-    );
-
-    // TODO: Prepare this statement first.
-    String queryString = String.format(
-        "DELETE FROM %s WHERE %s=? AND %s=? AND %s=? AND %s=? AND %s=?",
-        cTableName.toString(),
-        CassandraKiji.CASSANDRA_KEY_COL,
-        CassandraKiji.CASSANDRA_LOCALITY_GROUP_COL,
-        CassandraKiji.CASSANDRA_FAMILY_COL,
-        CassandraKiji.CASSANDRA_QUALIFIER_COL,
-        CassandraKiji.CASSANDRA_VERSION_COL
-    );
-
-    Session session = mAdmin.getSession();
-    PreparedStatement preparedStatement = session.prepare(queryString);
-    session.execute(preparedStatement.bind(
-        rowKey,
-        translator.toCassandraLocalityGroup(kijiColumnName),
-        translator.toCassandraColumnFamily(kijiColumnName),
-        translator.toCassandraColumnQualifier(kijiColumnName),
-        timestamp
-    ));
+    doDeleteCell(entityId, family, qualifier, timestamp);
   }
 
   // ----------------------------------------------------------------------------------------------

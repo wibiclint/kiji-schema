@@ -23,37 +23,24 @@ import com.datastax.driver.core.*;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Lists;
 import org.apache.hadoop.hbase.HConstants;
-import org.apache.hadoop.hbase.TableNotFoundException;
-import org.apache.hadoop.hbase.client.*;
-import org.apache.hadoop.hbase.filter.ColumnPrefixFilter;
-import org.apache.hadoop.hbase.filter.FilterList;
-import org.apache.hadoop.hbase.filter.KeyOnlyFilter;
-import org.apache.hadoop.hbase.util.Bytes;
-import org.apache.hadoop.hbase.util.ClassSize;
 import org.apache.hadoop.util.StringUtils;
 import org.kiji.annotations.ApiAudience;
 import org.kiji.annotations.Inheritance;
 import org.kiji.schema.*;
 import org.kiji.schema.cassandra.KijiManagedCassandraTableName;
-import org.kiji.schema.hbase.HBaseColumnName;
 import org.kiji.schema.impl.DefaultKijiCellEncoderFactory;
 import org.kiji.schema.impl.LayoutCapsule;
 import org.kiji.schema.impl.LayoutConsumer;
-import org.kiji.schema.impl.hbase.HBaseKijiTable;
-import org.kiji.schema.impl.hbase.HBaseKijiTableWriter.WriterLayoutCapsule;
 import org.kiji.schema.layout.KijiTableLayout.LocalityGroupLayout.FamilyLayout;
-import org.kiji.schema.layout.KijiTableLayout.LocalityGroupLayout.FamilyLayout.ColumnLayout;
 import org.kiji.schema.layout.impl.CellEncoderProvider;
 import org.kiji.schema.layout.impl.cassandra.CassandraColumnNameTranslator;
-import org.kiji.schema.platform.SchemaPlatformBridge;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.Map;
+import java.util.List;
 
 /**
  * Cassandra implementation of a batch KijiTableWriter.
@@ -92,11 +79,14 @@ public class CassandraKijiBufferedWriter implements KijiBufferedWriter {
 
   private final PreparedStatement mPutStatement;
 
+  /** Contains shared code with BufferedWriter. */
+  private final CassandraKijiWriterCommon mWriterCommon;
+
   /**
    * All state which should be modified atomically to reflect an update to the underlying table's
    * layout.
    */
-  private volatile WriterLayoutCapsule mWriterLayoutCapsule = null;
+  private volatile CassandraKijiTableWriter.WriterLayoutCapsule mWriterLayoutCapsule = null;
 
   /** Local write buffers. */
   private ArrayList<Statement> mPutBuffer = Lists.newArrayList();
@@ -157,10 +147,10 @@ public class CassandraKijiBufferedWriter implements KijiBufferedWriter {
               mTable.getURI(),
               capsule.getLayout().getDesc().getLayoutId());
         }
-        mWriterLayoutCapsule = new WriterLayoutCapsule(
+        mWriterLayoutCapsule = new CassandraKijiTableWriter.WriterLayoutCapsule(
             provider,
             capsule.getLayout(),
-            capsule.getColumnNameTranslator());
+            (CassandraColumnNameTranslator) capsule.getColumnNameTranslator());
       }
     }
   }
@@ -209,19 +199,34 @@ public class CassandraKijiBufferedWriter implements KijiBufferedWriter {
 
     mPutStatement = mSession.prepare(queryText);
 
+    mWriterCommon = new CassandraKijiWriterCommon(mTable, mWriterLayoutCapsule);
+
   }
 
   // ----------------------------------------------------------------------------------------------
   // Puts
 
-  /**
-   * Add a Put to the buffer and update the current buffer size.
-   *
-   * @param entityId the EntityId of the row to put into.
-   * @param putStatement bound statement containing the insertion.
-   * @throws java.io.IOException in case of an error on flush.
-   */
-  private void updateBufferWithPut(EntityId entityId, Statement putStatement) throws IOException {
+  /** {@inheritDoc} */
+  @Override
+  public <T> void put(EntityId entityId, String family, String qualifier, T value)
+      throws IOException {
+    put(entityId, family, qualifier, System.currentTimeMillis(), value);
+  }
+
+  /** {@inheritDoc} */
+  @Override
+  public <T> void put(EntityId entityId, String family, String qualifier, long timestamp, T value)
+      throws IOException {
+    // We cannot do a counter put within a buffered writer, because doing a counter put in
+    // Cassandra requires doing a read to get the current counter value, followed by an increment.
+    if (mWriterCommon.isCounterColumn(family, qualifier)) {
+      // TODO: Better error message.
+      throw new UnsupportedOperationException("Cannot perform a counter set with a buffered writer.");
+    }
+
+    Statement putStatement =
+        mWriterCommon.getStatementPutNotCounter(entityId, family, qualifier, timestamp, value);
+
     synchronized (mInternalLock) {
       Preconditions.checkState(mState == State.OPEN,
           "Cannot write to BufferedWriter instance in state %s.", mState);
@@ -232,42 +237,6 @@ public class CassandraKijiBufferedWriter implements KijiBufferedWriter {
         flush();
       }
     }
-  }
-
-  /** {@inheritDoc} */
-  @Override
-  public <T> void put(EntityId entityId, String family, String qualifier, T value)
-      throws IOException {
-    //put(entityId, family, qualifier, HConstants.LATEST_TIMESTAMP, value);
-    put(entityId, family, qualifier, System.currentTimeMillis(), value);
-  }
-
-  /** {@inheritDoc} */
-  @Override
-  public <T> void put(EntityId entityId, String family, String qualifier, long timestamp, T value)
-      throws IOException {
-    final KijiColumnName columnName = new KijiColumnName(family, qualifier);
-    final WriterLayoutCapsule capsule = mWriterLayoutCapsule;
-    CassandraColumnNameTranslator translator =
-        (CassandraColumnNameTranslator) capsule.getColumnNameTranslator();
-
-    final KijiCellEncoder cellEncoder =
-        capsule.getCellEncoderProvider().getEncoder(family, qualifier);
-    final byte[] encoded = cellEncoder.encode(value);
-    final ByteBuffer encodedByteBuffer = CassandraByteUtil.bytesToByteBuffer(encoded);
-
-    // Encode the EntityId as a ByteBuffer for C*.
-    final ByteBuffer rowKey = CassandraByteUtil.bytesToByteBuffer(entityId.getHBaseRowKey());
-
-    BoundStatement boundStatement = mPutStatement.bind(
-        rowKey,
-        translator.toCassandraLocalityGroup(columnName),
-        translator.toCassandraColumnFamily(columnName),
-        translator.toCassandraColumnQualifier(columnName),
-        timestamp,
-        encodedByteBuffer);
-
-    updateBufferWithPut(entityId, boundStatement);
   }
 
   // ----------------------------------------------------------------------------------------------
@@ -292,151 +261,36 @@ public class CassandraKijiBufferedWriter implements KijiBufferedWriter {
   /** {@inheritDoc} */
   @Override
   public void deleteRow(EntityId entityId) throws IOException {
-    deleteRow(entityId, HConstants.LATEST_TIMESTAMP);
+    List<Statement> statementList = mWriterCommon.getStatementsDeleteRow(entityId);
+    for (Statement statement : statementList) {
+      updateBufferWithDelete(statement);
+    }
   }
 
   /** {@inheritDoc} */
   @Override
   public void deleteRow(EntityId entityId, long upToTimestamp) throws IOException {
-    //final Delete delete = new Delete(entityId.getHBaseRowKey(), upToTimestamp, null);
-    //updateBuffer(delete);
-    // TODO: Add support for deletes.
-    throw new UnsupportedOperationException("Haven't written this code yet!");
+    throw new UnsupportedOperationException(
+        "Cannot delete with an up-to timestamp in Cassandra Kiji"
+    );
   }
 
   /** {@inheritDoc} */
   @Override
   public void deleteFamily(EntityId entityId, String family) throws IOException {
-    deleteFamily(entityId, family, HConstants.LATEST_TIMESTAMP);
+    List<Statement> statementList = mWriterCommon.getStatementsDeleteFamily(entityId, family);
+    for (Statement statement : statementList) {
+      updateBufferWithDelete(statement);
+    }
   }
 
   /** {@inheritDoc} */
   @Override
   public void deleteFamily(EntityId entityId, String family, long upToTimestamp)
       throws IOException {
-    throw new UnsupportedOperationException("Haven't written this code yet!");
-    /*
-    final WriterLayoutCapsule capsule = mWriterLayoutCapsule;
-    final FamilyLayout familyLayout = capsule.getLayout().getFamilyMap().get(family);
-    if (null == familyLayout) {
-      throw new NoSuchColumnException(String.format("Family '%s' not found.", family));
-    }
-
-    if (familyLayout.getLocalityGroup().getFamilyMap().size() > 1) {
-      // There are multiple families within the locality group, so we need to be clever.
-      if (familyLayout.isGroupType()) {
-        deleteGroupFamily(entityId, familyLayout, upToTimestamp);
-      } else if (familyLayout.isMapType()) {
-        deleteMapFamily(entityId, familyLayout, upToTimestamp);
-      } else {
-        throw new RuntimeException("Internal error: family is neither map-type nor group-type.");
-      }
-      return;
-    }
-
-    // The only data in this HBase family is the one Kiji family, so we can delete everything.
-    final HBaseColumnName hbaseColumnName = capsule.getColumnNameTranslator()
-        .toHBaseColumnName(new KijiColumnName(family));
-    final Delete delete = new Delete(entityId.getHBaseRowKey());
-    delete.deleteFamily(hbaseColumnName.getFamily(), upToTimestamp);
-
-    // Buffer the delete.
-    updateBuffer(delete);
-    */
-  }
-
-  /**
-   * Deletes all cells from a group-type family with a timestamp less than or equal to a
-   * specified timestamp.
-   *
-   * @param entityId The entity (row) to delete from.
-   * @param familyLayout The family layout.
-   * @param upToTimestamp A timestamp.
-   * @throws java.io.IOException If there is an IO error.
-   */
-  private void deleteGroupFamily(
-      EntityId entityId,
-      FamilyLayout familyLayout,
-      long upToTimestamp)
-      throws IOException {
-    throw new UnsupportedOperationException("Haven't written this code yet!");
-    /*
-    final String familyName = Preconditions.checkNotNull(familyLayout.getName());
-    // Delete each column in the group according to the layout.
-    final Delete delete = new Delete(entityId.getHBaseRowKey());
-    for (ColumnLayout columnLayout : familyLayout.getColumnMap().values()) {
-      final String qualifier = columnLayout.getName();
-      final KijiColumnName column = new KijiColumnName(familyName, qualifier);
-      final HBaseColumnName hbaseColumnName =
-          mWriterLayoutCapsule.getColumnNameTranslator().toHBaseColumnName(column);
-      delete.deleteColumns(
-          hbaseColumnName.getFamily(), hbaseColumnName.getQualifier(), upToTimestamp);
-    }
-
-    // Buffer the delete.
-    updateBuffer(delete);
-    */
-  }
-
-  /**
-   * Deletes all cells from a map-type family with a timestamp less than or equal to a
-   * specified timestamp.
-   *
-   * <p>This call requires an HBase row lock, so it should be used with care.</p>
-   *
-   * @param entityId The entity (row) to delete from.
-   * @param familyLayout A family layout.
-   * @param upToTimestamp A timestamp.
-   * @throws java.io.IOException If there is an IO error.
-   */
-  private void deleteMapFamily(EntityId entityId, FamilyLayout familyLayout, long upToTimestamp)
-      throws IOException {
-    // Since multiple Kiji column families are mapped into a single HBase column family,
-    // we have to do this delete in a two-step transaction:
-    //
-    // 1. Send a get() to retrieve the names of all HBase qualifiers within the HBase
-    //    family that belong to the Kiji column family.
-    // 2. Send a delete() for each of the HBase qualifiers found in the previous step.
-    throw new UnsupportedOperationException("Haven't written this code yet!");
-
-    /*
-    final String familyName = familyLayout.getName();
-    final HBaseColumnName hbaseColumnName = mWriterLayoutCapsule.getColumnNameTranslator()
-        .toHBaseColumnName(new KijiColumnName(familyName));
-    final byte[] hbaseRow = entityId.getHBaseRowKey();
-
-    // Lock the row.
-    final RowLock rowLock = mHTable.lockRow(hbaseRow);
-    try {
-      // Step 1.
-      final Get get = new Get(hbaseRow, rowLock);
-      get.addFamily(hbaseColumnName.getFamily());
-
-      final FilterList filter = new FilterList(FilterList.Operator.MUST_PASS_ALL);
-      filter.addFilter(new KeyOnlyFilter());
-      filter.addFilter(new ColumnPrefixFilter(hbaseColumnName.getQualifier()));
-      get.setFilter(filter);
-
-      final Result result = mHTable.get(get);
-
-      // Step 2.
-      if (result.isEmpty()) {
-        LOG.debug("No qualifiers to delete in map family: " + familyName);
-      } else {
-        final Delete delete = new Delete(hbaseRow, HConstants.LATEST_TIMESTAMP, rowLock);
-        for (byte[] hbaseQualifier
-                 : result.getFamilyMap(hbaseColumnName.getFamily()).keySet()) {
-          LOG.debug("Deleting HBase column " + hbaseColumnName.getFamilyAsString()
-              + ":" + Bytes.toString(hbaseQualifier));
-          delete.deleteColumns(hbaseColumnName.getFamily(), hbaseQualifier, upToTimestamp);
-        }
-        updateBuffer(delete);
-      }
-    } finally {
-      // Make sure to unlock the row!
-      mHTable.unlockRow(rowLock);
-    }
-    */
+    throw new UnsupportedOperationException(
+        "Cannot delete with an up-to timestamp in Cassandra Kiji"
+    );
   }
 
   /** {@inheritDoc} */
@@ -449,14 +303,9 @@ public class CassandraKijiBufferedWriter implements KijiBufferedWriter {
   @Override
   public void deleteColumn(EntityId entityId, String family, String qualifier, long upToTimestamp)
       throws IOException {
-    throw new UnsupportedOperationException("Haven't written this code yet!");
-    /*
-    final HBaseColumnName hbaseColumnName = mWriterLayoutCapsule.getColumnNameTranslator()
-        .toHBaseColumnName(new KijiColumnName(family, qualifier));
-    final Delete delete = new Delete(entityId.getHBaseRowKey())
-        .deleteColumns(hbaseColumnName.getFamily(), hbaseColumnName.getQualifier(), upToTimestamp);
-    updateBuffer(delete);
-    */
+    throw new UnsupportedOperationException(
+        "Cannot delete with an up-to timestamp in Cassandra Kiji"
+    );
   }
 
   /** {@inheritDoc} */
@@ -469,14 +318,8 @@ public class CassandraKijiBufferedWriter implements KijiBufferedWriter {
   @Override
   public void deleteCell(EntityId entityId, String family, String qualifier, long timestamp)
       throws IOException {
-    throw new UnsupportedOperationException("Haven't written this code yet!");
-    /*
-    final HBaseColumnName hbaseColumnName =
-        mTable.getColumnNameTranslator().toHBaseColumnName(new KijiColumnName(family, qualifier));
-    final Delete delete = new Delete(entityId.getHBaseRowKey())
-        .deleteColumn(hbaseColumnName.getFamily(), hbaseColumnName.getQualifier(), timestamp);
-    updateBuffer(delete);
-    */
+    Statement statement = mWriterCommon.getStatementDeleteCell(entityId, family, qualifier, timestamp);
+    updateBufferWithDelete(statement);
   }
 
   // ----------------------------------------------------------------------------------------------

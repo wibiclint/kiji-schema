@@ -199,12 +199,23 @@ public class CassandraDataRequestAdapter {
         LOG.info("Column request is for a full-qualified, individual column.");
       }
 
-      // Pick a table name depending on whether this column is a counter or not.
-      boolean isCounter = table
-          .getLayoutCapsule()
-          .getLayout()
-          .getCellSpec(kijiColumnName)
-          .isCounter();
+      // TODO: If unqualified group-type family, maybe read counter and non-counter values together!
+
+      boolean isCounter = false;
+      try {
+        // Pick a table name depending on whether this column is a counter or not.
+        isCounter = table
+            .getLayoutCapsule()
+            .getLayout()
+            .getCellSpec(kijiColumnName)
+            .isCounter();
+      } catch (IllegalArgumentException e) {
+        // Do nothing, just assume there are no counters.
+        LOG.warn(String.format(
+            "Not looking for counters in get for unqualified group-type family '%s'",
+            kijiColumnName
+        ));
+      }
 
       if (isCounter) {
         LOG.info("This column contains a counter.");

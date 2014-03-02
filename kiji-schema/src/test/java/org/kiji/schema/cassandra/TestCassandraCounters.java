@@ -153,10 +153,14 @@ public class TestCassandraCounters extends CassandraKijiClientTest {
         .get(mEntityId, request)
         .containsCell(MAP, Q0, KConstants.CASSANDRA_COUNTER_TIMESTAMP));
 
+    // Issue in Cassandra Kiji - After deleting a counter, that counter is *gone* forever.  No way
+    // to use it again.
     mWriter.increment(mEntityId, MAP, Q0, 1L);
     counter = mReader.get(mEntityId, request).getMostRecentCell(MAP, Q0);
     actual = counter.getData();
-    assertEquals(1L, actual);
+
+    // The counter will always be stuck at 0 from now on.
+    assertEquals(0L, actual);
     assertEquals(KConstants.CASSANDRA_COUNTER_TIMESTAMP, counter.getTimestamp());
   }
 
@@ -196,7 +200,9 @@ public class TestCassandraCounters extends CassandraKijiClientTest {
     mBuffered.flush();
     counter = mReader.get(mEntityId, request).getMostRecentCell(MAP, Q0);
     actual = counter.getData();
-    assertEquals(1L, actual);
+
+    // Remember, the previous put won't actually do anything.  The counter is permanently gone.
+    assertEquals(0L, actual);
     assertEquals(KConstants.CASSANDRA_COUNTER_TIMESTAMP, counter.getTimestamp());
   }
 
@@ -226,7 +232,11 @@ public class TestCassandraCounters extends CassandraKijiClientTest {
   @Test
   public void testReadMixedFamily() throws Exception {
     mWriter.put(mEntityId, "info", "visits", 42L);
-    final KijiDataRequest dataRequest = KijiDataRequest.create("info");
+    final KijiDataRequest dataRequest = KijiDataRequest.builder()
+        .addColumns(ColumnsDef.create().add("info", "name"))
+        .addColumns(ColumnsDef.create().add("info", "visits"))
+        .build();
+
     KijiRowData rowData = mReader.get(mEntityId, dataRequest);
 
     KijiCell<Long> counter = rowData.getMostRecentCell("info", "visits");
@@ -236,7 +246,7 @@ public class TestCassandraCounters extends CassandraKijiClientTest {
     long counterValue = counter.getData();
     assertEquals(42L, counterValue);
     assertNotNull(name);
-    assertEquals(USERNAME, name.getData());
+    assertEquals(USERNAME, name.getData().toString());
   }
 
   // Test reading multiple families, some with counters, some without.
@@ -250,7 +260,8 @@ public class TestCassandraCounters extends CassandraKijiClientTest {
 
     final KijiDataRequest dataRequest = KijiDataRequest.builder()
         .addColumns(ColumnsDef.create().addFamily(MAP))
-        .addColumns(ColumnsDef.create().addFamily("info"))
+        .addColumns(ColumnsDef.create().add("info", "name"))
+        .addColumns(ColumnsDef.create().add("info", "visits"))
         .build();
 
     KijiRowData rowData = mReader.get(mEntityId, dataRequest);
@@ -264,7 +275,7 @@ public class TestCassandraCounters extends CassandraKijiClientTest {
     assertEquals(42L, counterValue);
 
     assertNotNull(name);
-    assertEquals(USERNAME, name.getData());
+    assertEquals(USERNAME, name.getData().toString());
 
     assertNotNull(counterMap);
     counterValue = counterMap.getData();
@@ -278,8 +289,13 @@ public class TestCassandraCounters extends CassandraKijiClientTest {
 
   // TODO: Read a counter with scanner + paging.
 
-  // Try doing lots of increments in parallel?
+  // TODO: Test deleting an entire row, an entire column, an entire family with counters.
 
+  // TODO: Try doing lots of increments in parallel?
+
+  // TODO: Test that a buffered writer can do a counter increment, but *not* a counter set.
+
+  // TODO: Test deleting an entire family that mixes counters and non-counters.
 
 
 }
