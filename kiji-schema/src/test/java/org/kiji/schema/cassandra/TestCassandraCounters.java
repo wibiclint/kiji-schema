@@ -43,7 +43,6 @@ public class TestCassandraCounters extends CassandraKijiClientTest {
   private static final String Q0 = "q0";
   private static final String USERNAME = "Mr Bonkers";
 
-  private static Kiji mKiji;
   private static KijiTable mTable;
   private KijiTableWriter mWriter;
   private KijiBufferedWriter mBuffered;

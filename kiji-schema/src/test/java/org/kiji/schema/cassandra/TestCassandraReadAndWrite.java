@@ -20,9 +20,7 @@
 package org.kiji.schema.cassandra;
 
 import org.apache.hadoop.hbase.HConstants;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.*;
 import org.kiji.schema.*;
 import org.kiji.schema.KijiDataRequestBuilder.ColumnsDef;
 import org.kiji.schema.impl.cassandra.CassandraKijiTable;
@@ -31,7 +29,9 @@ import org.kiji.schema.util.VersionInfo;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.IOException;
 import java.util.HashMap;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.Assert.*;
 
@@ -39,26 +39,45 @@ import static org.junit.Assert.*;
 public class TestCassandraReadAndWrite extends CassandraKijiClientTest {
   private static final Logger LOG = LoggerFactory.getLogger(TestCassandraReadAndWrite.class);
 
-  private KijiTable mTable;
+  private static KijiTable mTable;
   private KijiTableWriter mWriter;
   private KijiTableReader mReader;
   private EntityId mEntityId;
 
-  @Before
-  public void setup() throws Exception {
-    final Kiji kiji = getKiji();
-    kiji.createTable(KijiTableLayouts.getLayout(KijiTableLayouts.SIMPLE));
+  /** Use to create unique entity IDs for each test case. */
+  private static AtomicInteger testIdCounter;
 
-    mTable = kiji.openTable("table");
-    mWriter = mTable.openTableWriter();
+  @BeforeClass
+  public static void initShared() {
+    CassandraKijiClientTest clientTest = new CassandraKijiClientTest();
+    testIdCounter = new AtomicInteger(0);
+    try {
+      clientTest.setupKijiTest();
+      Kiji kiji = clientTest.getKiji();
+      kiji.createTable(KijiTableLayouts.getLayout(KijiTableLayouts.SIMPLE));
+      mTable = kiji.openTable("table");
+    } catch (Exception e) {
+      throw new KijiIOException(e);
+    }
+
+  }
+
+  @Before
+  public final void setupEnvironment() throws Exception {
+    // Fill local variables.
     mReader = mTable.openTableReader();
-    mEntityId = mTable.getEntityId("row0");
+    mWriter = mTable.openTableWriter();
+    mEntityId = mTable.getEntityId("eid-" + testIdCounter.getAndIncrement());
   }
 
   @After
-  public void tearDown() throws Exception {
-    mWriter.close();
+  public final void cleanupEnvironment() throws IOException {
     mReader.close();
+    mWriter.close();
+  }
+
+  @AfterClass
+  public static void cleanupClass() throws IOException {
     mTable.release();
   }
 
