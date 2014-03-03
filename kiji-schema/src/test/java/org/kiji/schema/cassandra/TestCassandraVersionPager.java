@@ -19,26 +19,28 @@
 
 package org.kiji.schema.cassandra;
 
+import com.datastax.driver.core.ResultSet;
+import com.datastax.driver.core.Row;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
 import org.apache.hadoop.hbase.util.Bytes;
-import org.junit.After;
-import org.junit.Assert;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.*;
 import org.kiji.schema.*;
 import org.kiji.schema.KijiDataRequestBuilder.ColumnsDef;
+import org.kiji.schema.impl.LayoutCapsule;
+import org.kiji.schema.impl.cassandra.CassandraDataRequestAdapter;
+import org.kiji.schema.impl.cassandra.CassandraKijiTable;
 import org.kiji.schema.impl.cassandra.CassandraVersionPager;
+import org.kiji.schema.layout.KijiTableLayout;
 import org.kiji.schema.layout.KijiTableLayouts;
+import org.kiji.schema.layout.impl.ColumnNameTranslator;
+import org.kiji.schema.layout.impl.cassandra.CassandraColumnNameTranslator;
 import org.kiji.schema.util.ResourceUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
-import java.util.Iterator;
-import java.util.List;
-import java.util.NavigableMap;
-import java.util.NoSuchElementException;
+import java.util.*;
 
 import static org.junit.Assert.*;
 
@@ -49,39 +51,52 @@ public class TestCassandraVersionPager extends CassandraKijiClientTest {
   private static final long NTIMESTAMPS = 5;
 
   private KijiTableReader mReader;
-  private KijiTable mTable;
+  private static KijiTable mTable;
+
+  @BeforeClass
+  public static void initShared() {
+    CassandraKijiClientTest clientTest = new CassandraKijiClientTest();
+    try {
+      clientTest.setupKijiTest();
+      Kiji kiji = clientTest.getKiji();
+      kiji.createTable(KijiTableLayouts.getLayout(KijiTableLayouts.PAGING_TEST));
+
+      mTable = kiji.openTable("user");
+      final EntityId eid = mTable.getEntityId("me");
+      final KijiTableWriter writer = mTable.openTableWriter();
+      try {
+        writer.put(eid, "info", "name", 1L, "me-one");
+        writer.put(eid, "info", "name", 2L, "me-two");
+        writer.put(eid, "info", "name", 3L, "me-three");
+        writer.put(eid, "info", "name", 4L, "me-four");
+        writer.put(eid, "info", "name", 5L, "me-five");
+
+        for (int job = 0; job < NJOBS; ++job) {
+          for (long ts = 1; ts <= NTIMESTAMPS; ++ts) {
+            writer.put(eid, "jobs", String.format("j%d", job), ts, String.format("j%d-t%d", job, ts));
+          }
+        }
+
+      } finally {
+        writer.close();
+      }
+    } catch (Exception e) {
+      throw new KijiIOException(e);
+    }
+  }
 
   @Before
   public final void setupTestKijiPager() throws Exception {
-    final Kiji kiji = getKiji();
-    kiji.createTable(KijiTableLayouts.getLayout(KijiTableLayouts.PAGING_TEST));
-
-    mTable = kiji.openTable("user");
-    final EntityId eid = mTable.getEntityId("me");
-    final KijiTableWriter writer = mTable.openTableWriter();
-    try {
-      writer.put(eid, "info", "name", 1L, "me-one");
-      writer.put(eid, "info", "name", 2L, "me-two");
-      writer.put(eid, "info", "name", 3L, "me-three");
-      writer.put(eid, "info", "name", 4L, "me-four");
-      writer.put(eid, "info", "name", 5L, "me-five");
-
-      for (int job = 0; job < NJOBS; ++job) {
-        for (long ts = 1; ts <= NTIMESTAMPS; ++ts) {
-          writer.put(eid, "jobs", String.format("j%d", job), ts, String.format("j%d-t%d", job, ts));
-        }
-      }
-
-    } finally {
-      writer.close();
-    }
-
     mReader = mTable.openTableReader();
   }
 
   @After
-  public final void teardownTestKijiPager() throws IOException {
+  public final void tearDownTestKijiPager() throws IOException {
     mReader.close();
+  }
+
+  @AfterClass
+  public static void tearDownClass() throws IOException {
     mTable.release();
   }
 
