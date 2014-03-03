@@ -55,6 +55,9 @@ Open TODOs
 
 ### Testing and error messages
 
+- It might be useful to have a notion of a read-only table.  Such a table would be great for unit
+  tests, because we could initialize a shared table once and then share it across a lot of read-only
+  tests.  This would probably speed up the tests a lot!
 - Need comprehensible error message if the user does not have Cassandra running (need an error
   message that is better than a stack trace)
 - Desperately need more unit tests for the Cassandra / Hadoop code that I wrote, also for the

@@ -19,10 +19,7 @@
 
 package org.kiji.schema.impl.cassandra;
 
-import com.datastax.driver.core.PreparedStatement;
-import com.datastax.driver.core.ResultSet;
-import com.datastax.driver.core.Session;
-import com.datastax.driver.core.Statement;
+import com.datastax.driver.core.*;
 import com.google.common.base.Preconditions;
 import org.apache.hadoop.hbase.HConstants;
 import org.kiji.annotations.ApiAudience;
@@ -38,6 +35,7 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 
 /**
@@ -146,7 +144,10 @@ public class CassandraDataRequestAdapter {
         table.getName()).toString();
 
     // Keep track of all of the results coming back from Cassandra
-    ArrayList<ResultSet> results = new ArrayList<ResultSet>();
+    //ArrayList<ResultSet> results = new ArrayList<ResultSet>();
+
+    // Keep track of all of the outstanding queries to Cassandra for this data request.
+    HashSet<ResultSetFuture> futures = new HashSet<ResultSetFuture>();
 
     ByteBuffer entityIdByteBuffer;
     if (bIsScan) {
@@ -182,22 +183,22 @@ public class CassandraDataRequestAdapter {
       // explicit KijiPagers, which should create custom data requests for only paged columns.
       assert (!(pagingEnabled && !column.isPagingEnabled()));
 
-
-      // TODO: Optimize these queries such that we need only one RPC per column family.
-      // (Right now a data request that asks for "info:foo" and "info:bar" would trigger two
-      // separate session.execute(statement) commands.
-
       // Get the translated Kiji family and qualifier.
       KijiColumnName kijiColumnName = new KijiColumnName(column.getName());
       LOG.info("Kiji column name for the requested column is " + kijiColumnName);
       String localityGroup = mColumnNameTranslator.toCassandraLocalityGroup(kijiColumnName);
       String family = mColumnNameTranslator.toCassandraColumnFamily(kijiColumnName);
       String qualifier = mColumnNameTranslator.toCassandraColumnQualifier(kijiColumnName);
+
       if (null == qualifier) {
         LOG.info("Column request is for an entire family.");
       } else {
         LOG.info("Column request is for a full-qualified, individual column.");
       }
+
+      // TODO: Optimize these queries such that we need only one RPC per column family.
+      // (Right now a data request that asks for "info:foo" and "info:bar" would trigger two
+      // separate session.execute(statement) commands.
 
       // TODO: If unqualified group-type family, maybe read counter and non-counter values together!
 
@@ -244,8 +245,8 @@ public class CassandraDataRequestAdapter {
         );
         LOG.info("Preparing query string " + queryString);
         PreparedStatement preparedStatement = session.prepare(queryString);
-        ResultSet res = session.execute(preparedStatement.bind(localityGroup, family, qualifier));
-        results.add(res);
+        ResultSetFuture res = session.executeAsync(preparedStatement.bind(localityGroup, family, qualifier));
+        futures.add(res);
         numScanQueries++;
       } else if (bIsScan && qualifier == null) {
         String queryString = String.format(
@@ -263,8 +264,8 @@ public class CassandraDataRequestAdapter {
         );
         LOG.info("Preparing query string " + queryString);
         PreparedStatement preparedStatement = session.prepare(queryString);
-        ResultSet res = session.execute(preparedStatement.bind(localityGroup, family));
-        results.add(res);
+        ResultSetFuture res = session.executeAsync(preparedStatement.bind(localityGroup, family));
+        futures.add(res);
         numScanQueries++;
 
 
@@ -317,8 +318,8 @@ public class CassandraDataRequestAdapter {
           int pageSize = column.getPageSize();
           boundStatement = boundStatement.setFetchSize(pageSize);
         }
-        ResultSet res = session.execute(boundStatement);
-        results.add(res);
+        ResultSetFuture res = session.executeAsync(boundStatement);
+        futures.add(res);
       }
     }
 
@@ -331,10 +332,16 @@ public class CassandraDataRequestAdapter {
           nonCounterTableName
       );
       LOG.info("Preparing query string " + queryString);
-      ResultSet res = session.execute(queryString);
-      results.add(res);
+      ResultSetFuture res = session.executeAsync(queryString);
+      futures.add(res);
     }
 
+    // Wait until all of the futures are done.
+    List<ResultSet> results = new ArrayList<ResultSet>();
+
+    for (ResultSetFuture resultSetFuture: futures) {
+      results.add(resultSetFuture.getUninterruptibly());
+    }
     return results;
   }
 }
