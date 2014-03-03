@@ -78,10 +78,10 @@ public class CassandraKijiClientTest {
   // CSON: VisibilityModifierCheck
 
   /** Counter for fake C* instances. */
-  private final AtomicLong mFakeCassandraInstanceCounter = new AtomicLong();
+  private final static AtomicLong mFakeCassandraInstanceCounter = new AtomicLong();
 
   /** Counter for test Kiji instances. */
-  private final AtomicLong mKijiInstanceCounter = new AtomicLong();
+  private final static AtomicLong mKijiInstanceCounter = new AtomicLong();
 
   /** Test identifier, eg. "org_package_ClassName_testMethodName". */
   private String mTestId;
