@@ -19,14 +19,10 @@
 
 package org.kiji.schema.cassandra;
 
-import org.apache.ftpserver.command.impl.USER;
 import org.junit.*;
-import org.junit.Assert.*;
 import org.kiji.schema.*;
 import org.kiji.schema.KijiDataRequestBuilder.ColumnsDef;
-import org.kiji.schema.layout.KijiTableLayout;
 import org.kiji.schema.layout.KijiTableLayouts;
-import org.kiji.schema.util.InstanceBuilder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -40,8 +36,11 @@ public class TestCassandraCounters extends CassandraKijiClientTest {
   private static final Logger LOG = LoggerFactory.getLogger(TestCassandraCounters.class);
 
   private static final String MAP = "experiments";
+  private static final String INFO = "info";
+  private static final String VISITS = "visits";
+  private static final String NAME = "name";
   private static final String Q0 = "q0";
-  private static final String USERNAME = "Mr Bonkers";
+  private static final String MR_BONKERS = "Mr Bonkers";
 
   private static KijiTable mTable;
   private KijiTableWriter mWriter;
@@ -132,6 +131,17 @@ public class TestCassandraCounters extends CassandraKijiClientTest {
     final long actual = counter.getData();
     assertEquals(5L, actual);
     assertEquals(KConstants.CASSANDRA_COUNTER_TIMESTAMP, counter.getTimestamp());
+  }
+
+  // Test setting a counter with a timestamp (doesn't work).
+  @Test
+  public void testSetTimestamp() throws Exception {
+    try {
+      mWriter.put(mEntityId, "info", "visits", 5L, 5L);
+      fail("An exception should have occurred.");
+    } catch (UnsupportedOperationException e) {
+      assertNotNull(e);
+    }
   }
 
   // Test that we can delete a counter with a writer.
@@ -231,7 +241,7 @@ public class TestCassandraCounters extends CassandraKijiClientTest {
   @Test
   public void testReadMixedFamily() throws Exception {
     mWriter.put(mEntityId, "info", "visits", 42L);
-    mWriter.put(mEntityId, "info", "name", USERNAME);
+    mWriter.put(mEntityId, "info", "name", MR_BONKERS);
     final KijiDataRequest dataRequest = KijiDataRequest.builder()
         .addColumns(ColumnsDef.create().add("info", "name"))
         .addColumns(ColumnsDef.create().add("info", "visits"))
@@ -246,15 +256,18 @@ public class TestCassandraCounters extends CassandraKijiClientTest {
     long counterValue = counter.getData();
     assertEquals(42L, counterValue);
     assertNotNull(name);
-    assertEquals(USERNAME, name.getData().toString());
+    assertEquals(MR_BONKERS, name.getData().toString());
   }
 
   // Test reading multiple families, some with counters, some without.
+  // Test reading multiple families with a scanner, some with counters, some without.
   @Test
-  public void testReadMultipleFamilies() throws Exception {
+  public void testReadMultipleFamiliesScan() throws Exception {
     // Initialize a counter in the map-type family.
     mWriter.increment(mEntityId, MAP, Q0, 1L);
-    mWriter.put(mEntityId, "info", "name", USERNAME);
+
+    // Add a non-counter value to another table.
+    mWriter.put(mEntityId, "info", "name", MR_BONKERS);
 
     // Initialize a counter in the group-type family.
     mWriter.put(mEntityId, "info", "visits", 42L);
@@ -265,42 +278,120 @@ public class TestCassandraCounters extends CassandraKijiClientTest {
         .addColumns(ColumnsDef.create().add("info", "visits"))
         .build();
 
+    KijiRowScanner scanner = mReader.getScanner(dataRequest);
+
+    for (KijiRowData rowData : scanner) {
+      if (rowData.getEntityId() == mEntityId) {
+        KijiCell<Long> counter = rowData.getMostRecentCell("info", "visits");
+        KijiCell<CharSequence> name = rowData.getMostRecentCell("info", "name");
+        KijiCell<Long> counterMap = rowData.getMostRecentCell(MAP, Q0);
+
+        assertNotNull(counter);
+        long counterValue = counter.getData();
+        assertEquals(42L, counterValue);
+
+        assertNotNull(name);
+        assertEquals(MR_BONKERS, name.getData().toString());
+
+        assertNotNull(counterMap);
+        counterValue = counterMap.getData();
+        assertEquals(1L, counterValue);
+      }
+    }
+  }
+
+  // Test with paging!
+  @Test
+  public void testReadMultipleFamiliesPaging() throws Exception {
+    // Initialize a counter in the map-type family.
+    mWriter.increment(mEntityId, MAP, Q0, 1L);
+    mWriter.put(mEntityId, "info", "name", MR_BONKERS);
+
+    // Initialize a counter in the group-type family.
+    mWriter.put(mEntityId, "info", "visits", 42L);
+
+    final KijiDataRequest dataRequest = KijiDataRequest.builder()
+        .addColumns(ColumnsDef.create().addFamily(MAP))
+        .addColumns(ColumnsDef.create().add("info", "name"))
+        .addColumns(ColumnsDef.create().withPageSize(1).add("info", "visits"))
+        .build();
+
     KijiRowData rowData = mReader.get(mEntityId, dataRequest);
 
-    KijiCell<Long> counter = rowData.getMostRecentCell("info", "visits");
     KijiCell<CharSequence> name = rowData.getMostRecentCell("info", "name");
     KijiCell<Long> counterMap = rowData.getMostRecentCell(MAP, Q0);
 
-    assertNotNull(counter);
-    long counterValue = counter.getData();
-    assertEquals(42L, counterValue);
 
     assertNotNull(name);
-    assertEquals(USERNAME, name.getData().toString());
+    assertEquals(MR_BONKERS, name.getData().toString());
 
     assertNotNull(counterMap);
-    counterValue = counterMap.getData();
+    long counterValue = counterMap.getData();
     assertEquals(1L, counterValue);
 
+    KijiPager pager = rowData.getPager("info", "visits");
+    KijiCell<Long> counter = pager.next().getMostRecentCell("info", "visits");
+    assertNotNull(counter);
+    counterValue = counter.getData();
+    assertEquals(42L, counterValue);
   }
 
-  // TODO: Read a counter in a table scan.
+  // Test that we can delete a counter with a writer.
+  @Test
+  public void testDeleteGroupTypeFamily() throws Exception {
+    // Set a counter and some other silliness.
+    mWriter.increment(mEntityId, INFO, VISITS, 1L);
+    mWriter.put(mEntityId, INFO, NAME, MR_BONKERS);
 
-  // TODO: ead a counter with paging
+    // Sanity check that the counter is there.
+    final KijiDataRequest request = KijiDataRequest.builder()
+        .addColumns(ColumnsDef.create().add(INFO, VISITS))
+        .addColumns(ColumnsDef.create().add(INFO, NAME))
+        .build();
 
+    KijiRowData rowData = mReader.get(mEntityId, request);
+    KijiCell<Long> counter = rowData.getMostRecentCell(INFO, VISITS);
+    long actual = counter.getData();
+    assertEquals(1L, actual);
+    assertEquals(KConstants.CASSANDRA_COUNTER_TIMESTAMP, counter.getTimestamp());
+    assertEquals(MR_BONKERS, rowData.getMostRecentValue(INFO, NAME).toString());
+
+    // Delete the entire group-type family!
+    mWriter.deleteFamily(mEntityId, INFO);
+
+    rowData = mReader.get(mEntityId, request);
+    assertNull(rowData.getMostRecentValue(INFO, VISITS));
+    assertNull(rowData.getMostRecentValue(INFO, NAME));
+  }
+
+  // Test that we can delete a row with a counter in it.
+  @Test
+  public void testDeleteRow() throws Exception {
+    // Set a counter and some other silliness.
+    mWriter.increment(mEntityId, INFO, VISITS, 1L);
+    mWriter.put(mEntityId, INFO, NAME, MR_BONKERS);
+    mWriter.put(mEntityId, MAP, Q0, 10L);
+
+    // Sanity check that the counter is there.
+    final KijiDataRequest request = KijiDataRequest.builder()
+        .addColumns(ColumnsDef.create().add(INFO, VISITS))
+        .addColumns(ColumnsDef.create().add(INFO, NAME))
+        .addColumns(ColumnsDef.create().addFamily(MAP))
+        .build();
+
+    KijiRowData rowData = mReader.get(mEntityId, request);
+    assertEquals(1L, rowData.getMostRecentValue(INFO, VISITS));
+    assertEquals(MR_BONKERS, rowData.getMostRecentValue(INFO, NAME).toString());
+    assertEquals(10L, rowData.getMostRecentValue(MAP, Q0));
+
+    // Delete the entire group-type family!
+    mWriter.deleteRow(mEntityId);
+
+    rowData = mReader.get(mEntityId, request);
+    assertFalse(rowData.iterator(INFO, VISITS).hasNext());
+    assertFalse(rowData.iterator(INFO, NAME).hasNext());
+    assertFalse(rowData.iterator(MAP).hasNext());
+  }
   // TODO: Read a counter with scanner + paging.
-
-  // TODO: Test deleting an entire row, an entire column, an entire family with counters.
-
-  // TODO: Try doing lots of increments in parallel?
-
-  // TODO: Test that a buffered writer can do a counter increment, but *not* a counter set.
-
-  // TODO: Test deleting an entire family that mixes counters and non-counters.
-
-  // TODO: Test that setting a counter with a specific timestamp fails.
-
-  // TODO: Test that setting a counter in a compare-and-set fails.
-
 
 }
