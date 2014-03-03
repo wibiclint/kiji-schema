@@ -24,23 +24,19 @@ import com.datastax.driver.core.PreparedStatement;
 import com.datastax.driver.core.ResultSet;
 import com.datastax.driver.core.Statement;
 import com.google.common.base.Preconditions;
-import org.apache.hadoop.hbase.HConstants;
-import org.apache.hadoop.hbase.util.Bytes;
 import org.kiji.annotations.ApiAudience;
 import org.kiji.schema.*;
 import org.kiji.schema.cassandra.KijiManagedCassandraTableName;
-import org.kiji.schema.hbase.HBaseColumnName;
 import org.kiji.schema.impl.DefaultKijiCellEncoderFactory;
 import org.kiji.schema.impl.LayoutCapsule;
 import org.kiji.schema.impl.LayoutConsumer;
-import org.kiji.schema.impl.hbase.HBaseKijiTableWriter.WriterLayoutCapsule;
+import org.kiji.schema.impl.cassandra.CassandraKijiTableWriter.WriterLayoutCapsule;
 import org.kiji.schema.layout.LayoutUpdatedException;
 import org.kiji.schema.layout.impl.CellEncoderProvider;
 import org.kiji.schema.layout.impl.cassandra.CassandraColumnNameTranslator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.naming.OperationNotSupportedException;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
@@ -71,6 +67,9 @@ public final class CassandraAtomicKijiPutter implements AtomicKijiPutter {
   /** The Kiji table instance. */
   private final CassandraKijiTable mTable;
 
+  /** Contains shared code with TableWriter, BufferedWriter. */
+  private final CassandraKijiWriterCommon mWriterCommon;
+
   /** States of an atomic kiji putter instance. */
   private static enum State {
     UNINITIALIZED,
@@ -91,7 +90,7 @@ public final class CassandraAtomicKijiPutter implements AtomicKijiPutter {
   private EntityId mEntityId;
 
   /** List of cells to be written. */
-  private ArrayList<CassandraKeyValue> mHopper = null;
+  private ArrayList<Statement> mStatements = null;
 
   /**
    * All state which should be modified atomically to reflect an update to the underlying table's
@@ -148,7 +147,7 @@ public final class CassandraAtomicKijiPutter implements AtomicKijiPutter {
         mWriterLayoutCapsule = new WriterLayoutCapsule(
             provider,
             capsule.getLayout(),
-            capsule.getColumnNameTranslator());
+            (CassandraColumnNameTranslator) capsule.getColumnNameTranslator());
       }
     }
   }
@@ -170,12 +169,13 @@ public final class CassandraAtomicKijiPutter implements AtomicKijiPutter {
     final State oldState = mState.getAndSet(State.OPEN);
     Preconditions.checkState(oldState == State.UNINITIALIZED,
         "Cannot open AtomicKijiPutter instance in state %s.", oldState);
+    mWriterCommon = new CassandraKijiWriterCommon(mTable, mWriterLayoutCapsule);
   }
 
   /** Resets the current transaction. */
   private void reset() {
     mEntityId = null;
-    mHopper = null;
+    mStatements = null;
   }
 
   /** {@inheritDoc} */
@@ -186,7 +186,7 @@ public final class CassandraAtomicKijiPutter implements AtomicKijiPutter {
         "Cannot begin a transaction on an AtomicKijiPutter instance in state %s.", state);
     // Preconditions.checkArgument() cannot be used here because mEntityId is null between calls to
     // begin().
-    if (mHopper != null) {
+    if (mStatements != null) {
       throw new IllegalStateException(String.format("There is already a transaction in progress on "
           + "row: %s. Call commit(), checkAndCommit(), or rollback() to clear the Put.",
           mEntityId.toShellString()));
@@ -195,7 +195,7 @@ public final class CassandraAtomicKijiPutter implements AtomicKijiPutter {
       mLayoutOutOfDate = false;
     }
     mEntityId = eid;
-    mHopper = new ArrayList<CassandraKeyValue>();
+    mStatements = new ArrayList<Statement>();
   }
 
   /** {@inheritDoc} */
@@ -207,20 +207,17 @@ public final class CassandraAtomicKijiPutter implements AtomicKijiPutter {
   /** {@inheritDoc} */
   @Override
   public void commit() throws IOException {
-    Preconditions.checkState(mHopper != null, "commit() must be paired with a call to begin()");
+    Preconditions.checkState(mStatements != null, "commit() must be paired with a call to begin()");
     final State state = mState.get();
     Preconditions.checkState(state == State.OPEN,
         "Cannot commit a transaction on an AtomicKijiPutter instance in state %s.", state);
     // We don't actually need the writer layout capsule here, but we want the layout update check.
     getWriterLayoutCapsule();
 
-    List<Statement> statements = createCqlStatementsFromKeyValues(mTable, mEntityId, mHopper);
-    assert(statements.size() > 0);
-
-    //for (Statement s : statements) { mTable.getAdmin().getSession().execute(s); }
+    assert(mStatements.size() > 0);
 
     BatchStatement batchStatement = new BatchStatement(BatchStatement.Type.LOGGED);
-    batchStatement.addAll(statements);
+    batchStatement.addAll(mStatements);
 
     // TODO: Possibly check that execution worked correctly.
     ResultSet resultSet = mTable.getAdmin().getSession().execute(batchStatement);
@@ -232,7 +229,7 @@ public final class CassandraAtomicKijiPutter implements AtomicKijiPutter {
   /** {@inheritDoc} */
   @Override
   public <T> boolean checkAndCommit(String family, String qualifier, T value) throws IOException {
-    Preconditions.checkState(mHopper != null,
+    Preconditions.checkState(mStatements != null,
         "checkAndCommit() must be paired with a call to begin()");
     final State state = mState.get();
     Preconditions.checkState(state == State.OPEN,
@@ -261,63 +258,10 @@ public final class CassandraAtomicKijiPutter implements AtomicKijiPutter {
     throw new KijiIOException("Cassandra Kiji cannot yet support check-and-commit that inserts more than one cell.");
   }
 
-  /**
-   * Create a list of CQL Statements for inserting data into a table.
-   *
-   * @param table
-   * @param entityId
-   * @param keyValues
-   * @return
-   */
-  private static List<Statement> createCqlStatementsFromKeyValues(
-      CassandraKijiTable table,
-      EntityId entityId,
-      List<CassandraKeyValue> keyValues) {
-
-    // Get the Cassandra table name for this column family
-    String cassandraTableName = KijiManagedCassandraTableName.getKijiTableName(
-        table.getURI(),
-        table.getName()).toString();
-
-
-    // TODO: Create this bound statement once, in the constructor.
-    String queryString = String.format(
-        "INSERT into %s (%s, %s, %s, %s, %s, %s) VALUES (?, ?, ?, ?, ?, ?)",
-        cassandraTableName,
-        CassandraKiji.CASSANDRA_KEY_COL,
-        CassandraKiji.CASSANDRA_LOCALITY_GROUP_COL,
-        CassandraKiji.CASSANDRA_FAMILY_COL,
-        CassandraKiji.CASSANDRA_QUALIFIER_COL,
-        CassandraKiji.CASSANDRA_VERSION_COL,
-        CassandraKiji.CASSANDRA_VALUE_COL
-    );
-    LOG.info(queryString);
-
-    PreparedStatement preparedStatement = table.getAdmin().getSession().prepare(queryString);
-
-    ArrayList<Statement> statements = new ArrayList<Statement>();
-
-    final ByteBuffer rowKey = CassandraByteUtil.bytesToByteBuffer(entityId.getHBaseRowKey());
-
-    for (CassandraKeyValue kv : keyValues) {
-      LOG.info("Binding timestamp " + kv.getTimestamp());
-      statements.add(preparedStatement.bind(
-          rowKey,
-          kv.getLocalityGroup(),
-          kv.getFamily(),
-          kv.getQualifier(),
-          kv.getTimestamp(),
-          CassandraByteUtil.bytesToByteBuffer(kv.getValue())
-      ));
-    }
-
-    return statements;
-  }
-
   /** {@inheritDoc} */
   @Override
   public void rollback() {
-    Preconditions.checkState(mHopper != null, "rollback() must be paired with a call to begin()");
+    Preconditions.checkState(mStatements != null, "rollback() must be paired with a call to begin()");
     final State state = mState.get();
     Preconditions.checkState(state == State.OPEN,
         "Cannot rollback a transaction on an AtomicKijiPutter instance in state %s.", state);
@@ -327,14 +271,17 @@ public final class CassandraAtomicKijiPutter implements AtomicKijiPutter {
   /** {@inheritDoc} */
   @Override
   public <T> void put(String family, String qualifier, T value) throws IOException {
-    //put(family, qualifier, HConstants.LATEST_TIMESTAMP, value);
+    if (mWriterCommon.isCounterColumn(family, qualifier)) {
+      throw new UnsupportedOperationException(
+          "Cannot modify counters within Cassandra atomic putter.");
+    }
     put(family, qualifier, System.currentTimeMillis(), value);
   }
 
   /** {@inheritDoc} */
   @Override
   public <T> void put(String family, String qualifier, long timestamp, T value) throws IOException {
-    Preconditions.checkState(mHopper != null, "calls to put() must be between calls to begin() and "
+    Preconditions.checkState(mStatements != null, "calls to put() must be between calls to begin() and "
         + "commit(), checkAndCommit(), or rollback()");
     final State state = mState.get();
     Preconditions.checkState(state == State.OPEN,
@@ -348,14 +295,9 @@ public final class CassandraAtomicKijiPutter implements AtomicKijiPutter {
     final KijiColumnName kijiColumnName = new KijiColumnName(family, qualifier);
     CassandraColumnNameTranslator translator = (CassandraColumnNameTranslator)capsule.getColumnNameTranslator();
 
-    // Somewhat abusive here to use the HBase KeyValue to keep track of stuff to insert in a
-    // Cassandra table, but KeyValue stores the family, qualifier, version, and value properly.
-    mHopper.add(new CassandraKeyValue(
-        translator.toCassandraLocalityGroup(kijiColumnName),
-        translator.toCassandraColumnFamily(kijiColumnName),
-        translator.toCassandraColumnQualifier(kijiColumnName),
-        timestamp,
-        encoded));
+    Statement statement = mWriterCommon.getStatementPutNotCounter(
+        mEntityId, family, qualifier, timestamp, value);
+    mStatements.add(statement);
   }
 
   /**
@@ -387,34 +329,12 @@ public final class CassandraAtomicKijiPutter implements AtomicKijiPutter {
     final State oldState = mState.getAndSet(State.CLOSED);
     Preconditions.checkState(oldState == State.OPEN,
         "Cannot close an AtomicKijiPutter instance in state %s.", oldState);
-    if (mHopper != null) {
+    if (mStatements != null) {
       LOG.warn("Closing HBaseAtomicKijiPutter while a transaction on table {} on entity ID {} is "
           + "in progress. Rolling back transaction.", mTable.getURI(), mEntityId);
       reset();
     }
     mTable.unregisterLayoutConsumer(mInnerLayoutUpdater);
     mTable.release();
-  }
-
-  private class CassandraKeyValue {
-    final String mLocalityGroup;
-    final String mFamily;
-    final String mQualifier;
-    final Long mTimestamp;
-    final byte[] mValue;
-
-    CassandraKeyValue(String localityGroup, String family, String qualifier, Long timestamp, byte[] value){
-      mFamily = family;
-      mQualifier = qualifier;
-      mTimestamp = timestamp;
-      mLocalityGroup = localityGroup;
-      mValue = value;
-    }
-
-    public String getLocalityGroup() { return mLocalityGroup; }
-    public String getFamily() { return mFamily; }
-    public String getQualifier() { return mQualifier; }
-    public Long getTimestamp() { return mTimestamp; }
-    public byte[] getValue() { return mValue; }
   }
 }
