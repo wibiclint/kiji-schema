@@ -328,9 +328,16 @@ public class CassandraKijiBufferedWriter implements KijiBufferedWriter {
   /** {@inheritDoc} */
   @Override
   public void deleteCell(EntityId entityId, String family, String qualifier) throws IOException {
-    throw new UnsupportedOperationException(
-        "Cannot delete only most-recent version of a cell in Cassandra Kiji."
-    );
+    // Okay if this is a counter, because we know what the timestamp is.
+    if (mWriterCommon.isCounterColumn(family, qualifier)) {
+      Statement statement = mWriterCommon.getStatementDeleteCell(
+          entityId, family, qualifier, KConstants.CASSANDRA_COUNTER_TIMESTAMP);
+      updateBufferWithCounterDelete(statement);
+    } else {
+      throw new UnsupportedOperationException(
+          "Cannot delete only most-recent version of a cell in Cassandra Kiji."
+      );
+    }
   }
 
   /** {@inheritDoc} */
