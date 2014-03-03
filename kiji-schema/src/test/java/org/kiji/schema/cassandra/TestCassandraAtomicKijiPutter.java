@@ -19,116 +19,169 @@
 
 package org.kiji.schema.cassandra;
 
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.*;
 import org.kiji.schema.*;
 import org.kiji.schema.layout.KijiTableLayout;
 import org.kiji.schema.layout.KijiTableLayouts;
 import org.kiji.schema.util.InstanceBuilder;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.Assert.*;
 
 public class TestCassandraAtomicKijiPutter extends CassandraKijiClientTest {
-  private Kiji mKiji;
-  private KijiTable mTable;
+  private static final Logger LOG = LoggerFactory.getLogger(TestCassandraAtomicKijiPutter.class);
+
+  private static KijiTable mTable;
+  private KijiTableWriter mWriter;
   private AtomicKijiPutter mPutter;
   private KijiTableReader mReader;
-/*
+  private EntityId mEntityId;
+
+  /** Use to create unique entity IDs for each test case. */
+  private static AtomicInteger testIdCounter;
+
+  // Useful shortcuts for families, qualifiers, and values.
+  private static final String MAP = "experiments";
+  private static final String INFO = "info";
+  private static final String VISITS = "visits";
+  private static final String NAME = "name";
+  private static final String Q0 = "q0";
+  private static final String MR_BONKERS = "Mr Bonkers";
+  private static final String BIRDHEAD = "Giant Robot-Birdhead";
+  private static final String AMINO_MAN = "Amino Man";
+
+  @BeforeClass
+  public static void initShared() {
+    CassandraKijiClientTest clientTest = new CassandraKijiClientTest();
+    testIdCounter = new AtomicInteger(0);
+    try {
+      clientTest.setupKijiTest();
+      Kiji kiji = clientTest.getKiji();
+      // Use the counter test layout so that we can verify that trying to modify counters in an
+      // atomic putter causes an exception.
+      kiji.createTable(KijiTableLayouts.getLayout(KijiTableLayouts.COUNTER_TEST));
+      mTable = kiji.openTable("user");
+    } catch (Exception e) {
+      throw new KijiIOException(e);
+    }
+
+  }
+
   @Before
-  public void setupEnvironment() throws Exception {
-    // Get the test table layouts.
-    final KijiTableLayout layout = KijiTableLayout.newLayout(
-        KijiTableLayouts.getLayout(KijiTableLayouts.COUNTER_TEST));
-
-    // Populate the environment.
-    mKiji = new InstanceBuilder(getKiji())
-        .withTable("user", layout)
-            .withRow("foo")
-                .withFamily("info")
-                    .withQualifier("name").withValue(1L, "foo-val")
-                    .withQualifier("visits").withValue(1L, 42L)
-            .withRow("bar")
-                .withFamily("info")
-                    .withQualifier("visits").withValue(1L, 100L)
-        .build();
-
+  public final void setupEnvironment() throws Exception {
     // Fill local variables.
-    mTable = mKiji.openTable("user");
-    mPutter = mTable.getWriterFactory().openAtomicPutter();
     mReader = mTable.openTableReader();
+    mWriter = mTable.openTableWriter();
+    mPutter = mTable.getWriterFactory().openAtomicPutter();
+    mEntityId = mTable.getEntityId("eid-" + testIdCounter.getAndIncrement());
   }
 
   @After
-  public void cleanupEnvironment() throws IOException {
-    mPutter.close();
+  public final void cleanupEnvironment() throws IOException {
     mReader.close();
+    mWriter.close();
+    mPutter.close();
+  }
+
+  @AfterClass
+  public static void cleanupClass() throws IOException {
     mTable.release();
   }
 
   @Test
   public void testBasicPut() throws Exception {
-    final EntityId eid = mTable.getEntityId("foo");
-    final KijiDataRequest request = KijiDataRequest.create("info", "visits");
+    final KijiDataRequest request = KijiDataRequest.create(INFO, NAME);
 
-    mPutter.begin(eid);
-    assertEquals(42L,
-        mReader.get(eid, request).getMostRecentCell("info", "visits").getData());
-    mPutter.put("info", "visits", 45L);
-    assertEquals(42L,
-        mReader.get(eid, request).getMostRecentCell("info", "visits").getData());
+    mWriter.put(mEntityId, INFO, NAME, MR_BONKERS);
+    assertEquals(
+        MR_BONKERS,
+        mReader.get(mEntityId, request).getMostRecentValue(INFO, NAME).toString()
+    );
+
+    mPutter.begin(mEntityId);
+    mPutter.put(INFO, NAME, BIRDHEAD);
+
+    assertEquals(
+        MR_BONKERS,
+        mReader.get(mEntityId, request).getMostRecentValue(INFO, NAME).toString()
+    );
+
     mPutter.commit();
-    assertEquals(45L,
-        mReader.get(eid, request).getMostRecentCell("info", "visits").getData());
+    assertEquals(
+        BIRDHEAD,
+        mReader.get(mEntityId, request).getMostRecentValue(INFO, NAME).toString()
+    );
+
   }
 
   @Test
-  public void testPutWithTimestamp() throws Exception {
-    final EntityId eid = mTable.getEntityId("foo");
-    final KijiDataRequest request = KijiDataRequest.create("info", "visits");
+  public void testBasicPutWithTimestamp() throws Exception {
+    final KijiDataRequest request = KijiDataRequest.builder().addColumns(
+        KijiDataRequestBuilder.ColumnsDef.create().withMaxVersions(100).add(INFO, NAME)).build();
 
-    assertEquals(42L,
-        mReader.get(eid, request).getMostRecentCell("info", "visits").getData());
+    mWriter.put(mEntityId, INFO, NAME, 5L, MR_BONKERS);
+    assertEquals( MR_BONKERS, mReader.get(mEntityId, request).getValue(INFO, NAME, 5L).toString() );
 
-    mPutter.begin(eid);
-    mPutter.put("info", "visits", 10L, 45L);
+    mPutter.begin(mEntityId);
+    mPutter.put(INFO, NAME, 0L, BIRDHEAD);
+    mPutter.put(INFO, NAME, 10L, AMINO_MAN);
+
+    assertEquals( MR_BONKERS, mReader.get(mEntityId, request).getValue(INFO, NAME, 5L).toString() );
+
     mPutter.commit();
 
-    assertEquals(45L,
-        mReader.get(eid, request).getMostRecentCell("info", "visits").getData());
-
-    mPutter.begin(eid);
-    mPutter.put("info", "visits", 5L, 50L);
-    mPutter.commit();
-
-    assertEquals(45L,
-        mReader.get(eid, request).getMostRecentCell("info", "visits").getData());
+    KijiRowData rowData = mReader.get(mEntityId, request);
+    assertEquals(BIRDHEAD, rowData.getValue(INFO, NAME, 0L).toString());
+    assertEquals(MR_BONKERS, rowData.getValue(INFO, NAME, 5L).toString());
+    assertEquals(AMINO_MAN, rowData.getValue(INFO, NAME, 10L).toString());
   }
 
   @Test
-  public void testCompoundPut() throws Exception {
-    final EntityId eid = mTable.getEntityId("foo");
-    final KijiDataRequest nameRequest = KijiDataRequest.create("info", "name");
-    final KijiDataRequest visitsRequest = KijiDataRequest.create("info", "visits");
-
-    assertEquals("foo-val",
-        mReader.get(eid, nameRequest).getMostRecentCell("info", "name").getData().toString());
-    assertEquals(42L,
-        mReader.get(eid, visitsRequest).getMostRecentCell("info", "visits").getData());
-
-    mPutter.begin(eid);
-    mPutter.put("info", "name", "foo-name");
-    mPutter.put("info", "visits", 45L);
-    mPutter.commit();
-
-    assertEquals("foo-name",
-        mReader.get(eid, nameRequest).getMostRecentCell("info", "name").getData().toString());
-    assertEquals(45L,
-        mReader.get(eid, visitsRequest).getMostRecentCell("info", "visits").getData());
+  public void testSkipBegin() throws Exception {
+    try {
+      mPutter.put(INFO, NAME, MR_BONKERS);
+      fail("An exception should have been thrown.");
+    } catch (IllegalStateException e) {
+      assertNotNull(e);
+    }
   }
 
+  @Test
+  public void testBeginTwice() throws Exception {
+    mPutter.begin(mEntityId);
+    try {
+      mPutter.begin(mEntityId);
+      fail("An exception should have been thrown.");
+    } catch (IllegalStateException e) {
+      assertNotNull(e);
+    }
+  }
+
+  @Test
+  public void testRollback() throws Exception {
+    mPutter.begin(mEntityId);
+    mPutter.put(INFO, NAME, 0L, BIRDHEAD);
+    mPutter.put(INFO, NAME, 10L, AMINO_MAN);
+    mPutter.rollback();
+
+    assertNull(mPutter.getEntityId());
+
+    try {
+      mPutter.commit();
+      fail("An exception should have been thrown.");
+    } catch (IllegalStateException e) {
+      assertNotNull(e);
+    }
+  }
+
+  // TODO: Any test to make sure that everything is really atomic?
+
+  // TODO: Uncomment these tests when compare-and-set is ready.
+  /*
   @Test
   public void testBasicCheckandCommit() throws Exception {
     final EntityId eid = mTable.getEntityId("foo");
@@ -169,47 +222,5 @@ public class TestCassandraAtomicKijiPutter extends CassandraKijiClientTest {
         mReader.get(eid, nameRequest).getMostRecentValue("info", "name").toString());
   }
 
-  @Test
-  public void testSkipBegin() throws Exception {
-    try {
-      mPutter.put("info", "visits", 45L);
-      fail("An exception should have been thrown.");
-    } catch (IllegalStateException ise) {
-      assertEquals("calls to put() must be between calls to begin() and "
-          + "commit(), checkAndCommit(), or rollback()", ise.getMessage());
-    }
-  }
-
-  @Test
-  public void testBeginTwice() throws Exception {
-    final EntityId eid = mTable.getEntityId("foo");
-
-    mPutter.begin(eid);
-    try {
-      mPutter.begin(eid);
-      fail("An exception should have been thrown.");
-    } catch (IllegalStateException ise) {
-      assertEquals("There is already a transaction in progress on row: hbase=foo. "
-          + "Call commit(), checkAndCommit(), or rollback() to clear the Put.", ise.getMessage());
-    }
-  }
-
-  @Test
-  public void testRollback() throws Exception {
-    final EntityId eid = mTable.getEntityId("foo");
-
-    mPutter.begin(eid);
-    mPutter.put("info", "visits", 45L);
-    mPutter.put("info", "name", "foo-name");
-    mPutter.rollback();
-
-    assertEquals(null, mPutter.getEntityId());
-    try {
-      mPutter.commit();
-      fail("An exception should have been thrown.");
-    } catch (IllegalStateException ise) {
-      assertEquals("commit() must be paired with a call to begin()", ise.getMessage());
-    }
-  }
   */
 }

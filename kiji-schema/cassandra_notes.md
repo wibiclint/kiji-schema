@@ -26,17 +26,14 @@ Open TODOs
 - `CassandraKijiTableReader` has a few missing functions that should be easy to add (e.g.,
   `bulkGet`).
 
-- We need a C* version of `AtomicKijiPutter`.
-  - The only trick here is figuring out how to do the compare-and-set
+- Compare-and-set in the C* `AtomicKijiPutter`
+  - All non-compare-and-set functionality is complete
   - CQL has support for "lightweight transactions" that perform compare-and-set, but it does not
     currently support batch operations.
   - I started a
     [thread](http://mail-archives.apache.org/mod_mbox/cassandra-user/201402.mbox/%3CCAKkz8Q3Q9KC0uhX5-XmZ4w8HXyL8Bt_-A1iJbn3xGW7uYvJ0xw%40mail.gmail.com%3E)
     about this on the users list.  C* 2.0.6 will have some additional support for batch
     compare-and-set via static columns.
-
-- The various table readers and writers are still missing some functionality (e.g., different
-  flavors of deletes).  These shouldn't be too hard to add.
 
 - There are still some HBase-specific classes that need to be refactored into `impl` packages.
 
