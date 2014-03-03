@@ -13,8 +13,6 @@ Open TODOs
 
 - Bulk importers!
 
-- Add support for counters (CQL requires counters to be in separate tables, annoying...)
-
 - Security / permission checking is not implemented at all now.
 
 - Add support for filters (even if everything has to happen on the client for now).
@@ -483,4 +481,44 @@ encounter (e.g., with regard to fetching data from lots of different columns at 
 having different filters, max versions, etc.).
 
 
+Counters
+========
 
+Cassandra has limited support for
+[counters:](http://www.datastax.com/documentation/cql/3.1/cql/cql_using/use_counter_t.html)
+
+- There is a separate CQL data type for counters.
+- Counters must live in dedicated counter tables.
+- A user cannot set a counter value - he/she can only increment a counter.
+- If a user deletes a counter, the counter can never be used again (it will always be stuck at
+  `null` if the user tries to increment it again).
+
+This is different from HBase, in which (AFAIK) any column can be treated as a counter (just be
+atomically interpreting its value as a long, incrementing it, and storing the results with the
+current timestamp).  To support counters as best as we can in Cassandra Kiji, therefore, we do the
+following:
+
+- For every Kiji table, we create a second backing C* table (in addition to the one described
+  earlier).  This table stores counter values and has the same layout as the original backing C*
+  table, except that the values are of type `counter` instead of `blob`.
+
+- Users can read counter values, but only if they do not specify a timestamp (which, according to
+  the Kiji API, means that they are reading the most-recent value of the counter).
+
+- Users can delete a counter, but if they do so, they will never be able to do anything useful with
+  the counter again.  Subsequent writes and deletes will not error out, but will not do anything.
+
+- Users can write counter values with a `KijiTableWriter`, but only if they do not specify a
+  timestamp (which, according to the Kiji API, means that they are writing with the current
+  timestamp).  We implement the write by reading back the current value of the counter and then
+  incrementing the counter by the difference between the current value and the desired new value.
+
+- Users cannot write a counter with a `KijiBufferedWriter` or with an `AtomicKijiPutter`, since both
+  of those perform atomic sets of writes (and therefore cannot support our read-and-increment
+  operation).
+
+- Users can delete counters (or columns, families, or rows containing counters) in a
+  `KijiTableWriter` or a `KijiBufferedWriter`.
+
+Some traffic on the Cassandra users' mailing list indicates that the current (2.0.4) version of
+Cassandra has problems with counters "drifting."  This should be fixed by version 2.1.
