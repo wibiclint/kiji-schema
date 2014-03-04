@@ -65,7 +65,7 @@ Open TODOs
 - Need comprehensible error message if the user does not have Cassandra running (need an error
   message that is better than a stack trace)
 - Desperately need more unit tests for the Cassandra / Hadoop code that I wrote, also for the
-  record reader and input format in Kiji MR
+  record reader and input format in Kiji MR.
 - Add integration tests
   - Especially need tests with multiple Cassandra nodes to make sure that the new Cassandra / Hadoop
     code in KijiMR and in the Cassandra2/Hadoop2 interface works properly.
@@ -76,7 +76,8 @@ Open TODOs
   RPC calls to provide a coherent view of a given Kiji row.  There is some trickiness that can occur
   if some Kiji rows do not have any data present whatsoever for a given column.  I had an e-mail
   thread with Joe about this and there is a `token` function that we use to order the entity IDs.
-- Need unit tests for changing table layouts
+  I added some unit tests, but more (especially integration tests) would be useful.
+- Need unit tests for the command-line tools
 
 ### General code organization
 
@@ -128,6 +129,10 @@ Open TODOs
   it).
 
 ### Performance
+
+- We may be doing a lot of unnecessary conversions from `ByteBuffer` to `byte[]` to final data types
+  when we read data back from Cassandra tables.  (I have not looked into this much, but we should
+  check.)
 
 - We can use the asynchronous `Session#executeAsync` method whenever we are issuing multiple
   requests for data to the Cassandra cluster.
@@ -528,3 +533,31 @@ following:
 
 Some traffic on the Cassandra users' mailing list indicates that the current (2.0.4) version of
 Cassandra has problems with counters "drifting."  This should be fixed by version 2.1.
+
+
+Filters
+=======
+
+The biggest open question in Cassandra Kiji is how to implement filters.  We have a range of options
+open to us, between two extremes:
+
+1. Fetch all of the data for an entire row (`SELECT * FROM mytable WHERE key=mykey`) and do all
+filtering on the client side, in `CassandraKijiRowData`.
+
+2. Fetch the data for a given `KijiDataRequest` in a large number of fine-grained queries, likely
+one per qualified column, that will allow us to make greater us of the limited client-side filtering
+options available in CQL (e.g., inequalities on columns and using `LIMIT`).
+
+Several risks that I see:
+
+- A user may design a query such that he expects the fetched data to _just_ fit into memory.  If,
+  however, we have to use client-side filtering and we therefore fetch more data than the user has
+  specified (and therefore more than he expects), the user may run out of memory.  To avoid this
+  problem, we need to enable Cassandra paging in our requests to the Cassandra cluster, but figuring
+  out when to do this, what setting to use for the paging, etc. is almost impossible.
+
+- For some queries, avoiding massive amounts of client-side filtering may be impossible.
+  Considering, for example, the case in which a user has a map-type family with 1M qualifiers, each
+  of which has 1K versions.  If the users requests the most-recent version (the default setting for
+  a `KijiDataRequest` of every column in the map-type family, we will have not choice but to fetch
+  all of the data for all of the columns and filter on the client side.
