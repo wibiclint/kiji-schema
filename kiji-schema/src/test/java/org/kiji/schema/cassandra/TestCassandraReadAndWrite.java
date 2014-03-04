@@ -19,18 +19,17 @@
 
 package org.kiji.schema.cassandra;
 
-import org.apache.hadoop.hbase.HConstants;
 import org.junit.*;
 import org.kiji.schema.*;
 import org.kiji.schema.KijiDataRequestBuilder.ColumnsDef;
-import org.kiji.schema.impl.cassandra.CassandraKijiTable;
 import org.kiji.schema.layout.KijiTableLayouts;
-import org.kiji.schema.util.VersionInfo;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.Assert.*;
@@ -368,6 +367,34 @@ public class TestCassandraReadAndWrite extends CassandraKijiClientTest {
       fail("Exception should have occurred.");
     } catch (UnsupportedOperationException e) {
       assertNotNull(e);
+    }
+  }
+
+  @Test
+  public void testBulkGet() throws Exception {
+    // Write data for a bunch of rows.
+    final int NUM_ROWS = 10;
+    ArrayList<EntityId> entityIds = new ArrayList<EntityId>();
+    for (int rowNum = 0; rowNum < NUM_ROWS; rowNum++) {
+      EntityId eid = mTable.getEntityId("row#" + rowNum);
+      mWriter.put(eid, "family", "column", "This is row " + rowNum + ".");
+      entityIds.add(eid);
+    }
+
+    KijiDataRequest request = KijiDataRequest.create("family", "column");
+
+    List<KijiRowData> dataList = mReader.bulkGet(entityIds, request);
+
+    assertEquals(NUM_ROWS, dataList.size());
+
+    for (int rowNum = 0; rowNum < NUM_ROWS; rowNum++) {
+      KijiRowData data = dataList.get(rowNum);
+      EntityId eid = mTable.getEntityId("row#" + rowNum);
+      assertEquals(eid, data.getEntityId());
+      assertEquals(
+          "This is row " + rowNum + ".",
+          data.getMostRecentValue("family", "column").toString()
+      );
     }
   }
 }

@@ -389,6 +389,8 @@ public final class CassandraKijiTableReader implements KijiTableReader {
       Collection<Row> allRows
     ) throws IOException {
 
+    // NOTE: THIS METHOD IS USED IN KIJI MR.  DON'T DELETE IT JUST BECAUSE IT IS NOT USED IN SCHEMA!
+
     final ReaderLayoutCapsule capsule = mReaderLayoutCapsule;
     // Make sure the request validates against the layout of the table.
     final KijiTableLayout tableLayout = capsule.getLayout();
@@ -405,37 +407,18 @@ public final class CassandraKijiTableReader implements KijiTableReader {
   @Override
   public List<KijiRowData> bulkGet(List<EntityId> entityIds, KijiDataRequest dataRequest)
       throws IOException {
-    /*
+    // Note: This method is somewhat pointless in C* Kiji, since we may have to issue multiple
+    // client requests to Cassandra for a single Kiji read request anyway.
+    // There might be a clever way to translating this to C* by use the WHERE key in (entity Id
+    // list) syntax.
     final State state = mState.get();
     Preconditions.checkState(state == State.OPEN,
         "Cannot get rows from KijiTableReader instance %s in state %s.", this, state);
-
-    // Bulk gets have some overhead associated with them,
-    // so delegate work to get(EntityId, KijiDataRequest) if possible.
-    if (entityIds.size() == 1) {
-      return Collections.singletonList(this.get(entityIds.get(0), dataRequest));
+    List<KijiRowData> data = new ArrayList<KijiRowData>();
+    for (EntityId eid : entityIds) {
+      data.add(get(eid, dataRequest));
     }
-    final ReaderLayoutCapsule capsule = mReaderLayoutCapsule;
-    final KijiTableLayout tableLayout = capsule.getLayout();
-    validateRequestAgainstLayout(dataRequest, tableLayout);
-    final HBaseDataRequestAdapter hbaseRequestAdapter =
-        new HBaseDataRequestAdapter(dataRequest, capsule.getColumnNameTranslator());
-
-    // Construct a list of hbase Gets to send to the HTable.
-    final List<Get> hbaseGetList = makeGetList(entityIds, tableLayout, hbaseRequestAdapter);
-
-    // Send the HTable Gets.
-    final Result[] results = doHBaseGet(hbaseGetList);
-    Preconditions.checkState(entityIds.size() == results.length);
-
-    // Parse the results.  If a Result is null, then the corresponding KijiRowData should also
-    // be null.  This indicates that there was an error retrieving this row.
-    List<KijiRowData> rowDataList = parseResults(results, entityIds, dataRequest, tableLayout);
-
-    return rowDataList;
-    */
-    // TODO: Implement in C*.
-    return null;
+    return data;
   }
 
   /** {@inheritDoc} */

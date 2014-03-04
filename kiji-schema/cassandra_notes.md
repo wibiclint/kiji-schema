@@ -39,10 +39,15 @@ Open TODOs
 
 - TTL, keeping parts of a database in-memory, etc.
 
+- Integration tests (especially those with multiple Cassandra nodes)
+
+- Integration tests with KijiMR
+
 ### General cleanup:
 
 - Update copyrights, check for any stale HBase comments
 - Add super-unstable annotations to this API.  :)
+- Remove / sanitize the huge number of LOG.info messages.
 
 ### Prepared CQL statements:
 
