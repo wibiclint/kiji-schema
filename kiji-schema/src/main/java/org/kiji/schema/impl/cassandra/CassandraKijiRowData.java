@@ -27,8 +27,6 @@ import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
 import org.apache.avro.Schema;
 import org.apache.cassandra.utils.ByteBufferUtil;
-import org.apache.hadoop.hbase.HConstants;
-import org.apache.hadoop.hbase.util.Bytes;
 import org.kiji.annotations.ApiAudience;
 import org.kiji.schema.*;
 import org.kiji.schema.filter.KijiColumnFilter;
@@ -122,6 +120,31 @@ public final class CassandraKijiRowData implements KijiRowData {
     mDataRequest = dataRequest;
     mEntityId = entityId;
     mRows = rows;
+    mDecoderProvider = (decoderProvider != null) ? decoderProvider : createCellProvider(table);
+  }
+
+  /**
+   * Package-private constructor, useful for creating a KijiRowData from a previously-created map.
+   *
+   * @param table
+   * @param dataRequest
+   * @param entityId
+   * @param map
+   * @param decoderProvider
+   * @throws IOException
+   */
+  CassandraKijiRowData(
+      CassandraKijiTable table,
+      KijiDataRequest dataRequest,
+      EntityId entityId,
+      NavigableMap<String, NavigableMap<String, NavigableMap<Long, byte[]>>> map,
+      CellDecoderProvider decoderProvider) throws IOException {
+    mTable = table;
+    mTableLayout = table.getLayout();
+    mDataRequest = dataRequest;
+    mEntityId = entityId;
+    mRows = null;
+    mFilteredMap = map;
     mDecoderProvider = (decoderProvider != null) ? decoderProvider : createCellProvider(table);
   }
 
@@ -705,7 +728,6 @@ public final class CassandraKijiRowData implements KijiRowData {
   /** {@inheritDoc} */
   @Override
   public KijiPager getPager(String family) throws KijiColumnPagingNotEnabledException {
-    /*
     final KijiColumnName kijiFamily = new KijiColumnName(family, null);
     Preconditions.checkState(mTableLayout.getFamilyMap().get(family).isMapType(),
         "getPager(String family) is only enabled on map type column families. "
@@ -713,8 +735,6 @@ public final class CassandraKijiRowData implements KijiRowData {
         + "Please use the getPager(String family, String qualifier) method.",
         family);
     return new CassandraMapFamilyPager(mEntityId, mDataRequest, mTable, kijiFamily);
-    */
-    return null;
   }
 
   /** {@inheritDoc} */

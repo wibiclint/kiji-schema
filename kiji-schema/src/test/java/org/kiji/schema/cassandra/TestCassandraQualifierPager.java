@@ -21,10 +21,7 @@ package org.kiji.schema.cassandra;
 
 import com.google.common.collect.Lists;
 import org.apache.hadoop.hbase.HConstants;
-import org.junit.After;
-import org.junit.Assert;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.*;
 import org.kiji.schema.*;
 import org.kiji.schema.KijiDataRequestBuilder.ColumnsDef;
 import org.kiji.schema.filter.KijiColumnRangeFilter;
@@ -37,50 +34,61 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.util.List;
 import java.util.NoSuchElementException;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.Assert.*;
 
 public class TestCassandraQualifierPager extends CassandraKijiClientTest {
   private static final Logger LOG = LoggerFactory.getLogger(TestCassandraQualifierPager.class);
 
+  private static KijiTable mTable;
   private KijiTableReader mReader;
-  private KijiTable mTable;
-
+  private static EntityId mEntityId;
   private static final int NJOBS = 5;
   private static final long NTIMESTAMPS = 5;
 
-  @Before
-  public final void setupTestCassandraQualifierPager() throws Exception {
-    final Kiji kiji = getKiji();
+  @BeforeClass
+  public static void setupTestCassandraQualifierPager() throws Exception {
+    CassandraKijiClientTest clientTest = new CassandraKijiClientTest();
+    clientTest.setupKijiTest();
+
+    Kiji kiji = clientTest.getKiji();
     kiji.createTable(KijiTableLayouts.getLayout(KijiTableLayouts.PAGING_TEST));
 
     mTable = kiji.openTable("user");
-    final EntityId eid = mTable.getEntityId("me");
+    mEntityId = mTable.getEntityId("me");
+
     final KijiTableWriter writer = mTable.openTableWriter();
     try {
       for (int job = 0; job < NJOBS; ++job) {
         for (long ts = 1; ts <= NTIMESTAMPS; ++ts) {
-          writer.put(eid, "jobs", String.format("j%d", job), ts, String.format("j%d-t%d", job, ts));
+          writer.put(mEntityId, "jobs", String.format("j%d", job), ts, String.format("j%d-t%d", job, ts));
         }
       }
     } finally {
       writer.close();
     }
+  }
 
+  @Before
+  public final void setupEnvironment() throws Exception {
+    // Fill local variables.
     mReader = mTable.openTableReader();
   }
 
   @After
-  public final void teardownTestCassandraQualifierPager() throws IOException {
+  public final void cleanupEnvironment() throws IOException {
     mReader.close();
+  }
+
+  @AfterClass
+  public static void cleanupClass() throws IOException {
     mTable.release();
   }
 
   /** Test a qualifier pager on a map-type family with no user filter. */
   @Test
   public void testQualifiersPager() throws IOException {
-    final EntityId eid = mTable.getEntityId("me");
-
     final int pageSize = 2;
     final KijiDataRequest dataRequest = KijiDataRequest.builder()
         .addColumns(ColumnsDef.create()
@@ -89,7 +97,7 @@ public class TestCassandraQualifierPager extends CassandraKijiClientTest {
 
     final CassandraQualifierPager pager =
         new CassandraQualifierPager(
-            eid, dataRequest, (CassandraKijiTable) mTable, new KijiColumnName("jobs"));
+            mEntityId, dataRequest, (CassandraKijiTable) mTable, new KijiColumnName("jobs"));
     try {
       assertTrue(pager.hasNext());
 
@@ -123,8 +131,6 @@ public class TestCassandraQualifierPager extends CassandraKijiClientTest {
   /** Test a qualifier pager on a map-type family with a user filter that discards everything. */
   @Test
   public void testQualifiersPagerWithUserFilterEmpty() throws IOException {
-    final EntityId eid = mTable.getEntityId("me");
-
     final int pageSize = 2;
     final KijiDataRequest dataRequest = KijiDataRequest.builder()
         .addColumns(ColumnsDef.create()
@@ -135,7 +141,7 @@ public class TestCassandraQualifierPager extends CassandraKijiClientTest {
 
     final CassandraQualifierPager pager =
         new CassandraQualifierPager(
-            eid, dataRequest, (CassandraKijiTable) mTable, new KijiColumnName("jobs"));
+            mEntityId, dataRequest, (CassandraKijiTable) mTable, new KijiColumnName("jobs"));
     try {
       assertTrue(pager.hasNext());
       assertArrayEquals(new String[]{}, pager.next());
@@ -154,8 +160,6 @@ public class TestCassandraQualifierPager extends CassandraKijiClientTest {
   /** Test a qualifier pager on a map-type family with a user filter. */
   @Test
   public void testQualifiersPagerWithUserFilter() throws IOException {
-    final EntityId eid = mTable.getEntityId("me");
-
     final int pageSize = 2;
     final KijiDataRequest dataRequest = KijiDataRequest.builder()
         .addColumns(ColumnsDef.create()
@@ -166,7 +170,7 @@ public class TestCassandraQualifierPager extends CassandraKijiClientTest {
 
     final CassandraQualifierPager pager =
         new CassandraQualifierPager(
-            eid, dataRequest, (CassandraKijiTable) mTable, new KijiColumnName("jobs"));
+            mEntityId, dataRequest, (CassandraKijiTable) mTable, new KijiColumnName("jobs"));
     try {
       assertTrue(pager.hasNext());
 
@@ -200,8 +204,6 @@ public class TestCassandraQualifierPager extends CassandraKijiClientTest {
   /** Test a qualifier pager on a map-type family with a user filter and several pages. */
   @Test
   public void testQualifiersPagerWithUserFilter2() throws IOException {
-    final EntityId eid = mTable.getEntityId("me");
-
     final int pageSize = 2;
     final KijiDataRequest dataRequest = KijiDataRequest.builder()
         .addColumns(ColumnsDef.create()
@@ -212,7 +214,7 @@ public class TestCassandraQualifierPager extends CassandraKijiClientTest {
 
     final CassandraQualifierPager pager =
         new CassandraQualifierPager(
-            eid, dataRequest, (CassandraKijiTable) mTable, new KijiColumnName("jobs"));
+            mEntityId, dataRequest, (CassandraKijiTable) mTable, new KijiColumnName("jobs"));
     try {
       assertTrue(pager.hasNext());
 
