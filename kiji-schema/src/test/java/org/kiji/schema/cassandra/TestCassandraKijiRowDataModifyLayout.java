@@ -24,22 +24,16 @@ import org.apache.avro.Schema;
 import org.apache.avro.Schema.Field;
 import org.apache.avro.generic.GenericData;
 import org.apache.avro.generic.GenericRecordBuilder;
-import org.apache.hadoop.hbase.util.Bytes;
 import org.junit.*;
 import org.kiji.schema.*;
 import org.kiji.schema.KijiDataRequestBuilder.ColumnsDef;
-import org.kiji.schema.avro.Node;
 import org.kiji.schema.avro.TableLayoutDesc;
-import org.kiji.schema.impl.cassandra.CassandraKijiRowData;
+import org.kiji.schema.layout.KijiTableLayout;
 import org.kiji.schema.layout.KijiTableLayouts;
 import org.kiji.schema.util.InstanceBuilder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.IOException;
-import java.util.Iterator;
-import java.util.List;
-import java.util.NavigableMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.Assert.*;
@@ -65,89 +59,37 @@ public class TestCassandraKijiRowDataModifyLayout extends CassandraKijiClientTes
 
   private static final String TABLE_NAME = "row_data_test_table";
 
-  private static String FAMILY = "family";
-  private static String EMPTY = "empty";
-  private static String QUAL0 = "qual0";
-  private static String QUAL1 = "qual1";
-  private static String QUAL2 = "qual2";
-  private static String QUAL3 = "qual3";
-  private static String NODEQUAL0 = "nodequal0";
-  private static String NODEQUAL1 = "nodequal1";
-  private static String MAP = "map";
-  private static String KEY0 = "key0";
-  private static String KEY1 = "key1";
-  private static String KEY2 = "key2";
-
-  private final static int KEY0_VAL = 100;
-  private final static int KEY1_VAL = 101;
-
-  private EntityIdFactory mEntityIdFactory;
-
-  /** KijiTable used for some tests (named TABLE_NAME). */
-  private KijiTable mTable;
-
-  private static final Node mNode0 = Node.newBuilder().setLabel("node0").build();
-  private static final Node mNode1 = Node.newBuilder().setLabel("node1").build();
-
   /** Use to create unique entity IDs for each test case. */
   private static AtomicInteger testIdCounter;
 
-  /** Unique per test case -- keep tests on different rows. */
-  private EntityId mEntityId;
-  private KijiTableReader mReader;
-  private KijiTableWriter mWriter;
+  private static Kiji mKiji;
 
-  @Before
-  public void init() {
+  // Create a shared Kiji for everyone.
+  @BeforeClass
+  public static void initShared() {
     CassandraKijiClientTest clientTest = new CassandraKijiClientTest();
     testIdCounter = new AtomicInteger(0);
     try {
       clientTest.setupKijiTest();
-      Kiji kiji = clientTest.getKiji();
-      kiji.createTable(KijiTableLayouts.getLayout(TEST_LAYOUT_V1));
-
-      mTable = kiji.openTable(TABLE_NAME);
-      /*
-      final EntityId eid = mTable.getEntityId("me");
-      final KijiTableWriter writer = mTable.openTableWriter();
-      try {
-        writer.put(eid, "info", "name", 1L, "me-one");
-        writer.put(eid, "info", "name", 2L, "me-two");
-        writer.put(eid, "info", "name", 3L, "me-three");
-        writer.put(eid, "info", "name", 4L, "me-four");
-        writer.put(eid, "info", "name", 5L, "me-five");
-
-        for (int job = 0; job < NJOBS; ++job) {
-          for (long ts = 1; ts <= NTIMESTAMPS; ++ts) {
-            writer.put(eid, "jobs", String.format("j%d", job), ts, String.format("j%d-t%d", job, ts));
-          }
-        }
-
-      } finally {
-        writer.close();
-      }
-        */
-      // Fill local variables.
-      mReader = mTable.openTableReader();
-      mWriter = mTable.openTableWriter();
-      mEntityId = mTable.getEntityId("eid-" + testIdCounter.getAndIncrement());
+      mKiji = clientTest.getKiji();
     } catch (Exception e) {
       throw new KijiIOException(e);
     }
+  }
 
+  @Before
+  public void init() {
+    testIdCounter = new AtomicInteger(0);
   }
 
   @After
-  public final void tearDownTestHBaseKijiRowData() throws Exception {
-    mReader.close();
-    mWriter.close();
-    mTable.release();
+  public final void tearDown() throws Exception {
   }
 
   // Tests for KijiRowData.getReaderSchema() with layout-1.3 tables.
   @Test
   public void testGetReaderSchemaLayout13() throws Exception {
-    final Kiji kiji = new InstanceBuilder(createTestKiji())
+    final Kiji kiji = new InstanceBuilder(mKiji)
         .withTable(KijiTableLayouts.getLayout(TEST_LAYOUT_V1_3))
         .build();
     final KijiTable table = kiji.openTable("table");
@@ -175,7 +117,7 @@ public class TestCassandraKijiRowDataModifyLayout extends CassandraKijiClientTes
   @Test
   public void testReadDeletedColumns() throws Exception {
     // Create a separate Kiji here to avoid stepping on the one used elsewhere.
-    final Kiji kiji = createTestKiji();
+    final Kiji kiji = mKiji;
     kiji.createTable(KijiTableLayouts.getLayout(TEST_LAYOUT_V1));
     KijiTable table = kiji.openTable(TABLE_NAME);
     new InstanceBuilder(kiji)
@@ -216,7 +158,7 @@ public class TestCassandraKijiRowDataModifyLayout extends CassandraKijiClientTes
   //        declared reader schemas. This test will be updated accordingly.
   @Test
   public void testWSchemaWhenSpecRecClassNF() throws Exception {
-    final Kiji kiji = getKiji();  // not owned
+    final Kiji kiji = mKiji;
     kiji.createTable(KijiTableLayouts.getLayout(WRITER_SCHEMA_TEST));
     final KijiTable table = kiji.openTable("writer_schema");
     try {
