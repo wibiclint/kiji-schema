@@ -37,6 +37,10 @@ Open TODOs
 
 - There are still some HBase-specific classes that need to be refactored into `impl` packages.
 
+- Support for scanning over primary key ranges
+  - To implement this, we need to use an order-preserving hash function in Cassandra (which all of
+    the C* documentation discourages).
+
 - TTL, keeping parts of a database in-memory, etc.
 
 - Integration tests (especially those with multiple Cassandra nodes)
