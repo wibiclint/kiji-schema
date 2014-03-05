@@ -128,7 +128,7 @@ public abstract class CassandraAdmin implements Closeable {
 
     // TODO: Keep track of all tables associated with this session
     LOG.info("Creating table " + tableName);
-    mSession.execute("CREATE TABLE " + tableName + " " + cassandraTableLayout + ";");
+    getSession().execute("CREATE TABLE " + tableName + " " + cassandraTableLayout + ";");
 
     // Check that the table actually exists
     assert(tableExists(tableName));
