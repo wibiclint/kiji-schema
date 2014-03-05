@@ -122,7 +122,6 @@ public class CassandraDataRequestAdapter {
       KijiTableLayout kijiTableLayout,
       boolean pagingEnabled
   ) throws IOException {
-    // TODO: Use futures for the multiple C* RPCs below to make the code faster.
     // TODO: Or figure out how to combine multiple SELECT statements into a single RPC (IntraVert?).
     // TODO: Or just combine everything into a single SELECT statement!
     LOG.info("---------- Translating KijiDataRequest into Cassandra SELECT statements. ----------");
@@ -141,12 +140,11 @@ public class CassandraDataRequestAdapter {
         table.getURI(),
         table.getName()).toString();
 
-    // Keep track of all of the results coming back from Cassandra
-    //ArrayList<ResultSet> results = new ArrayList<ResultSet>();
-
-    // Keep track of all of the outstanding queries to Cassandra for this data request.
+    // A single Kiji data request can result in many Cassandra queries, so we use asynchronous IO
+    // and keep a list of all of the futures that will contain results from Cassandra.
     HashSet<ResultSetFuture> futures = new HashSet<ResultSetFuture>();
 
+    // If this is not a scan, format the entity ID for Cassandra.
     ByteBuffer entityIdByteBuffer;
     if (bIsScan) {
       entityIdByteBuffer = null;
@@ -165,11 +163,12 @@ public class CassandraDataRequestAdapter {
     // would never get an iterator back with any row keys at all!  Eek!
     int numScanQueries = 0;
 
+    // Use the C* admin to send queries to the C* cluster.
     CassandraAdmin admin = table.getAdmin();
 
-    // Ignore everything for now except for column families and qualifiers.
-    // For now, to keep things simple, we have a separate request for each column (even if there
-    // are multiple columns of interest in the same column family / C* table).
+    // For now, to keep things simple, we have a separate request for each column, even if there
+    // are multiple columns of interest in the same column family that we could potentially put
+    // together into a single query.
     for (KijiDataRequest.Column column : mKijiDataRequest.getColumns()) {
       LOG.info("Processing data request for data request column " + column);
 
@@ -179,11 +178,11 @@ public class CassandraDataRequestAdapter {
         continue;
       }
 
-      // This should never happen, because requests with paging enabled should come from only
-      // explicit KijiPagers, which should create custom data requests for only paged columns.
+      // Requests with paging enabled should come from only explicit KijiPagers, which should
+      // create custom data requests for only paged columns.
       assert (!(pagingEnabled && !column.isPagingEnabled()));
 
-      // Get the translated Kiji family and qualifier.
+      // Translate the Kiji column name.
       KijiColumnName kijiColumnName = new KijiColumnName(column.getName());
       LOG.info("Kiji column name for the requested column is " + kijiColumnName);
       String localityGroup = mColumnNameTranslator.toCassandraLocalityGroup(kijiColumnName);
@@ -200,127 +199,55 @@ public class CassandraDataRequestAdapter {
       // (Right now a data request that asks for "info:foo" and "info:bar" would trigger two
       // separate session.execute(statement) commands.
 
-
       // TODO: If unqualified group-type family, maybe read counter and non-counter values together!
+      // For qualified columns and for map-type families, we can determine whether to retrieve
+      // non-counter or counter values.
+      boolean readCounterValues = maybeContainsCounterValues(table, kijiColumnName);
+      boolean readNonCounterValues = maybeContainsNonCounterValues(table, kijiColumnName);
 
-      boolean isCounter = false;
-      try {
-        // Pick a table name depending on whether this column is a counter or not.
-        isCounter = table
-            .getLayoutCapsule()
-            .getLayout()
-            .getCellSpec(kijiColumnName)
-            .isCounter();
-      } catch (IllegalArgumentException e) {
-        // Do nothing, just assume there are no counters.
-        LOG.warn(String.format(
-            "Not looking for counters in get for unqualified group-type family '%s'",
-            kijiColumnName
-        ));
+      if (readCounterValues) {
+        LOG.info("This column may contain a counter.");
       }
 
-      if (isCounter) {
-        LOG.info("This column contains a counter.");
+      List<String> tableNames = new ArrayList();
+
+      if (readNonCounterValues) {
+        tableNames.add(nonCounterTableName);
       }
 
-      String cassandraTableName = isCounter ? counterTableName : nonCounterTableName;
+      if (readCounterValues) {
+        tableNames.add(counterTableName);
+      }
 
-      // TODO: Support paging in data requests with paging in DataStax API.
-      if (bIsScan && qualifier != null) {
-        // Fully-qualified scan.
-        // Note - we cannot use "LIMIT" in this Cassandra query because we need to perform this
-        // query across multiple rows.
-        String queryString = String.format(
-            "SELECT token(%s), %s, %s, %s, %s, %s, %s FROM %s WHERE %s=? AND %s=? AND %s=? ALLOW FILTERING",
-            CassandraKiji.CASSANDRA_KEY_COL,
-            CassandraKiji.CASSANDRA_KEY_COL,
-            CassandraKiji.CASSANDRA_LOCALITY_GROUP_COL,
-            CassandraKiji.CASSANDRA_FAMILY_COL,
-            CassandraKiji.CASSANDRA_QUALIFIER_COL,
-            CassandraKiji.CASSANDRA_VERSION_COL,
-            CassandraKiji.CASSANDRA_VALUE_COL,
-            cassandraTableName,
-            CassandraKiji.CASSANDRA_LOCALITY_GROUP_COL,
-            CassandraKiji.CASSANDRA_FAMILY_COL,
-            CassandraKiji.CASSANDRA_QUALIFIER_COL
-        );
-        LOG.info("Preparing query string " + queryString);
-        PreparedStatement preparedStatement = admin.getPreparedStatement(queryString);
-        ResultSetFuture res = admin.executeAsync(preparedStatement.bind(localityGroup, family, qualifier));
-        futures.add(res);
-        numScanQueries++;
-      } else if (bIsScan && qualifier == null) {
-        String queryString = String.format(
-            "SELECT token(%s), %s, %s, %s, %s, %s, %s FROM %s WHERE %s=? AND %s=? ALLOW FILTERING",
-            CassandraKiji.CASSANDRA_KEY_COL,
-            CassandraKiji.CASSANDRA_KEY_COL,
-            CassandraKiji.CASSANDRA_LOCALITY_GROUP_COL,
-            CassandraKiji.CASSANDRA_FAMILY_COL,
-            CassandraKiji.CASSANDRA_QUALIFIER_COL,
-            CassandraKiji.CASSANDRA_VERSION_COL,
-            CassandraKiji.CASSANDRA_VALUE_COL,
-            cassandraTableName,
-            CassandraKiji.CASSANDRA_LOCALITY_GROUP_COL,
-            CassandraKiji.CASSANDRA_FAMILY_COL
-        );
-        LOG.info("Preparing query string " + queryString);
-        PreparedStatement preparedStatement = admin.getPreparedStatement(queryString);
-        ResultSetFuture res = admin.executeAsync(preparedStatement.bind(localityGroup, family));
-        futures.add(res);
-        numScanQueries++;
-
-
-      } else {
-        assert(entityId != null);
-
-        Statement boundStatement;
-        if (qualifier != null) {
-          // Fully-qualified get.
-          // TODO: Depending on filters, we may have to drop the LIMIT here.
-          // Let's say that a client makes a data request with a filter with a qualifier regex and
-          // specifies maxVersions.  We cannot put the qualifier regex into
-          String queryString = String.format(
-              "SELECT * FROM %s WHERE %s=? AND %s=? AND %s=? AND %s=? AND %s >= ? and %s < ? LIMIT ?",
+      for (String cassandraTableName : tableNames) {
+        if (bIsScan) {
+          numScanQueries += queryCassandraSingleColumnAndUpdateFuturesScan(
+              admin,
               cassandraTableName,
-              CassandraKiji.CASSANDRA_KEY_COL,
-              CassandraKiji.CASSANDRA_LOCALITY_GROUP_COL,
-              CassandraKiji.CASSANDRA_FAMILY_COL,
-              CassandraKiji.CASSANDRA_QUALIFIER_COL,
-              CassandraKiji.CASSANDRA_VERSION_COL,
-              CassandraKiji.CASSANDRA_VERSION_COL
-          );
-
-          LOG.info("Preparing query string for single-row get of fully-qualified column: " + queryString);
-          LOG.info(String.format("\tUsing limit %d", column.getMaxVersions()));
-
-          PreparedStatement preparedStatement = admin.getPreparedStatement(queryString);
-          boundStatement = preparedStatement.bind(
-              entityIdByteBuffer,
               localityGroup,
               family,
               qualifier,
               minTimestamp,
               maxTimestamp,
-              column.getMaxVersions());
-        } else {
-          String queryString = String.format(
-              "SELECT * FROM %s WHERE %s=? AND %s=? AND %s=?",
-              cassandraTableName,
-              CassandraKiji.CASSANDRA_KEY_COL,
-              CassandraKiji.CASSANDRA_LOCALITY_GROUP_COL,
-              CassandraKiji.CASSANDRA_FAMILY_COL
+              column,
+              futures
           );
-          LOG.info("Preparing query string " + queryString);
+        } else {
+          queryCassandraSingleColumnAndUpdateFuturesGet(
+              entityIdByteBuffer,
+              admin,
+              cassandraTableName,
+              localityGroup,
+              family,
+              qualifier,
+              minTimestamp,
+              maxTimestamp,
+              column,
+              pagingEnabled,
+              futures
+          );
 
-          PreparedStatement preparedStatement = admin.getPreparedStatement(queryString);
-          boundStatement = preparedStatement.bind(entityIdByteBuffer, localityGroup, family);
         }
-        if (pagingEnabled) {
-          int pageSize = column.getPageSize();
-          boundStatement = boundStatement.setFetchSize(pageSize);
-        }
-        ResultSetFuture res = admin.executeAsync(boundStatement);
-        futures.add(res);
       }
     }
 
@@ -332,7 +259,6 @@ public class CassandraDataRequestAdapter {
           CassandraKiji.CASSANDRA_KEY_COL,
           nonCounterTableName
       );
-      LOG.info("Preparing query string " + queryString);
       ResultSetFuture res = admin.executeAsync(queryString);
       futures.add(res);
     }
@@ -344,5 +270,183 @@ public class CassandraDataRequestAdapter {
       results.add(resultSetFuture.getUninterruptibly());
     }
     return results;
+  }
+
+  /**
+   *  Check whether this column could specify non-counter values.  Return false iff this column
+   *  name refers to a fully-qualified column of type COUNTER or a map-type family of type COUNTER.
+   *
+   */
+  private boolean maybeContainsNonCounterValues(
+      CassandraKijiTable table,
+      KijiColumnName kijiColumnName
+  ) throws IOException {
+    boolean isNonCounter = true;
+    try {
+      // Pick a table name depending on whether this column is a counter or not.
+      if (table
+          .getLayoutCapsule()
+          .getLayout()
+          .getCellSpec(kijiColumnName)
+          .isCounter()) {
+        isNonCounter = false;
+      }
+    } catch (IllegalArgumentException e) {
+      // There *could* be non-counter values here.
+    }
+    return isNonCounter;
+  }
+
+  /**
+   *  Check whether this column could specify non-counter values.  Return false iff this column
+   *  name refers to a fully-qualified column of type COUNTER or a map-type family of type COUNTER.
+   *
+   */
+  private boolean maybeContainsCounterValues(
+      CassandraKijiTable table,
+      KijiColumnName kijiColumnName
+  ) throws IOException {
+    boolean isCounter = false;
+    try {
+      // Pick a table name depending on whether this column is a counter or not.
+      isCounter = table
+          .getLayoutCapsule()
+          .getLayout()
+          .getCellSpec(kijiColumnName)
+          .isCounter();
+    } catch (IllegalArgumentException e) {
+      // There *could* be counters here.
+      isCounter = true;
+    }
+    return isCounter;
+  }
+
+  private void queryCassandraSingleColumnAndUpdateFuturesGet(
+      ByteBuffer entityIdByteBuffer,
+      CassandraAdmin admin,
+      String cassandraTableName,
+      String translatedLocalityGroup,
+      String translatedFamily,
+      String translatedQualifier,
+      Long minTimestamp,
+      Long maxTimestamp,
+      KijiDataRequest.Column column,
+      boolean pagingEnabled,
+      HashSet<ResultSetFuture> resultSetFutures) {
+
+    Statement boundStatement;
+    if (translatedQualifier != null) {
+      // Fully-qualified get.
+      // TODO: Depending on filters, we may have to drop the LIMIT here.
+      // Let's say that a client makes a data request with a filter with a qualifier regex and
+      // specifies maxVersions.  We cannot put the qualifier regex into
+      String queryString = String.format(
+          "SELECT * FROM %s WHERE %s=? AND %s=? AND %s=? AND %s=? AND %s >= ? and %s < ? LIMIT ?",
+          cassandraTableName,
+          CassandraKiji.CASSANDRA_KEY_COL,
+          CassandraKiji.CASSANDRA_LOCALITY_GROUP_COL,
+          CassandraKiji.CASSANDRA_FAMILY_COL,
+          CassandraKiji.CASSANDRA_QUALIFIER_COL,
+          CassandraKiji.CASSANDRA_VERSION_COL,
+          CassandraKiji.CASSANDRA_VERSION_COL
+      );
+
+      LOG.info("Preparing query string for single-row get of fully-qualified column: " + queryString);
+      LOG.info(String.format("\tUsing limit %d", column.getMaxVersions()));
+
+      PreparedStatement preparedStatement = admin.getPreparedStatement(queryString);
+      boundStatement = preparedStatement.bind(
+          entityIdByteBuffer,
+          translatedLocalityGroup,
+          translatedFamily,
+          translatedQualifier,
+          minTimestamp,
+          maxTimestamp,
+          column.getMaxVersions());
+    } else {
+      String queryString = String.format(
+          "SELECT * FROM %s WHERE %s=? AND %s=? AND %s=?",
+          cassandraTableName,
+          CassandraKiji.CASSANDRA_KEY_COL,
+          CassandraKiji.CASSANDRA_LOCALITY_GROUP_COL,
+          CassandraKiji.CASSANDRA_FAMILY_COL
+      );
+      LOG.info("Preparing query string " + queryString);
+
+      PreparedStatement preparedStatement = admin.getPreparedStatement(queryString);
+      boundStatement = preparedStatement.bind(
+          entityIdByteBuffer,
+          translatedLocalityGroup,
+          translatedFamily
+      );
+    }
+    if (pagingEnabled) {
+      int pageSize = column.getPageSize();
+      boundStatement = boundStatement.setFetchSize(pageSize);
+    }
+    ResultSetFuture res = admin.executeAsync(boundStatement);
+    resultSetFutures.add(res);
+  }
+
+  private int queryCassandraSingleColumnAndUpdateFuturesScan(
+      CassandraAdmin admin,
+      String cassandraTableName,
+      String translatedLocalityGroup,
+      String translatedFamily,
+      String translatedQualifier,
+      Long minTimestamp,
+      Long maxTimestamp,
+      KijiDataRequest.Column column,
+      HashSet<ResultSetFuture> resultSetFutures) {
+    int numScanQueries = 0;
+
+    if (translatedQualifier != null) {
+      // Fully-qualified scan.
+      // Note - we cannot use "LIMIT" in this Cassandra query because we need to perform this
+      // query across multiple rows.
+      String queryString = String.format(
+          "SELECT token(%s), %s, %s, %s, %s, %s, %s FROM %s WHERE %s=? AND %s=? AND %s=? ALLOW FILTERING",
+          CassandraKiji.CASSANDRA_KEY_COL,
+          CassandraKiji.CASSANDRA_KEY_COL,
+          CassandraKiji.CASSANDRA_LOCALITY_GROUP_COL,
+          CassandraKiji.CASSANDRA_FAMILY_COL,
+          CassandraKiji.CASSANDRA_QUALIFIER_COL,
+          CassandraKiji.CASSANDRA_VERSION_COL,
+          CassandraKiji.CASSANDRA_VALUE_COL,
+          cassandraTableName,
+          CassandraKiji.CASSANDRA_LOCALITY_GROUP_COL,
+          CassandraKiji.CASSANDRA_FAMILY_COL,
+          CassandraKiji.CASSANDRA_QUALIFIER_COL
+      );
+      LOG.info("Preparing query string " + queryString);
+      PreparedStatement preparedStatement = admin.getPreparedStatement(queryString);
+      ResultSetFuture res = admin.executeAsync(preparedStatement.bind(
+          translatedLocalityGroup,
+          translatedFamily,
+          translatedQualifier));
+      resultSetFutures.add(res);
+      numScanQueries++;
+    } else if (translatedQualifier == null) {
+      String queryString = String.format(
+          "SELECT token(%s), %s, %s, %s, %s, %s, %s FROM %s WHERE %s=? AND %s=? ALLOW FILTERING",
+          CassandraKiji.CASSANDRA_KEY_COL,
+          CassandraKiji.CASSANDRA_KEY_COL,
+          CassandraKiji.CASSANDRA_LOCALITY_GROUP_COL,
+          CassandraKiji.CASSANDRA_FAMILY_COL,
+          CassandraKiji.CASSANDRA_QUALIFIER_COL,
+          CassandraKiji.CASSANDRA_VERSION_COL,
+          CassandraKiji.CASSANDRA_VALUE_COL,
+          cassandraTableName,
+          CassandraKiji.CASSANDRA_LOCALITY_GROUP_COL,
+          CassandraKiji.CASSANDRA_FAMILY_COL
+      );
+      LOG.info("Preparing query string " + queryString);
+      PreparedStatement preparedStatement = admin.getPreparedStatement(queryString);
+      ResultSetFuture res = admin.executeAsync(preparedStatement.bind(translatedLocalityGroup, translatedFamily));
+      resultSetFutures.add(res);
+      numScanQueries++;
+
+    }
+    return numScanQueries;
   }
 }
