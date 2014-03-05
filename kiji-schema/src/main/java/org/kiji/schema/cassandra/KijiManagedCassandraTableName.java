@@ -22,6 +22,7 @@ package org.kiji.schema.cassandra;
 import java.util.regex.Pattern;
 
 import com.google.common.base.Joiner;
+import com.google.common.base.Preconditions;
 import org.apache.commons.lang.StringUtils;
 
 import org.kiji.annotations.ApiAudience;
@@ -128,10 +129,12 @@ public final class KijiManagedCassandraTableName {
   private final String mKijiTableName;
 
   /**
-   * Constructs a Kiji-managed Cassandra table name.
+   * Constructs a Kiji-managed Cassandra table name.  The name will have quotes in it so that it
+   * can be used in CQL queries without additional processing (CQL is case-insensitive without
+   * quotes).
    *
    * @param kijiInstanceName The kiji instance name.
-   * @param type The type component of the Cassandra table name (meta, schema, system, table).
+   * @param type The type component of the Cassandra table name (e.g., meta, schema, system, table).
    */
   private KijiManagedCassandraTableName(String kijiInstanceName, String type) {
     // mCassandraTableName = KIJI_COMPONENT + "_" + kijiInstanceName + "." + type;
@@ -145,13 +148,20 @@ public final class KijiManagedCassandraTableName {
   }
 
   /**
-   * Constructs a Kiji-managed Cassandra table name.
+   * Constructs a Kiji-managed Cassandra table name for the backing C* table for user data or for
+   * counters.  The name will have quotes in it so that it can be used in CQL queries without
+   * additional processing (CQL is case-insensitive without quotes).
    *
    * @param kijiInstanceName The kiji instance name.
-   * @param type The type component of the Cassandra table name.
+   * @param type The type component of the Cassandra table name.  Should be `KIJI_TABLE_COMPONENT`
+   *     or `KIJI_COUNTER_COMPONENT`.
    * @param kijiTableName The name of the user-space Kiji table.
    */
   private KijiManagedCassandraTableName(String kijiInstanceName, String type, String kijiTableName) {
+    Preconditions.checkArgument(
+        type.equals(KIJI_TABLE_COMPONENT) || type.equals(KIJI_COUNTER_COMPONENT)
+    );
+
     mCassandraTableName = String.format(
         "\"%s_%s\".\"%s_%s\"",
         KIJI_COMPONENT,
@@ -257,7 +267,8 @@ public final class KijiManagedCassandraTableName {
   }
 
   /**
-   * Get the name of the keyspace (formatted for CQL) in C* for this Kiji instance.
+   * Get the name of the keyspace (formatted for CQL) in C* for the Kiji instance specified in the
+   * URI.
    *
    * @param kijiURI The name of the Kiji instance.
    * @return The name of the C* keyspace.
@@ -278,7 +289,7 @@ public final class KijiManagedCassandraTableName {
    * @return Whether the name is formatted correctly for CQL or not.
    */
   public static boolean tableNameIsFormattedForCQL(String tableName) {
-    // TODO: Tighten this up!
+    // TODO: Add additional checks, e.g., having only a single "." outside of quotes.
     return (tableName.startsWith("\"") && tableName.endsWith("\""));
   }
 
@@ -291,21 +302,18 @@ public final class KijiManagedCassandraTableName {
    * @return Whether the name is formatted correctly for CQL or not.
    */
   public static boolean keyspaceNameIsFormattedForCQL(String keyspaceName) {
-    // TODO: Tighten this up!
+    // TODO: Add additional checks, e.g., not having a "." outside of quotes.
     return (keyspaceName.startsWith("\"") && keyspaceName.endsWith("\""));
   }
 
   /**
-   * Gets the name of the Cassandra table that stores the data for this Kiji table.
+   * Get the Cassandra-formatted name for this table.
    *
-   * @return The Cassandra table name as a UTF-8 encoded byte array.
+   * The name include the keyspace, and is formatted with quotes so that it is ready to get into a
+   * CQL query.
+   *
+   * @return The Cassandra-formatted name of this table.
    */
-  /*
-  public byte[] toBytes() {
-    return Bytes.toBytes(mCassandraTableName);
-  } */
-
-  @Override
   public String toString() {
     return mCassandraTableName;
   }

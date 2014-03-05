@@ -39,6 +39,11 @@ import static org.junit.Assert.*;
 public class TestCassandraCreateKijiTable extends CassandraKijiClientTest {
   private static final Logger LOG = LoggerFactory.getLogger(TestCassandraCreateKijiTable.class);
 
+  // TODO: Test locality group with max versions = 1 stores only one version.
+  // Test creating a table with a locality group where max versions = 1, write multiple
+  // versions of the same cell to the table, and then read back from the table with a data request
+  // with max versions = infiinity and verify that we get only one result back.
+
   @Test
   public void testCreateKijiTable() throws Exception {
     LOG.info("Opening an in-memory kiji instance");

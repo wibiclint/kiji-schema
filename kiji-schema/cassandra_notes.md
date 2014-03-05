@@ -23,9 +23,6 @@ Open TODOs
 
 - We need a C* version of `KijiTableAnnotator`.
 
-- `CassandraKijiTableReader` has a few missing functions that should be easy to add (e.g.,
-  `bulkGet`).
-
 - Compare-and-set in the C* `AtomicKijiPutter`
   - All non-compare-and-set functionality is complete
   - CQL has support for "lightweight transactions" that perform compare-and-set, but it does not
@@ -47,15 +44,18 @@ Open TODOs
 
 - Integration tests with KijiMR
 
+
 ### General cleanup:
 
 - Update copyrights, check for any stale HBase comments
 - Add super-unstable annotations to this API.  :)
 - Remove / sanitize the huge number of LOG.info messages.
 
+
 ### Prepared CQL statements:
 
 - Update any class that calls `Session#execute` to use a prepared query.
+
 
 ### Testing and error messages
 
@@ -79,6 +79,7 @@ Open TODOs
   I added some unit tests, but more (especially integration tests) would be useful.
 - Need unit tests for the command-line tools
 
+
 ### General code organization
 
 - Before adding C* support, most of the schema components had an interface and a single implementing
@@ -86,11 +87,6 @@ Open TODOs
   most cases, the two implementing classes share *a lot* of code.  We may want to refactor all of
   the shared code into an abstract superclass from which both the HBase and C* implementations can
   inherit.
-
-- Clean up / expand `KijiManagedCassandraTableName`
-  - This is a total mess right now, with a mixture of static and non-static methods.
-  - Make the methods in `KijiManagedCassandraTableName` more explicit about whether they are
-    returning names in the Kiji namespace or in the C* namespace.
 
 - Think about limiting the number of places from which we can call `Session#execute`.
   - Might be good to put all of these calls within `CassandraAdmin`, for example.
@@ -128,6 +124,7 @@ Open TODOs
   left this code ugly for now and moved on, but we need to clean this up later (and possibly reorg
   it).
 
+
 ### Performance
 
 - We may be doing a lot of unnecessary conversions from `ByteBuffer` to `byte[]` to final data types
@@ -157,6 +154,12 @@ Open TODOs
 
 - Milo mentioned three areas in which performance is important: bulk import, modeling training, and
   score function latency.
+
+- If a user specifies that the maximum number of versions for a given locality group is only one,
+  and if we choose to have one C* table per locality group, we can use a _slightly_ different layout
+  for the C* table for that locality group
+
+
 
 ### Resource management
 
