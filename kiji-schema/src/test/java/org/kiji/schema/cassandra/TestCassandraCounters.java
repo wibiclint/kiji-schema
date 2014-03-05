@@ -242,11 +242,8 @@ public class TestCassandraCounters extends CassandraKijiClientTest {
   public void testReadMixedFamily() throws Exception {
     mWriter.put(mEntityId, "info", "visits", 42L);
     mWriter.put(mEntityId, "info", "name", MR_BONKERS);
-    final KijiDataRequest dataRequest = KijiDataRequest.builder()
-        .addColumns(ColumnsDef.create().add("info", "name"))
-        .addColumns(ColumnsDef.create().add("info", "visits"))
-        .build();
 
+    final KijiDataRequest dataRequest = KijiDataRequest.create("info");
     KijiRowData rowData = mReader.get(mEntityId, dataRequest);
 
     KijiCell<Long> counter = rowData.getMostRecentCell("info", "visits");
@@ -344,10 +341,7 @@ public class TestCassandraCounters extends CassandraKijiClientTest {
     mWriter.put(mEntityId, INFO, NAME, MR_BONKERS);
 
     // Sanity check that the counter is there.
-    final KijiDataRequest request = KijiDataRequest.builder()
-        .addColumns(ColumnsDef.create().add(INFO, VISITS))
-        .addColumns(ColumnsDef.create().add(INFO, NAME))
-        .build();
+    final KijiDataRequest request = KijiDataRequest.create(INFO);
 
     KijiRowData rowData = mReader.get(mEntityId, request);
     KijiCell<Long> counter = rowData.getMostRecentCell(INFO, VISITS);
