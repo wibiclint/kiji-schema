@@ -144,14 +144,6 @@ public class CassandraDataRequestAdapter {
     // and keep a list of all of the futures that will contain results from Cassandra.
     HashSet<ResultSetFuture> futures = new HashSet<ResultSetFuture>();
 
-    // If this is not a scan, format the entity ID for Cassandra.
-    ByteBuffer entityIdByteBuffer;
-    if (bIsScan) {
-      entityIdByteBuffer = null;
-    } else {
-      entityIdByteBuffer = CassandraByteUtil.bytesToByteBuffer(entityId.getHBaseRowKey());
-    }
-
     // Timestamp limits for queries.
     long maxTimestamp = mKijiDataRequest.getMaxTimestamp();
     long minTimestamp = mKijiDataRequest.getMinTimestamp();
@@ -189,33 +181,18 @@ public class CassandraDataRequestAdapter {
       String family = mColumnNameTranslator.toCassandraColumnFamily(kijiColumnName);
       String qualifier = mColumnNameTranslator.toCassandraColumnQualifier(kijiColumnName);
 
-      if (null == qualifier) {
-        LOG.info("Column request is for an entire family.");
-      } else {
-        LOG.info("Column request is for a full-qualified, individual column.");
-      }
-
       // TODO: Optimize these queries such that we need only one RPC per column family.
       // (Right now a data request that asks for "info:foo" and "info:bar" would trigger two
       // separate session.execute(statement) commands.
 
-      // TODO: If unqualified group-type family, maybe read counter and non-counter values together!
-      // For qualified columns and for map-type families, we can determine whether to retrieve
-      // non-counter or counter values.
-      boolean readCounterValues = maybeContainsCounterValues(table, kijiColumnName);
-      boolean readNonCounterValues = maybeContainsNonCounterValues(table, kijiColumnName);
-
-      if (readCounterValues) {
-        LOG.info("This column may contain a counter.");
-      }
-
+      // Determine whether we need to read non-counter values and/or counter values.
       List<String> tableNames = new ArrayList();
 
-      if (readNonCounterValues) {
+      if (maybeContainsNonCounterValues(table, kijiColumnName)) {
         tableNames.add(nonCounterTableName);
       }
 
-      if (readCounterValues) {
+      if (maybeContainsCounterValues(table, kijiColumnName)) {
         tableNames.add(counterTableName);
       }
 
@@ -234,7 +211,7 @@ public class CassandraDataRequestAdapter {
           );
         } else {
           queryCassandraSingleColumnAndUpdateFuturesGet(
-              entityIdByteBuffer,
+              CassandraByteUtil.bytesToByteBuffer(entityId.getHBaseRowKey()),
               admin,
               cassandraTableName,
               localityGroup,
@@ -251,16 +228,9 @@ public class CassandraDataRequestAdapter {
       }
     }
 
-    if (bIsScan && (0 == numScanQueries)) {
-      // Need to add a dummy scan here to make sure that we get back some data for every row.
-      String queryString = String.format(
-          "SELECT token(%s), %s FROM %s",
-          CassandraKiji.CASSANDRA_KEY_COL,
-          CassandraKiji.CASSANDRA_KEY_COL,
-          nonCounterTableName
-      );
-      ResultSetFuture res = admin.executeAsync(queryString);
-      futures.add(res);
+    if (bIsScan) {
+      possiblyAddDummyScanQueryAndUpdateFutures(
+          admin, nonCounterTableName, numScanQueries, futures);
     }
 
     // Wait until all of the futures are done.
@@ -448,5 +418,32 @@ public class CassandraDataRequestAdapter {
 
     }
     return numScanQueries;
+  }
+
+  /**
+   * Possibly add a dummy get to ensure that we get back *some* data for every row in a scan.
+   *
+   * This is necessary because a user could create a scanner with a data request that contains
+   * *only* paged columns.  The user won't be able to access `KijiRowData` instances for a given
+   * entity ID to get the pagers for the requested columns without *some* data for every row in the
+   * scan range.
+   *
+   */
+  private void possiblyAddDummyScanQueryAndUpdateFutures(
+      CassandraAdmin admin,
+      String cassandraTableName,
+      int numScanQueries,
+      HashSet<ResultSetFuture> resultSetFutures) {
+    if (0 == numScanQueries) {
+      String queryString = String.format(
+          "SELECT token(%s), %s FROM %s",
+          CassandraKiji.CASSANDRA_KEY_COL,
+          CassandraKiji.CASSANDRA_KEY_COL,
+          cassandraTableName
+      );
+      ResultSetFuture res = admin.executeAsync(queryString);
+      resultSetFutures.add(res);
+    }
+
   }
 }
