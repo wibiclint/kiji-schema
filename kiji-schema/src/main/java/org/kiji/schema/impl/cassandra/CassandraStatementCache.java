@@ -1,23 +1,24 @@
 package org.kiji.schema.impl.cassandra;
 
 import com.datastax.driver.core.PreparedStatement;
+import com.datastax.driver.core.Session;
 
 import java.util.HashMap;
 import java.util.Map;
 
 public class CassandraStatementCache {
-  private final CassandraAdmin mAdmin;
+  private final Session mSession;
 
   private final Map<String, PreparedStatement> mStatementCache;
 
-  CassandraStatementCache(CassandraAdmin admin) {
-    mAdmin = admin;
+  CassandraStatementCache(Session session) {
+    mSession = session;
     mStatementCache = new HashMap<String, PreparedStatement>();
   }
 
   synchronized PreparedStatement getPreparedStatement(String query) {
     if (!mStatementCache.containsKey(query)) {
-      PreparedStatement statement = mAdmin.getSession().prepare(query);
+      PreparedStatement statement = mSession.prepare(query);
       mStatementCache.put(query, statement);
     }
     return mStatementCache.get(query);

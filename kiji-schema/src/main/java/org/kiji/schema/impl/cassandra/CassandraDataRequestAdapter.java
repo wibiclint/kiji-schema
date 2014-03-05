@@ -131,8 +131,6 @@ public class CassandraDataRequestAdapter {
     // Cannot do a scan with paging.
     Preconditions.checkArgument(!(pagingEnabled && bIsScan));
 
-    Session session = table.getAdmin().getSession();
-
     // Get the Cassandra table name for non-counter values.
     String nonCounterTableName = KijiManagedCassandraTableName.getKijiTableName(
         table.getURI(),
@@ -167,6 +165,8 @@ public class CassandraDataRequestAdapter {
     // would never get an iterator back with any row keys at all!  Eek!
     int numScanQueries = 0;
 
+    CassandraAdmin admin = table.getAdmin();
+
     // Ignore everything for now except for column families and qualifiers.
     // For now, to keep things simple, we have a separate request for each column (even if there
     // are multiple columns of interest in the same column family / C* table).
@@ -199,6 +199,7 @@ public class CassandraDataRequestAdapter {
       // TODO: Optimize these queries such that we need only one RPC per column family.
       // (Right now a data request that asks for "info:foo" and "info:bar" would trigger two
       // separate session.execute(statement) commands.
+
 
       // TODO: If unqualified group-type family, maybe read counter and non-counter values together!
 
@@ -244,8 +245,8 @@ public class CassandraDataRequestAdapter {
             CassandraKiji.CASSANDRA_QUALIFIER_COL
         );
         LOG.info("Preparing query string " + queryString);
-        PreparedStatement preparedStatement = session.prepare(queryString);
-        ResultSetFuture res = session.executeAsync(preparedStatement.bind(localityGroup, family, qualifier));
+        PreparedStatement preparedStatement = admin.getPreparedStatement(queryString);
+        ResultSetFuture res = admin.executeAsync(preparedStatement.bind(localityGroup, family, qualifier));
         futures.add(res);
         numScanQueries++;
       } else if (bIsScan && qualifier == null) {
@@ -263,8 +264,8 @@ public class CassandraDataRequestAdapter {
             CassandraKiji.CASSANDRA_FAMILY_COL
         );
         LOG.info("Preparing query string " + queryString);
-        PreparedStatement preparedStatement = session.prepare(queryString);
-        ResultSetFuture res = session.executeAsync(preparedStatement.bind(localityGroup, family));
+        PreparedStatement preparedStatement = admin.getPreparedStatement(queryString);
+        ResultSetFuture res = admin.executeAsync(preparedStatement.bind(localityGroup, family));
         futures.add(res);
         numScanQueries++;
 
@@ -292,7 +293,7 @@ public class CassandraDataRequestAdapter {
           LOG.info("Preparing query string for single-row get of fully-qualified column: " + queryString);
           LOG.info(String.format("\tUsing limit %d", column.getMaxVersions()));
 
-          PreparedStatement preparedStatement = session.prepare(queryString);
+          PreparedStatement preparedStatement = admin.getPreparedStatement(queryString);
           boundStatement = preparedStatement.bind(
               entityIdByteBuffer,
               localityGroup,
@@ -311,14 +312,14 @@ public class CassandraDataRequestAdapter {
           );
           LOG.info("Preparing query string " + queryString);
 
-          PreparedStatement preparedStatement = session.prepare(queryString);
+          PreparedStatement preparedStatement = admin.getPreparedStatement(queryString);
           boundStatement = preparedStatement.bind(entityIdByteBuffer, localityGroup, family);
         }
         if (pagingEnabled) {
           int pageSize = column.getPageSize();
           boundStatement = boundStatement.setFetchSize(pageSize);
         }
-        ResultSetFuture res = session.executeAsync(boundStatement);
+        ResultSetFuture res = admin.executeAsync(boundStatement);
         futures.add(res);
       }
     }
@@ -332,7 +333,7 @@ public class CassandraDataRequestAdapter {
           nonCounterTableName
       );
       LOG.info("Preparing query string " + queryString);
-      ResultSetFuture res = session.executeAsync(queryString);
+      ResultSetFuture res = admin.executeAsync(queryString);
       futures.add(res);
     }
 

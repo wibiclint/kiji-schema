@@ -220,7 +220,7 @@ public final class CassandraAtomicKijiPutter implements AtomicKijiPutter {
     batchStatement.addAll(mStatements);
 
     // TODO: Possibly check that execution worked correctly.
-    ResultSet resultSet = mTable.getAdmin().getSession().execute(batchStatement);
+    ResultSet resultSet = mTable.getAdmin().execute(batchStatement);
     LOG.info("Results from batch set: " + resultSet);
 
     reset();

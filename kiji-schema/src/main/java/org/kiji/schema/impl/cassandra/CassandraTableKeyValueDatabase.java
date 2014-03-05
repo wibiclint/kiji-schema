@@ -66,6 +66,7 @@ public class CassandraTableKeyValueDatabase
   private PreparedStatement mPreparedStatementGetRows = null;
   private PreparedStatement mPreparedStatementRemoveValues = null;
 
+  // TODO: Don't need statement preparation factored out like this after adding statement cache.
   private void setPreparedStatementPutValue() {
     String queryText = String.format(
         "INSERT INTO %s (%s, %s, %s, %s) VALUES (?, ?, ?, ?)",
@@ -75,9 +76,10 @@ public class CassandraTableKeyValueDatabase
         KV_COLUMN_TIME,
         KV_COLUMN_VALUE);
     //LOG.info("What is wrong with this? " + queryText);
-    mPreparedStatementPutValue = mTable.getSession().prepare(queryText);
+    mPreparedStatementPutValue = mTable.getAdmin().getPreparedStatement(queryText);
   }
 
+  // TODO: Don't need statement preparation factored out like this after adding statement cache.
   private void setPreparedStatementKeySet() {
     String queryText = String.format(
         "SELECT %s FROM %s WHERE %s=?",
@@ -85,9 +87,10 @@ public class CassandraTableKeyValueDatabase
         mTable.getTableName(),
         KV_COLUMN_TABLE
     );
-    mPreparedStatementKeySet = mTable.getSession().prepare(queryText);
+    mPreparedStatementKeySet = mTable.getAdmin().getPreparedStatement(queryText);
   }
 
+  // TODO: Don't need statement preparation factored out like this after adding statement cache.
   private void setPreparedStatementRestoreKeyValuesFromBackup() {
     // TODO: Make this query a member of the class and prepare in the constructor
     String queryText = String.format(
@@ -97,9 +100,10 @@ public class CassandraTableKeyValueDatabase
         KV_COLUMN_KEY,
         KV_COLUMN_TIME,
         KV_COLUMN_VALUE);
-    mPreparedStatementRestoreKeyValuesFromBackup = mTable.getSession().prepare(queryText);
+    mPreparedStatementRestoreKeyValuesFromBackup = mTable.getAdmin().getPreparedStatement(queryText);
   }
 
+  // TODO: Don't need statement preparation factored out like this after adding statement cache.
   private void setPreparedStatementGetRows() {
     String queryText = String.format(
         "SELECT * FROM %s WHERE %s=? AND %s=? LIMIT ?",
@@ -107,9 +111,10 @@ public class CassandraTableKeyValueDatabase
         KV_COLUMN_TABLE,
         KV_COLUMN_KEY
     );
-    mPreparedStatementGetRows = mTable.getSession().prepare(queryText);
+    mPreparedStatementGetRows = mTable.getAdmin().getPreparedStatement(queryText);
   }
 
+  // TODO: Don't need statement preparation factored out like this after adding statement cache.
   private void setPreparedStatementRemoveValues() {
     String queryText = String.format(
         "DELETE FROM %s WHERE %s=? AND %s=?",
@@ -117,7 +122,7 @@ public class CassandraTableKeyValueDatabase
         KV_COLUMN_TABLE,
         KV_COLUMN_KEY
     );
-    mPreparedStatementRemoveValues = mTable.getSession().prepare(queryText);
+    mPreparedStatementRemoveValues = mTable.getAdmin().getPreparedStatement(queryText);
   }
 
   /**
@@ -183,8 +188,7 @@ public class CassandraTableKeyValueDatabase
    */
   private List<Row> getRows(String table, String key, int numVersions) {
     Preconditions.checkArgument(numVersions >= 1,  "numVersions must be positive");
-    Session session = mTable.getSession();
-    ResultSet resultSet = session.execute(mPreparedStatementGetRows.bind(table, key, numVersions));
+    ResultSet resultSet = mTable.getAdmin().execute(mPreparedStatementGetRows.bind(table, key, numVersions));
     List<Row> rows = resultSet.all();
     return rows;
   }
@@ -233,19 +237,17 @@ public class CassandraTableKeyValueDatabase
   public CassandraTableKeyValueDatabase putValue(String table, String key, byte[] value)
       throws IOException {
     Preconditions.checkNotNull(mPreparedStatementPutValue);
-    Session session = mTable.getSession();
     ByteBuffer valAsByteBuffer = CassandraByteUtil.bytesToByteBuffer(value);
     // TODO: Check for success?
-    session.execute(mPreparedStatementPutValue.bind(table, key, new Date(), valAsByteBuffer));
+    mTable.getAdmin().execute(mPreparedStatementPutValue.bind(table, key, new Date(), valAsByteBuffer));
     return this;
   }
 
   private void logRowsForTable(String tableName) {
     String metaTableName = mTable.getTableName();
-    Session session = mTable.getSession();
 
     // Get all of the keys for this table before the remove
-    ResultSet resultSet = session.execute(String.format(
+    ResultSet resultSet = mTable.getAdmin().execute(String.format(
         "SELECT * from %s where %s='%s'",
         metaTableName,
         KV_COLUMN_TABLE,
@@ -261,13 +263,12 @@ public class CassandraTableKeyValueDatabase
   @Override
   public void removeValues(String table, String key) throws IOException {
     String metaTableName = mTable.getTableName();
-    Session session = mTable.getSession();
 
     LOG.info("Before delete:");
     logRowsForTable(table);
 
     // TODO: Check for success?
-    session.execute(mPreparedStatementRemoveValues.bind(table, key));
+    mTable.getAdmin().execute(mPreparedStatementRemoveValues.bind(table, key));
 
     LOG.info("After delete: ");
     logRowsForTable(table);
@@ -277,8 +278,7 @@ public class CassandraTableKeyValueDatabase
   @Override
   public Set<String> keySet(String table) throws IOException {
     // Just return a set of in-use keys
-    Session session = mTable.getSession();
-    ResultSet resultSet = session.execute(mPreparedStatementKeySet.bind(table));
+    ResultSet resultSet = mTable.getAdmin().execute(mPreparedStatementKeySet.bind(table));
     Set<String> keys = new HashSet<String>();
 
     for (Row row: resultSet.all()) {
@@ -291,10 +291,8 @@ public class CassandraTableKeyValueDatabase
   @Override
   public Set<String> tableSet() throws IOException {
     // Just return a set of in-use tables
-    // TODO: Prepare this query.
 
     String metaTableName = mTable.getTableName();
-    Session session = mTable.getSession();
 
     String queryText = String.format(
         "SELECT %s FROM %s",
@@ -302,7 +300,7 @@ public class CassandraTableKeyValueDatabase
         metaTableName
     );
 
-    ResultSet resultSet = session.execute(queryText);
+    ResultSet resultSet = mTable.getAdmin().execute(queryText);
     Set<String> keys = new HashSet<String>();
 
     for (Row row: resultSet.all()) {
@@ -352,8 +350,6 @@ public class CassandraTableKeyValueDatabase
    LOG.debug(String.format("Restoring '%s' key-value(s) from backup for table '%s'.",
        keyValueBackup.getKeyValues().size(), tableName));
 
-   Session session = mTable.getSession();
-
    for (KeyValueBackupEntry kvRecord : keyValueBackup.getKeyValues()) {
      final String key = kvRecord.getKey();
      final ByteBuffer valAsByteBuffer = kvRecord.getValue(); // Read in ByteBuffer of values
@@ -367,7 +363,7 @@ public class CassandraTableKeyValueDatabase
          valAsByteBuffer.toString(),
          mTable.getTableName()));
 
-     session.execute(mPreparedStatementRestoreKeyValuesFromBackup.bind(
+     mTable.getAdmin().execute(mPreparedStatementRestoreKeyValuesFromBackup.bind(
          tableName, key, new Date(timestamp), valAsByteBuffer));
    }
    LOG.debug("Flushing commits to restore key-values from backup.");

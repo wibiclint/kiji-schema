@@ -97,8 +97,7 @@ public final class CassandraQualifierPager implements Iterator<String[]>, Closea
       EntityId entityId,
       KijiDataRequest dataRequest,
       CassandraKijiTable table,
-      KijiColumnName family)
-      throws KijiColumnPagingNotEnabledException {
+      KijiColumnName family) throws KijiColumnPagingNotEnabledException {
 
     Preconditions.checkArgument(!family.isFullyQualified(),
         "Must use HBaseQualifierPager on a map-type family, but got '{}'.", family);
@@ -118,7 +117,6 @@ public final class CassandraQualifierPager implements Iterator<String[]>, Closea
     mHasNext = true;  // there might be no page to read, but we don't know until we issue an RPC
 
     initializeRowIterator();
-
 
     // Only retain the table if everything else ran fine:
     mTable.retain();
@@ -142,10 +140,7 @@ public final class CassandraQualifierPager implements Iterator<String[]>, Closea
       assert(false);
       return;
     }
-    Session session = mTable.getAdmin().getSession();
     BoundStatement boundStatement;
-    // TODO: prepare this statement only once.
-
     // Need to get versions here so that we can filter out versions that don't match the data
     // request.  Sadly, there is no way to put the version range restriction into this query, since
     // we aren't restricting the qualifiers at all.
@@ -163,9 +158,11 @@ public final class CassandraQualifierPager implements Iterator<String[]>, Closea
     // TODO: Make this code more robust for different kinds of filters.
     KijiColumnFilter columnFilter = mColumnRequest.getFilter();
 
+    CassandraAdmin admin = mTable.getAdmin();
+
     if (null == columnFilter) {
 
-      PreparedStatement preparedStatement = session.prepare(queryString);
+      PreparedStatement preparedStatement = admin.getPreparedStatement(queryString);
       boundStatement = preparedStatement.bind(
           CassandraByteUtil.bytesToByteBuffer(mEntityId.getHBaseRowKey()),
           translatedLocalityGroup,
@@ -174,7 +171,7 @@ public final class CassandraQualifierPager implements Iterator<String[]>, Closea
     } else if (columnFilter instanceof KijiColumnRangeFilter) {
       KijiColumnRangeFilter rangeFilter = (KijiColumnRangeFilter) columnFilter;
       boundStatement = createBoundStatementForFilter(
-          session,
+          admin,
           rangeFilter,
           queryString,
           translatedLocalityGroup,
@@ -188,11 +185,11 @@ public final class CassandraQualifierPager implements Iterator<String[]>, Closea
       );
     }
     boundStatement.setFetchSize(mColumnRequest.getPageSize());
-    mRowIterator = Iterators.peekingIterator(session.execute(boundStatement).iterator());
+    mRowIterator = Iterators.peekingIterator(admin.execute(boundStatement).iterator());
   }
 
   private BoundStatement createBoundStatementForFilter(
-      Session session,
+      CassandraAdmin admin,
       KijiColumnRangeFilter rangeFilter,
       String queryString,
       String translatedLocalityGroup,
@@ -230,7 +227,7 @@ public final class CassandraQualifierPager implements Iterator<String[]>, Closea
       );
     }
 
-    PreparedStatement preparedStatement = session.prepare(queryString);
+    PreparedStatement preparedStatement = admin.getPreparedStatement(queryString);
     BoundStatement boundStatement = null;
 
     if (null == minQualifier && null == maxQualifier) {

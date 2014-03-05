@@ -29,8 +29,6 @@ public class CassandraTableInterface {
 
   public String getTableName() { return mTableName; }
 
-  public Session getSession() { return mAdmin.getSession(); }
-
   public String toString() { return mTableName; }
 
   /**

@@ -837,7 +837,7 @@ public final class CassandraKiji implements Kiji {
         CASSANDRA_VERSION_COL
     );
 
-    mAdmin.getSession().execute(query);
+    mAdmin.execute(query);
 
     // Also create a second table, which we can use for counters.
     // Create a C* table name for this Kiji table.

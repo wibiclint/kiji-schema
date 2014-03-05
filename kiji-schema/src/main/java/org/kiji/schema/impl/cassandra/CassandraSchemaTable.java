@@ -174,7 +174,7 @@ public class CassandraSchemaTable implements KijiSchemaTable {
     return mHashCache.getHash(schema);
   }
 
-  private void prepareQueryWriteHashTable() {
+  private void prepareQueryWriteHashTable() throws IOException {
     String hashQueryText = String.format(
         "INSERT INTO %s(%s, %s, %s) VALUES(?, ?, ?);",
         mSchemaHashTable.getTableName(),
@@ -182,10 +182,10 @@ public class CassandraSchemaTable implements KijiSchemaTable {
         SCHEMA_COLUMN_TIME,
         SCHEMA_COLUMN_VALUE);
 
-    preparedStatementWriteHashTable = mSchemaHashTable.getSession().prepare(hashQueryText);
+    preparedStatementWriteHashTable = mSchemaHashTable.getAdmin().getPreparedStatement(hashQueryText);
   }
 
-  private void prepareQueryWriteIdTable() {
+  private void prepareQueryWriteIdTable() throws IOException {
     String idQueryText = String.format(
         "INSERT INTO %s(%s, %s, %s) VALUES(?, ?, ?);",
         mSchemaIdTable.getTableName(),
@@ -193,10 +193,10 @@ public class CassandraSchemaTable implements KijiSchemaTable {
         SCHEMA_COLUMN_TIME,
         SCHEMA_COLUMN_VALUE);
 
-    preparedStatementWriteIdTable =  mSchemaIdTable.getSession().prepare(idQueryText);
+    preparedStatementWriteIdTable =  mSchemaIdTable.getAdmin().getPreparedStatement(idQueryText);
   }
 
-  private void prepareQueryReadHashTable() {
+  private void prepareQueryReadHashTable() throws IOException {
     String queryText = String.format(
         "SELECT %s FROM %s WHERE %s=? ORDER BY %s DESC LIMIT 1",
         SCHEMA_COLUMN_VALUE,
@@ -204,7 +204,7 @@ public class CassandraSchemaTable implements KijiSchemaTable {
         SCHEMA_COLUMN_HASH_KEY,
         SCHEMA_COLUMN_TIME
     );
-    preparedStatementReadHashTable = mSchemaHashTable.getSession().prepare(queryText);
+    preparedStatementReadHashTable = mSchemaHashTable.getAdmin().getPreparedStatement(queryText);
   }
 
   /**
@@ -429,7 +429,6 @@ public class CassandraSchemaTable implements KijiSchemaTable {
    */
   private void incrementSchemaIdCounter(long incrementAmount) {
     String tableName = mCounterTable.getTableName();
-    Session session = mCounterTable.getSession();
     String incrementSign = incrementAmount >= 0 ? "+" : "-";
     String queryText = String.format("UPDATE %s SET %s = %s %s %d WHERE %s='%s';",
         tableName,
@@ -440,7 +439,7 @@ public class CassandraSchemaTable implements KijiSchemaTable {
         SCHEMA_COUNTER_COLUMN_KEY,
         SCHEMA_COUNTER_ONLY_KEY_VALUE
     );
-    session.execute(queryText);
+    mCounterTable.getAdmin().execute(queryText);
   }
 
   /**
@@ -450,7 +449,7 @@ public class CassandraSchemaTable implements KijiSchemaTable {
   private long readSchemaIdCounter() {
     // Sanity check that counter value is 1!
     String queryText = String.format("SELECT * FROM %s;", mCounterTable.getTableName());
-    ResultSet resultSet = mCounterTable.getSession().execute(queryText);
+    ResultSet resultSet = mCounterTable.getAdmin().execute(queryText);
     List<Row> rows = resultSet.all();
     assert(rows.size() == 1);
     Row row = rows.get(0);
@@ -501,9 +500,7 @@ public class CassandraSchemaTable implements KijiSchemaTable {
     // The hash table write must not happen before the ID table write has been persisted.
     // Otherwise, another client may see the hash entry, write cells with the schema ID that cannot
     // be decoded (since the ID mapping has not been written yet).
-    Session idSession = mSchemaIdTable.getSession();
-
-    ResultSet resultSet = idSession.execute(preparedStatementWriteIdTable.bind(
+    ResultSet resultSet = mSchemaIdTable.getAdmin().execute(preparedStatementWriteIdTable.bind(
         avroEntry.getId(),
         new Date(timestamp),
         CassandraByteUtil.bytesToByteBuffer(entryBytes)));
@@ -511,10 +508,8 @@ public class CassandraSchemaTable implements KijiSchemaTable {
     // TODO: Anything here to flush the table or verify that this worked?
     //if (flush) { mSchemaIdTable.flushCommits(); }
 
-    Session hashSession = mSchemaHashTable.getSession();
-
     ResultSet hashResultSet =
-        hashSession.execute(preparedStatementWriteHashTable.bind(
+        mSchemaHashTable.getAdmin().execute(preparedStatementWriteHashTable.bind(
             CassandraByteUtil.bytesToByteBuffer(avroEntry.getHash().bytes()),
             new Date(timestamp),
             CassandraByteUtil.bytesToByteBuffer(entryBytes)));
@@ -531,7 +526,6 @@ public class CassandraSchemaTable implements KijiSchemaTable {
    * @throws java.io.IOException on I/O error.
    */
   private SchemaTableEntry loadFromIdTable(long schemaId) throws IOException {
-    Session session = mSchemaIdTable.getSession();
     String tableName = mSchemaIdTable.getTableName();
 
     // TODO: Prepare this statement once in constructor, not every load.
@@ -543,7 +537,7 @@ public class CassandraSchemaTable implements KijiSchemaTable {
         schemaId,
         SCHEMA_COLUMN_TIME
     );
-    ResultSet resultSet = session.execute(queryText);
+    ResultSet resultSet = mSchemaIdTable.getAdmin().execute(queryText);
     List<Row> rows = resultSet.all();
 
     if (0 == rows.size()) {
@@ -563,12 +557,14 @@ public class CassandraSchemaTable implements KijiSchemaTable {
    * @throws java.io.IOException on I/O error.
    */
   private SchemaTableEntry loadFromHashTable(BytesKey schemaHash) throws IOException {
-    Session session = mSchemaHashTable.getSession();
     String tableName = mSchemaHashTable.getTableName();
 
     ByteBuffer tableKey = CassandraByteUtil.bytesToByteBuffer(schemaHash.getBytes());
 
-    ResultSet resultSet = session.execute(preparedStatementReadHashTable.bind(tableKey));
+    ResultSet resultSet = mSchemaHashTable
+        .getAdmin()
+        .execute(preparedStatementReadHashTable.bind(tableKey));
+
     List<Row> rows = resultSet.all();
 
     if (0 == rows.size()) {
@@ -785,7 +781,9 @@ public class CassandraSchemaTable implements KijiSchemaTable {
    * @param admin
    * @param tableName
    */
-  private static CassandraTableInterface installCounterTable(CassandraAdmin admin, String tableName) {
+  private static CassandraTableInterface installCounterTable(
+      CassandraAdmin admin,
+      String tableName) throws IOException {
     String tableDescription = String.format(
         "(%s text PRIMARY KEY, %s counter);",
         SCHEMA_COUNTER_COLUMN_KEY,
@@ -802,11 +800,11 @@ public class CassandraSchemaTable implements KijiSchemaTable {
         SCHEMA_COUNTER_ONLY_KEY_VALUE
     );
     LOG.debug(queryText);
-    admin.getSession().execute(queryText);
+    admin.execute(queryText);
 
     // Sanity check that counter value is 1!
     queryText = String.format("SELECT * FROM %s;", tableName);
-    ResultSet resultSet = admin.getSession().execute(queryText);
+    ResultSet resultSet = admin.execute(queryText);
     List<Row> rows = resultSet.all();
     assert(rows.size() == 1);
     Row row = rows.get(0);
@@ -1098,7 +1096,7 @@ public class CassandraSchemaTable implements KijiSchemaTable {
 
     // Fetch all of the schemas from the schema hash table (all versions)
     String queryText = String.format("SELECT * FROM %s;", hashTable.getTableName());
-    ResultSet resultSet = hashTable.getSession().execute(queryText);
+    ResultSet resultSet = hashTable.getAdmin().execute(queryText);
 
     for (Row row : resultSet) {
       hashTableRowCounter += 1;
@@ -1161,7 +1159,7 @@ public class CassandraSchemaTable implements KijiSchemaTable {
 
     // Fetch all of the schemas from the schema ID table (all versions)
     String queryText = String.format("SELECT * FROM %s;", idTable.getTableName());
-    ResultSet resultSet = idTable.getSession().execute(queryText);
+    ResultSet resultSet = idTable.getAdmin().execute(queryText);
 
     for (Row row : resultSet) {
       idTableRowCounter += 1;

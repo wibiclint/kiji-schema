@@ -70,15 +70,13 @@ public class CassandraKijiBufferedWriter implements KijiBufferedWriter {
   private final CassandraKijiTable mTable;
 
   /** Session used for talking to this Cassandra table. */
-  private final Session mSession;
+  private final CassandraAdmin mAdmin;
 
   /** Object which processes layout update from the KijiTable to which this Writer writes. */
   private final InnerLayoutUpdater mInnerLayoutUpdater = new InnerLayoutUpdater();
 
   /** Monitor against which all internal state mutations must be synchronized. */
   private final Object mInternalLock = new Object();
-
-  private final PreparedStatement mPutStatement;
 
   /** Contains shared code with BufferedWriter. */
   private final CassandraKijiWriterCommon mWriterCommon;
@@ -168,7 +166,7 @@ public class CassandraKijiBufferedWriter implements KijiBufferedWriter {
    */
   public CassandraKijiBufferedWriter(CassandraKijiTable table) throws IOException {
     mTable = table;
-    mSession = mTable.getAdmin().getSession();
+    mAdmin = mTable.getAdmin();
     mTable.registerLayoutConsumer(mInnerLayoutUpdater);
     Preconditions.checkState(mWriterLayoutCapsule != null,
         "CassandraKijiBufferedWriter for table: %s failed to initialize.", mTable.getURI());
@@ -189,18 +187,6 @@ public class CassandraKijiBufferedWriter implements KijiBufferedWriter {
         mTable.getURI(),
         mTable.getName()
     );
-
-    String queryText = String.format(
-        "INSERT INTO %s (%s, %s, %s, %s, %s, %s) VALUES (?, ?, ?, ?, ?, ?);",
-        cTableName,
-        CassandraKiji.CASSANDRA_KEY_COL,
-        CassandraKiji.CASSANDRA_LOCALITY_GROUP_COL,
-        CassandraKiji.CASSANDRA_FAMILY_COL,
-        CassandraKiji.CASSANDRA_QUALIFIER_COL,
-        CassandraKiji.CASSANDRA_VERSION_COL,
-        CassandraKiji.CASSANDRA_VALUE_COL);
-
-    mPutStatement = mSession.prepare(queryText);
 
     mWriterCommon = new CassandraKijiWriterCommon(mTable, mWriterLayoutCapsule);
 
@@ -386,20 +372,20 @@ public class CassandraKijiBufferedWriter implements KijiBufferedWriter {
         LOG.info("Delete buffer has " + mDeleteBuffer.size() + " entries.");
         BatchStatement deleteStatement = new BatchStatement(BatchStatement.Type.UNLOGGED);
         deleteStatement.addAll(mDeleteBuffer);
-        mSession.execute(deleteStatement);
+        mAdmin.execute(deleteStatement);
         mDeleteBuffer.clear();
       }
       if (mCounterDeleteBuffer.size() > 0) {
         LOG.info("Counter delete buffer has " + mCounterDeleteBuffer.size() + " entries.");
         BatchStatement deleteStatement = new BatchStatement(BatchStatement.Type.COUNTER);
         deleteStatement.addAll(mCounterDeleteBuffer);
-        mSession.execute(deleteStatement);
+        mAdmin.execute(deleteStatement);
         mCounterDeleteBuffer.clear();
       }
       if (mPutBuffer.size() > 0) {
         BatchStatement putStatement = new BatchStatement(BatchStatement.Type.UNLOGGED);
         putStatement.addAll(mPutBuffer);
-        mSession.execute(putStatement);
+        mAdmin.execute(putStatement);
         mPutBuffer.clear();
       }
       mCurrentWriteBufferSize = 0L;

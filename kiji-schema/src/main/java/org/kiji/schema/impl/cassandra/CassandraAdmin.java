@@ -8,6 +8,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.Closeable;
+import java.io.IOException;
 import java.util.Collection;
 
 /**
@@ -27,6 +28,9 @@ public abstract class CassandraAdmin implements Closeable {
 
   /** URI for this instance. **/
   private final KijiURI mKijiURI;
+
+  /** Keep a cache of all of the prepared CQL statements. */
+  private final CassandraStatementCache mStatementCache;
 
   /**
    * Remove quotes around a nameWithQuotes, e.g., turn
@@ -48,7 +52,9 @@ public abstract class CassandraAdmin implements Closeable {
    *
    * @return The Session.
    */
-  public Session getSession() { return mSession; }
+  private Session getSession() {
+    return mSession;
+  }
 
   /**
    * Constructor for use by classes that extend this class.  Creates a CassandraAdmin object for a
@@ -62,6 +68,7 @@ public abstract class CassandraAdmin implements Closeable {
     this.mSession = session;
     this.mKijiURI = kijiURI;
     createKeyspaceIfMissingForURI(mKijiURI);
+    mStatementCache = new CassandraStatementCache(mSession);
   }
 
   /**
@@ -216,4 +223,29 @@ public abstract class CassandraAdmin implements Closeable {
     // Cannot close this right now without wreaking havoc in the unit tests.
     //getSession().shutdown();
   }
+
+  // ----------------------------------------------------------------------------------------------
+  // Code to wrap around the Cassandra Session to ensure that all queries are cached.
+  public ResultSet execute(Statement statement) {
+    return mSession.execute(statement);
+  }
+
+  public ResultSet execute(String query) {
+    PreparedStatement preparedStatement = mStatementCache.getPreparedStatement(query);
+    return mSession.execute(preparedStatement.bind());
+  }
+
+  public ResultSetFuture executeAsync(Statement statement) {
+    return mSession.executeAsync(statement);
+  }
+
+  public ResultSetFuture executeAsync(String query) {
+    PreparedStatement preparedStatement = mStatementCache.getPreparedStatement(query);
+    return mSession.executeAsync(preparedStatement.bind());
+  }
+
+  public PreparedStatement getPreparedStatement(String query) {
+    return mStatementCache.getPreparedStatement(query);
+  }
 }
+

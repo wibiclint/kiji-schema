@@ -227,8 +227,7 @@ public final class CassandraKijiTableWriter implements KijiTableWriter {
 
     Statement putStatement = mWriterCommon.getStatementPutNotCounter(
         entityId, family, qualifier, timestamp, value);
-    Session session = mAdmin.getSession();
-    session.execute(putStatement);
+    mAdmin.execute(putStatement);
   }
 
   // ----------------------------------------------------------------------------------------------
@@ -263,14 +262,12 @@ public final class CassandraKijiTableWriter implements KijiTableWriter {
         CassandraKiji.CASSANDRA_FAMILY_COL,
         CassandraKiji.CASSANDRA_QUALIFIER_COL);
 
-    Session session = mAdmin.getSession();
-
     final KijiColumnName columnName = new KijiColumnName(family, qualifier);
     final CassandraColumnNameTranslator translator =
         (CassandraColumnNameTranslator) mWriterLayoutCapsule.getColumnNameTranslator();
 
-    PreparedStatement preparedStatement = session.prepare(queryText);
-    ResultSet resultSet = session.execute(preparedStatement.bind(
+    PreparedStatement preparedStatement = mAdmin.getPreparedStatement(queryText);
+    ResultSet resultSet = mAdmin.execute(preparedStatement.bind(
         rowKey,
         translator.toCassandraLocalityGroup(columnName),
         translator.toCassandraColumnFamily(columnName),
@@ -318,14 +315,12 @@ public final class CassandraKijiTableWriter implements KijiTableWriter {
         CassandraKiji.CASSANDRA_QUALIFIER_COL,
         CassandraKiji.CASSANDRA_VERSION_COL);
 
-    Session session = mTable.getAdmin().getSession();
-
     final KijiColumnName columnName = new KijiColumnName(family, qualifier);
     final CassandraColumnNameTranslator translator =
         (CassandraColumnNameTranslator) mWriterLayoutCapsule.getColumnNameTranslator();
 
-    PreparedStatement preparedStatement = session.prepare(queryText);
-    session.execute(preparedStatement.bind(
+    PreparedStatement preparedStatement = mAdmin.getPreparedStatement(queryText);
+    mAdmin.execute(preparedStatement.bind(
         counterIncrement,
         rowKey,
         translator.toCassandraLocalityGroup(columnName),
@@ -392,11 +387,10 @@ public final class CassandraKijiTableWriter implements KijiTableWriter {
     final State state = mState.get();
     Preconditions.checkState(state == State.OPEN,
         "Cannot delete row while KijiTableWriter %s is in state %s.", this, state);
-    Session session = mAdmin.getSession();
-    // TODO: Execute async?
     // TODO: Could check whether this family has an non-counter / counter columns before delete.
-    session.execute(mWriterCommon.getStatementDeleteRow(entityId));
-    session.execute(mWriterCommon.getStatementDeleteRowCounter(entityId));
+    // TODO: Should we wait for these calls to complete before returning?
+    mAdmin.executeAsync(mWriterCommon.getStatementDeleteRow(entityId));
+    mAdmin.executeAsync(mWriterCommon.getStatementDeleteRowCounter(entityId));
   }
 
   /** {@inheritDoc} */
@@ -412,11 +406,10 @@ public final class CassandraKijiTableWriter implements KijiTableWriter {
     Preconditions.checkState(state == State.OPEN,
         "Cannot delete family while KijiTableWriter %s is in state %s.", this, state);
 
-    Session session = mAdmin.getSession();
-    // TODO: Execute async?
     // TODO: Could check whether this family has an non-counter / counter columns before delete.
-    session.execute(mWriterCommon.getStatementDeleteFamily(entityId, family));
-    session.execute(mWriterCommon.getStatementDeleteFamilyCounter(entityId, family));
+    // TODO: Should we wait for these calls to complete before returning?
+    mAdmin.executeAsync(mWriterCommon.getStatementDeleteFamily(entityId, family));
+    mAdmin.executeAsync(mWriterCommon.getStatementDeleteFamilyCounter(entityId, family));
   }
 
   /** {@inheritDoc} */
@@ -433,7 +426,7 @@ public final class CassandraKijiTableWriter implements KijiTableWriter {
     Preconditions.checkState(state == State.OPEN,
         "Cannot delete column while KijiTableWriter %s is in state %s.", this, state);
     Statement statement = mWriterCommon.getStatementDeleteColumn(entityId, family, qualifier);
-    mAdmin.getSession().execute(statement);
+    mAdmin.execute(statement);
   }
 
   /** {@inheritDoc} */
@@ -453,7 +446,7 @@ public final class CassandraKijiTableWriter implements KijiTableWriter {
    */
   private void doDeleteCell(EntityId entityId, String family, String qualifier, long timestamp) throws IOException {
     Statement statement = mWriterCommon.getStatementDeleteCell(entityId, family, qualifier, timestamp);
-    mAdmin.getSession().execute(statement);
+    mAdmin.execute(statement);
   }
 
   /** {@inheritDoc} */

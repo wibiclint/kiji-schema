@@ -107,7 +107,7 @@ public class TestCassandraKijiAdmin extends CassandraKijiClientTest {
   }
 
   @Test
-  public void testSetTableLayoutOnATableThatDoesNotExist() throws Exception {
+  public void testSetTableLayoutOnNonExistentTable() throws Exception {
     final TableLayoutDesc tableLayoutDesc = KijiTableLayouts.getLayout(KijiTableLayouts.SIMPLE);
     try {
       getKiji().modifyTableLayout(tableLayoutDesc);

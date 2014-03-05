@@ -169,15 +169,14 @@ public class CassandraSystemTable implements KijiSystemTable {
         "Cannot open SystemTable instance in state %s.", oldState);
 
     String queryText;
-    Session session = mTable.getSession();
 
     // Prepare some statements for CQL queries
     queryText = "SELECT " + VALUE_COLUMN + " FROM " +  mTable.getTableName() +
         " WHERE " + KEY_COLUMN + "=?";
-    preparedStatementGetValue = session.prepare(queryText);
+    preparedStatementGetValue = mTable.getAdmin().getPreparedStatement(queryText);
 
     queryText = "INSERT INTO " +  mTable.getTableName() + "(" + KEY_COLUMN + "," + VALUE_COLUMN + ") VALUES(?,?);";
-    preparedStatementPutValue = session.prepare(queryText);
+    preparedStatementPutValue = mTable.getAdmin().getPreparedStatement(queryText);
 
   }
 
@@ -252,7 +251,7 @@ public class CassandraSystemTable implements KijiSystemTable {
     final State state = mState.get();
     Preconditions.checkState(state == State.OPEN,
         "Cannot get value from SystemTable instance in state %s.", state);
-    ResultSet resultSet = mTable.getSession().execute(preparedStatementGetValue.bind(key));
+    ResultSet resultSet = mTable.getAdmin().execute(preparedStatementGetValue.bind(key));
 
     // Extra the value from the byte buffer, otherwise return this empty buffer
     // TODO: Some additional sanity checks here?
@@ -275,9 +274,8 @@ public class CassandraSystemTable implements KijiSystemTable {
     Preconditions.checkState(state == State.OPEN,
         "Cannot put value into SystemTable instance in state %s.", state);
     ByteBuffer valAsByteBuffer = CassandraByteUtil.bytesToByteBuffer(value);
-    Session session = mTable.getSession();
     // TODO: Check for success?
-    session.execute(preparedStatementPutValue.bind(key, valAsByteBuffer));
+    mTable.getAdmin().execute(preparedStatementPutValue.bind(key, valAsByteBuffer));
   }
 
   /** {@inheritDoc} */
@@ -289,8 +287,7 @@ public class CassandraSystemTable implements KijiSystemTable {
 
     // TODO: Make this a prepared query.
     String queryText = "SELECT * FROM " +  mTable.getTableName() + ";";
-    Session session = mTable.getSession();
-    ResultSet resultSet = session.execute(queryText);
+    ResultSet resultSet = mTable.getAdmin().execute(queryText);
 
     // Extra the value from the byte buffer, otherwise return this empty buffer
     // TODO: Some checks here?

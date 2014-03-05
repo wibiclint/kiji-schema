@@ -29,9 +29,9 @@ import java.util.List;
 class CassandraKijiWriterCommon {
   private static final Logger LOG = LoggerFactory.getLogger(CassandraKijiWriterCommon.class);
 
-  private final CassandraKijiTable mTable;
+  private final CassandraAdmin mAdmin;
 
-  private final Session mSession;
+  private final CassandraKijiTable mTable;
 
   private volatile WriterLayoutCapsule mWriterLayoutCapsule;
 
@@ -44,7 +44,7 @@ class CassandraKijiWriterCommon {
       CassandraKijiTableWriter.WriterLayoutCapsule capsule) {
     mTable = table;
     mWriterLayoutCapsule = capsule;
-    mSession = mTable.getAdmin().getSession();
+    mAdmin = mTable.getAdmin();
     mTableName = KijiManagedCassandraTableName
         .getKijiTableName(mTable.getURI(), mTable.getName()).toString();
     mCounterTableName = KijiManagedCassandraTableName
@@ -95,13 +95,11 @@ class CassandraKijiWriterCommon {
         CassandraKiji.CASSANDRA_VALUE_COL);
     LOG.info(queryText);
 
-    Session session = mSession;
-
     final KijiColumnName columnName = new KijiColumnName(family, qualifier);
     final CassandraColumnNameTranslator translator =
         (CassandraColumnNameTranslator) capsule.getColumnNameTranslator();
 
-    PreparedStatement preparedStatement = session.prepare(queryText);
+    PreparedStatement preparedStatement = mAdmin.getPreparedStatement(queryText);
     return preparedStatement.bind(
         rowKey,
         translator.toCassandraLocalityGroup(columnName),
@@ -139,8 +137,7 @@ class CassandraKijiWriterCommon {
         CassandraKiji.CASSANDRA_VERSION_COL
     );
 
-    Session session = mSession;
-    PreparedStatement preparedStatement = session.prepare(queryString);
+    PreparedStatement preparedStatement = mAdmin.getPreparedStatement(queryString);
     return preparedStatement.bind(
         rowKey,
         translator.toCassandraLocalityGroup(kijiColumnName),
@@ -176,8 +173,7 @@ class CassandraKijiWriterCommon {
         CassandraKiji.CASSANDRA_QUALIFIER_COL
     );
 
-    Session session = mSession;
-    PreparedStatement preparedStatement = session.prepare(queryString);
+    PreparedStatement preparedStatement = mAdmin.getPreparedStatement(queryString);
     return preparedStatement.bind(
         rowKey,
         translator.toCassandraLocalityGroup(kijiColumnName),
@@ -238,8 +234,7 @@ class CassandraKijiWriterCommon {
         CassandraKiji.CASSANDRA_FAMILY_COL
     );
 
-    Session session = mSession;
-    PreparedStatement preparedStatement = session.prepare(queryString);
+    PreparedStatement preparedStatement = mAdmin.getPreparedStatement(queryString);
     return preparedStatement.bind(
         rowKey,
         translator.toCassandraLocalityGroup(kijiColumnName),
@@ -267,7 +262,7 @@ class CassandraKijiWriterCommon {
         CassandraKiji.CASSANDRA_KEY_COL
     );
 
-    PreparedStatement preparedStatement = mSession.prepare(queryString);
+    PreparedStatement preparedStatement = mAdmin.getPreparedStatement(queryString);
     return preparedStatement.bind(rowKey);
   }
 
