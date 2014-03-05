@@ -626,9 +626,7 @@ public final class CassandraKijiTable implements KijiTable {
     final State state = mState.get();
     Preconditions.checkState(state == State.OPEN,
         "Cannot get the TableAnnotator for a table in state: %s.", state);
-    //return new HBaseKijiTableAnnotator(this);
-    // TODO: Implement C* KijiTableAnnotator.
-    return null;
+    return new CassandraKijiTableAnnotator(this);
   }
 
   /**

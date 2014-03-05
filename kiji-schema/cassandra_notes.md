@@ -21,8 +21,6 @@ Open TODOs
   - The filters are going to need additional getter methods so that the C* code can get information
     about the filters (e.g., the min and max qualifiers for a column range filter).
 
-- We need a C* version of `KijiTableAnnotator`.
-
 - Compare-and-set in the C* `AtomicKijiPutter`
   - All non-compare-and-set functionality is complete
   - CQL has support for "lightweight transactions" that perform compare-and-set, but it does not
@@ -87,6 +85,8 @@ Open TODOs
   most cases, the two implementing classes share *a lot* of code.  We may want to refactor all of
   the shared code into an abstract superclass from which both the HBase and C* implementations can
   inherit.
+  - As an example, `CassandraKijiTableAnnotator` contains over 1000 lines of code, but only a
+    handful of them are different from those in `HBaseKijiTableAnnotator`.
 
 - Think about limiting the number of places from which we can call `Session#execute`.
   - Might be good to put all of these calls within `CassandraAdmin`, for example.
