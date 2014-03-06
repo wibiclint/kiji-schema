@@ -137,6 +137,10 @@ public final class KijiTableLayouts {
   public static final String FOO_TEST =
       "org/kiji/schema/layout/foo-test.json";
 
+  /** Test layout named 'ttl_test'. */
+  public static final String TTL_TEST =
+      "org/kiji/schema/layout/ttl-test.json";
+
   /** Table named 'table' with a final string column named 'family:column'. */
   public static final String FINAL_COLUMN =
       "org/kiji/schema/layout/final-column.json";

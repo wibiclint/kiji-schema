@@ -4,6 +4,7 @@ import com.datastax.driver.core.PreparedStatement;
 import com.datastax.driver.core.Session;
 import com.datastax.driver.core.Statement;
 import com.google.common.base.Preconditions;
+import org.apache.hadoop.hbase.HConstants;
 import org.kiji.schema.EntityId;
 import org.kiji.schema.KijiCellEncoder;
 import org.kiji.schema.KijiColumnName;
@@ -64,7 +65,27 @@ class CassandraKijiWriterCommon {
         .isCounter();
   }
 
-  // Get the Statement for a put to a non-counter cell.
+  private static int getTimeToLive(
+      WriterLayoutCapsule capsule,
+      String family) {
+    // Get the locality group name from the column name.
+    KijiTableLayout.LocalityGroupLayout localityGroupLayout =
+        capsule.getLayout().getFamilyMap().get(family).getLocalityGroup();
+    return localityGroupLayout.getDesc().getTtlSeconds();
+  }
+
+  /**
+   * Create a (bound) CQL statement that implements a Kiji put into a non-counter cell.
+   *
+   * @param entityId The entity ID of the destination cell.
+   * @param family The column family of the destination cell.
+   * @param qualifier The column qualifier of the destination cell.
+   * @param timestamp The timestamp of the destination cell.
+   * @param value The value of the destination cell.
+   * @param <T> The type of the destination cell.
+   * @return A CQL `Statement` that implements the put.
+   * @throws IOException If something goes wrong (e.g., the column does not exist).
+   */
   public<T> Statement getStatementPutNotCounter(
       EntityId entityId,
       String family,
@@ -82,10 +103,11 @@ class CassandraKijiWriterCommon {
     final byte[] encoded = cellEncoder.encode(value);
     final ByteBuffer encodedByteBuffer = CassandraByteUtil.bytesToByteBuffer(encoded);
 
-    // TODO: Refactor this query text (and preparation for it) elsewhere.
+    int timeToLive = getTimeToLive(capsule, family);
+
     // Create the CQL statement to insert data.
     String queryText = String.format(
-        "INSERT INTO %s (%s, %s, %s, %s, %s, %s) VALUES (?, ?, ?, ?, ?, ?);",
+        "INSERT INTO %s (%s, %s, %s, %s, %s, %s) VALUES (?, ?, ?, ?, ?, ?) ",
         mTableName,
         CassandraKiji.CASSANDRA_KEY_COL,
         CassandraKiji.CASSANDRA_LOCALITY_GROUP_COL,
@@ -93,6 +115,13 @@ class CassandraKijiWriterCommon {
         CassandraKiji.CASSANDRA_QUALIFIER_COL,
         CassandraKiji.CASSANDRA_VERSION_COL,
         CassandraKiji.CASSANDRA_VALUE_COL);
+
+    if (timeToLive != HConstants.FOREVER) {
+      queryText += " USING TTL " + timeToLive + " ";
+    }
+
+    queryText += ";";
+
     LOG.info(queryText);
 
     final KijiColumnName columnName = new KijiColumnName(family, qualifier);
