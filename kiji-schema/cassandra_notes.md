@@ -56,22 +56,28 @@ Open TODOs
 - It might be useful to have a notion of a read-only table.  Such a table would be great for unit
   tests, because we could initialize a shared table once and then share it across a lot of read-only
   tests.  This would probably speed up the tests a lot!
+
 - Need comprehensible error message if the user does not have Cassandra running (need an error
   message that is better than a stack trace)
+
 - Desperately need more unit tests for the Cassandra / Hadoop code that I wrote, also for the
   record reader and input format in Kiji MR.
+
 - Add integration tests
   - Especially need tests with multiple Cassandra nodes to make sure that the new Cassandra / Hadoop
     code in KijiMR and in the Cassandra2/Hadoop2 interface works properly.
+
 - The `CassandraKijiClientTest` needs to allow a user to use a JVM system property to force unit
   tests to run on a real Cassandra server (and not on the session created within the unit tests).
+
 - The code in `CassandraKijiRowScanner` that creates `KijiRowData` instances from a list of
   iterators over `Row`s needs *a lot* of testing.  This code has to create the results of multiple
   RPC calls to provide a coherent view of a given Kiji row.  There is some trickiness that can occur
   if some Kiji rows do not have any data present whatsoever for a given column.  I had an e-mail
   thread with Joe about this and there is a `token` function that we use to order the entity IDs.
   I added some unit tests, but more (especially integration tests) would be useful.
-- Need unit tests for the command-line tools
+
+- Need unit tests for the command-line tools.
 
 
 ### General code organization
@@ -84,20 +90,6 @@ Open TODOs
   - As an example, `CassandraKijiTableAnnotator` contains over 1000 lines of code, but only a
     handful of them are different from those in `HBaseKijiTableAnnotator`.
 
-- Think about limiting the number of places from which we can call `Session#execute`.
-  - Might be good to put all of these calls within `CassandraAdmin`, for example.
-  - That would make it easier to manage prepared queries, since the queries are prepared
-    per-`Session` (double-check that this is true) and the `CassandraAdmin` manages the active
-    Cassandra `Session`.
-  - Such a refactoring would also make it easier to modify the way in which we map Kiji to C*, since
-    we'd likely have to change only a single file.
-  - We could remove the `getSession` method entirely from `CassandraAdmin` if we want to really
-    tighten this up.
-
-- Do we want to refactor `CassandraAdmin` into multiple classes?  Should we add or remove some
-  functionality to or from it?  The class as it is now is somewhat arbitrary -- I created it mostly
-  as a wrapper around an open Cassandra `Session` to try to future-proof the code.
-
 - Do we need the `CassandraTableInterface` class?  It is basically just a table name and a pointer
   to a `CassandraAdmin` (which may be useful by itself).
   - We may want to keep this class around to manage reference counting for open sessions.
@@ -105,11 +97,6 @@ Open TODOs
     `CassandraTableInterface`, rather than getting a `Session` from `CassandraAdmin`.  Such a
     restriction would make it easier to manage what objects are doing what with the currently open
     `Session.`
-
-- The DataStax Java driver has builder methods for creating queries.  I could not find much
-  documentation about them, however, so I have not used them yet.  Using builders would make some of
-  the code a lot more compact (e.g., in cases in which we have to conditionally add clauses to a
-  query).
 
 - The code for column-name translation is kind of a mess right now.  I wanted to share the layout
   capsule code as much as possible between the HBase and Cassandra Kiji implementations.  The
@@ -125,10 +112,11 @@ Open TODOs
 
 - We may be doing a lot of unnecessary conversions from `ByteBuffer` to `byte[]` to final data types
   when we read data back from Cassandra tables.  (I have not looked into this much, but we should
-  check.)
+  check.)  I added a `CassandraByteUtil` class to translate between `ByteBuffer` and `byte[]` and it
+  might be doing wildly inefficient things.
 
 - We can use the asynchronous `Session#executeAsync` method whenever we are issuing multiple
-  requests for data to the Cassandra cluster.
+  requests for data to the Cassandra cluster.  (I have done this in some places.)
 
 - Add some performance tests!
   - How does this perform versus HBase?
@@ -202,7 +190,7 @@ These are meant to be higher-level issues than those in the TODO section above.
   - Currently the CQL primary key has the order (key, family, qualifier, version, value).  To
     support different query patterns, we might want to have a different ordering.
 - How shall we expose C*'s variable consistency levels to the user?
-- Do we need to support row scans?
+- Do we need to support row scans that scan a portion of the row space?
 - How do we support values for `MAXVERSIONS` other than `INFINITY` and 1?
 - We are currently hashing every entity ID twice.  Once in Kiji, and then again when that entity ID
   becomes the C* partition key and it goes through the `Murmur3Partioner`.  Do we want to change
