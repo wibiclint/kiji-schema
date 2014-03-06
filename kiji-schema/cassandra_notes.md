@@ -36,7 +36,7 @@ Open TODOs
   - To implement this, we need to use an order-preserving hash function in Cassandra (which all of
     the C* documentation discourages).
 
-- TTL, keeping parts of a database in-memory, etc.
+- Keeping parts of a database in-memory, compression options, etc.
 
 - Integration tests (especially those with multiple Cassandra nodes)
 
