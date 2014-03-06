@@ -11,9 +11,9 @@ Open TODOs
 
 ### Major missing features
 
-- Bulk importers!
+- Bulk importers (not implemented at all now)
 
-- Security / permission checking is not implemented at all now.
+- Security / permission checking (not implemented at all now)
 
 - Add support for filters (even if everything has to happen on the client for now).
   - We may also need to modify the KijiColumnFilter interface to have a method like:
@@ -36,7 +36,8 @@ Open TODOs
   - To implement this, we need to use an order-preserving hash function in Cassandra (which all of
     the C* documentation discourages).
 
-- Keeping parts of a database in-memory, compression options, etc.
+- Keeping parts of a database in-memory, compression options, etc. (options for Kiji locality
+  groups)
 
 - Integration tests (especially those with multiple Cassandra nodes)
 
@@ -48,11 +49,6 @@ Open TODOs
 - Update copyrights, check for any stale HBase comments
 - Add super-unstable annotations to this API.  :)
 - Remove / sanitize the huge number of LOG.info messages.
-
-
-### Prepared CQL statements:
-
-- Update any class that calls `Session#execute` to use a prepared query.
 
 
 ### Testing and error messages
