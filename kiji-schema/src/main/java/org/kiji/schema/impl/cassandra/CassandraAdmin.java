@@ -2,13 +2,13 @@ package org.kiji.schema.impl.cassandra;
 
 import com.datastax.driver.core.*;
 import com.google.common.base.Preconditions;
+import org.apache.commons.lang.StringUtils;
 import org.kiji.schema.KijiURI;
 import org.kiji.schema.cassandra.KijiManagedCassandraTableName;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.Closeable;
-import java.io.IOException;
 import java.util.Collection;
 
 /**
@@ -99,19 +99,7 @@ public abstract class CassandraAdmin implements Closeable {
    * @return Whether the keyspace exists.
    */
   private boolean keyspaceExists(String keyspace) {
-    Preconditions.checkArgument(KijiManagedCassandraTableName.keyspaceNameIsFormattedForCQL(keyspace));
-
-    // Strip quotes off of keyspace
-    String noQuotesKeyspace = stripQuotes(keyspace);
-    LOG.debug("keyspace without quotes = " + noQuotesKeyspace);
-
-    LOG.debug("Checking whether keyspace " + noQuotesKeyspace + " exists.");
-    Metadata md = getSession().getCluster().getMetadata();
-    LOG.debug("Found these keyspaces:");
-    for (KeyspaceMetadata ksm : md.getKeyspaces()) {
-      LOG.debug(String.format("\t%s", ksm.getName()));
-    }
-    return (null != md.getKeyspace(noQuotesKeyspace));
+    return (null != mSession.getCluster().getMetadata().getKeyspace(keyspace));
   }
 
   /**
@@ -171,10 +159,11 @@ public abstract class CassandraAdmin implements Closeable {
     Preconditions.checkNotNull(getSession().getCluster());
     Preconditions.checkNotNull(getSession().getCluster().getMetadata());
     String keyspace = KijiManagedCassandraTableName.getCassandraKeyspaceFormattedForCQL(mKijiURI);
-    String noQuotesKeyspace = stripQuotes(keyspace);
-    Preconditions.checkNotNull(getSession().getCluster().getMetadata().getKeyspace(noQuotesKeyspace));
+    //String noQuotesKeyspace = stripQuotes(keyspace);
+    //Preconditions.checkNotNull(getSession().getCluster().getMetadata().getKeyspace(noQuotesKeyspace));
+    Preconditions.checkNotNull(getSession().getCluster().getMetadata().getKeyspace(keyspace));
     Collection<TableMetadata> tables =
-        getSession().getCluster().getMetadata().getKeyspace(noQuotesKeyspace).getTables();
+        getSession().getCluster().getMetadata().getKeyspace(keyspace).getTables();
     return (tables.isEmpty());
   }
 
@@ -189,33 +178,21 @@ public abstract class CassandraAdmin implements Closeable {
   public boolean tableExists(String tableName) {
     Preconditions.checkArgument(KijiManagedCassandraTableName.tableNameIsFormattedForCQL(tableName));
     Preconditions.checkNotNull(getSession());
-
-    // Remove the quotes from the keyspace and the tablename for comparing against what we find in
-    // the C* metadata.
-    String keyspace = stripQuotes(
-        KijiManagedCassandraTableName.getCassandraKeyspaceFormattedForCQL(mKijiURI)
-    );
-
-    String tableNameNoQuotes = stripQuotes(tableName);
-
-    LOG.debug("Looking for table with name " + tableNameNoQuotes);
-    LOG.debug("\tkeyspace (w/o quotes) = " + keyspace);
-
     Metadata metadata = getSession().getCluster().getMetadata();
+
+    String keyspace = KijiManagedCassandraTableName.getCassandraKeyspaceFormattedForCQL(mKijiURI);
+
     if (null == metadata.getKeyspace(keyspace)) {
-      LOG.debug("\tCannot find keyspace " + keyspace + ", assuming table " + tableNameNoQuotes + " is not installed");
+      assert(!keyspaceExists(
+          KijiManagedCassandraTableName.getCassandraKeyspaceFormattedForCQL(mKijiURI)
+      ));
       return false;
     }
-    Collection<TableMetadata> tableMetadata = getSession().getCluster().getMetadata().getKeyspace(keyspace).getTables();
-    for (TableMetadata tm : tableMetadata) {
-      final String nameWithKeyspace = String.format("%s.%s", keyspace, tm.getName());
-      LOG.debug("\t" + nameWithKeyspace);
-      if (nameWithKeyspace.equals(tableNameNoQuotes)) {
-        return true;
-      }
-    }
-    LOG.debug("\tCould not find any table with name matching table " + tableNameNoQuotes);
-    return false;
+
+    // Use the quoted table name without the keyspace.
+    String quotedTableNameNoKeyspace = StringUtils.replace(tableName, keyspace + ".", "", 1);
+    Preconditions.checkArgument(!quotedTableNameNoKeyspace.equals(tableName));
+    return metadata.getKeyspace(keyspace).getTable(quotedTableNameNoKeyspace) != null;
   }
 
   // TODO: Implement close method
