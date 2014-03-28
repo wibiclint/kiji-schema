@@ -127,7 +127,7 @@ public final class CassandraKijiInstaller {
       throw new KijiAlreadyExistsException(String.format(
           "Cassandra Kiji instance '%s' already exists.", uri), uri);
     }
-    // TODO: Add security checks when we have a plan for security in Cassandra Kiji.
+    // TODO (SCHEMA-706): Add security checks when we have a plan for security in Cassandra Kiji.
 
     LOG.info(String.format("Installed Cassandra Kiji instance '%s'.", uri));
   }
@@ -154,7 +154,7 @@ public final class CassandraKijiInstaller {
 
     final Kiji kiji = CassandraKijiFactory.get().open(uri, conf);
     try {
-      // TODO: Add security checks when we have a plan for security in Cassandra Kiji.
+      // TODO (SCHEMA-706): Add security checks when we have a plan for security in Cassandra Kiji.
 
       for (String tableName : kiji.getTableNames()) {
         LOG.debug("Deleting kiji table " + tableName + "...");

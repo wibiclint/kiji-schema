@@ -163,11 +163,7 @@ public class TestCassandraCounters extends CassandraKijiClientTest {
     // to use it again.
     mWriter.increment(mEntityId, MAP, Q0, 1L);
     counter = mReader.get(mEntityId, request).getMostRecentCell(MAP, Q0);
-    actual = counter.getData();
-
-    // The counter will always be stuck at 0 from now on.
-    assertEquals(0L, actual);
-    assertEquals(KConstants.CASSANDRA_COUNTER_TIMESTAMP, counter.getTimestamp());
+    assertNull(counter);
   }
 
   // A buffered writer can only delete counters.
@@ -199,11 +195,7 @@ public class TestCassandraCounters extends CassandraKijiClientTest {
     // It will always be zero.
     mWriter.put(mEntityId, MAP, Q0, 1L);
     counter = mReader.get(mEntityId, request).getMostRecentCell(MAP, Q0);
-    actual = counter.getData();
-
-    // Remember, the previous put won't actually do anything.  The counter is permanently gone.
-    assertEquals(0L, actual);
-    assertEquals(KConstants.CASSANDRA_COUNTER_TIMESTAMP, counter.getTimestamp());
+    assertNull(counter);
 
     // Writing to a counter from a buffered writing should fail (counter writes in C* Kiji require
     // doing a read followed by an increment, so we cannot do them in batch).

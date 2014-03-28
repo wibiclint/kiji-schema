@@ -5,6 +5,11 @@ This document includes notes about the C* versions of KijiSchema and KijiMR (alm
 to support C* in Kiji is in KijiSchema).  I moved the super-detailed notes of everything that I did
 every week into `cassandra_weekly_notes.md`.
 
+Viewing this locally
+--------------------
+
+Try using the [grip](https://github.com/joeyespo/grip) tool.
+
 Open TODOs
 ==========
 
@@ -49,6 +54,7 @@ Open TODOs
 - Update copyrights, check for any stale HBase comments
 - Add super-unstable annotations to this API.  :)
 - Remove / sanitize the huge number of LOG.info messages.
+- Upgrade to Cassandra 2.0.6 (or to 2.1) and latest version of Java driver.
 
 
 ### Testing and error messages
@@ -77,7 +83,7 @@ Open TODOs
   thread with Joe about this and there is a `token` function that we use to order the entity IDs.
   I added some unit tests, but more (especially integration tests) would be useful.
 
-- Need unit tests for the command-line tools.
+- Need unit tests for the command-line tools (many will not work yet with C* Kiji).
 
 
 ### General code organization

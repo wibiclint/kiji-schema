@@ -155,7 +155,6 @@ class CassandraKijiWriterCommon {
 
     String tableName = isCounterColumn(family, qualifier) ? mCounterTableName : mTableName;
 
-    // TODO: Prepare this statement first.
     String queryString = String.format(
         "DELETE FROM %s WHERE %s=? AND %s=? AND %s=? AND %s=? AND %s=?",
         tableName,
