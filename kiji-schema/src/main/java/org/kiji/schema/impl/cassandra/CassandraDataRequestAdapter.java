@@ -1,5 +1,5 @@
 /**
- * (c) Copyright 2012 WibiData, Inc.
+ * (c) Copyright 2014 WibiData, Inc.
  *
  * See the NOTICE file distributed with this work for additional
  * information regarding copyright ownership.
@@ -19,24 +19,29 @@
 
 package org.kiji.schema.impl.cassandra;
 
-import com.datastax.driver.core.*;
-import com.google.common.base.Preconditions;
-import org.apache.hadoop.hbase.HConstants;
-import org.kiji.annotations.ApiAudience;
-import org.kiji.schema.*;
-import org.kiji.schema.cassandra.KijiManagedCassandraTableName;
-import org.kiji.schema.hbase.HBaseColumnName;
-import org.kiji.schema.layout.KijiTableLayout;
-import org.kiji.schema.layout.impl.ColumnNameTranslator;
-import org.kiji.schema.layout.impl.cassandra.CassandraColumnNameTranslator;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
+
+import com.datastax.driver.core.PreparedStatement;
+import com.datastax.driver.core.ResultSet;
+import com.datastax.driver.core.ResultSetFuture;
+import com.datastax.driver.core.Statement;
+import com.google.common.base.Preconditions;
+import com.google.common.collect.Sets;
+import org.kiji.schema.EntityId;
+import org.kiji.schema.KijiColumnName;
+import org.kiji.schema.KijiDataRequest;
+import org.kiji.schema.KijiTableReader;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import org.kiji.annotations.ApiAudience;
+import org.kiji.schema.cassandra.KijiManagedCassandraTableName;
+import org.kiji.schema.layout.KijiTableLayout;
+import org.kiji.schema.layout.impl.cassandra.CassandraColumnNameTranslator;
 
 /**
  * Wraps a KijiDataRequest to expose methods that generate meaningful objects in Cassandra land.
@@ -142,7 +147,7 @@ public class CassandraDataRequestAdapter {
 
     // A single Kiji data request can result in many Cassandra queries, so we use asynchronous IO
     // and keep a list of all of the futures that will contain results from Cassandra.
-    HashSet<ResultSetFuture> futures = new HashSet<ResultSetFuture>();
+    Set<ResultSetFuture> futures = Sets.newHashSet();
 
     // Timestamp limits for queries.
     long maxTimestamp = mKijiDataRequest.getMaxTimestamp();
@@ -302,7 +307,7 @@ public class CassandraDataRequestAdapter {
       Long maxTimestamp,
       KijiDataRequest.Column column,
       boolean pagingEnabled,
-      HashSet<ResultSetFuture> resultSetFutures) {
+      Set<ResultSetFuture> resultSetFutures) {
 
     Statement boundStatement;
     if (translatedQualifier != null) {
@@ -367,7 +372,7 @@ public class CassandraDataRequestAdapter {
       Long minTimestamp,
       Long maxTimestamp,
       KijiDataRequest.Column column,
-      HashSet<ResultSetFuture> resultSetFutures) {
+      Set<ResultSetFuture> resultSetFutures) {
     int numScanQueries = 0;
 
     if (translatedQualifier != null) {
@@ -396,7 +401,7 @@ public class CassandraDataRequestAdapter {
           translatedQualifier));
       resultSetFutures.add(res);
       numScanQueries++;
-    } else if (translatedQualifier == null) {
+    } else {
       String queryString = String.format(
           "SELECT token(%s), %s, %s, %s, %s, %s, %s FROM %s WHERE %s=? AND %s=? ALLOW FILTERING",
           CassandraKiji.CASSANDRA_KEY_COL,
@@ -415,7 +420,6 @@ public class CassandraDataRequestAdapter {
       ResultSetFuture res = admin.executeAsync(preparedStatement.bind(translatedLocalityGroup, translatedFamily));
       resultSetFutures.add(res);
       numScanQueries++;
-
     }
     return numScanQueries;
   }
@@ -433,7 +437,7 @@ public class CassandraDataRequestAdapter {
       CassandraAdmin admin,
       String cassandraTableName,
       int numScanQueries,
-      HashSet<ResultSetFuture> resultSetFutures) {
+      Set<ResultSetFuture> resultSetFutures) {
     if (0 == numScanQueries) {
       String queryString = String.format(
           "SELECT token(%s), %s FROM %s",
@@ -444,6 +448,5 @@ public class CassandraDataRequestAdapter {
       ResultSetFuture res = admin.executeAsync(queryString);
       resultSetFutures.add(res);
     }
-
   }
 }
