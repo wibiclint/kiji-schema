@@ -20,9 +20,11 @@
   name : "ttl_test",
   description : "the foo table",
   keys_format : {
-    encoding : "HASH",
-    hash_type : "MD5",
-    hash_size : 16
+    encoding : "FORMATTED",
+    components : [ {
+      name : "component",
+      type : "STRING"
+    } ]
   },
   locality_groups : [ {
     name : "inMemory",
@@ -39,5 +41,5 @@
       }
     } ]
   } ],
-  version : "layout-1.0"
+  version : "layout-1.1"
 }

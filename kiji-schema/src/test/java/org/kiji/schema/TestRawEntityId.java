@@ -22,7 +22,13 @@ package org.kiji.schema;
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 
+import com.google.common.collect.ImmutableList;
+import com.google.common.collect.Lists;
+import junit.framework.Assert;
 import org.junit.Test;
+
+import java.util.Collections;
+import java.util.List;
 
 /** Tests for RawEntityId. */
 public class TestRawEntityId {

@@ -19,15 +19,15 @@
 
 package org.kiji.schema.cassandra;
 
+import java.util.regex.Pattern;
+
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hbase.HBaseConfiguration;
 import org.junit.Test;
-import org.kiji.schema.KijiInstaller;
+
 import org.kiji.schema.KijiInvalidNameException;
 import org.kiji.schema.KijiNotInstalledException;
 import org.kiji.schema.KijiURI;
-
-import java.util.regex.Pattern;
 
 import static org.junit.Assert.*;
 

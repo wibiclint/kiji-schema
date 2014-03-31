@@ -53,7 +53,7 @@ public class TestCassandraReadAndWrite extends CassandraKijiClientTest {
     try {
       clientTest.setupKijiTest();
       Kiji kiji = clientTest.getKiji();
-      kiji.createTable(KijiTableLayouts.getLayout(KijiTableLayouts.SIMPLE));
+      kiji.createTable(KijiTableLayouts.getLayout(KijiTableLayouts.SIMPLE_FORMATTED_EID));
       mTable = kiji.openTable("table");
     } catch (Exception e) {
       throw new KijiIOException(e);

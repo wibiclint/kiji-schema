@@ -19,21 +19,34 @@
 
 package org.kiji.schema.cassandra;
 
-import org.apache.hadoop.hbase.util.Bytes;
-import org.junit.Test;
-import org.kiji.schema.*;
-import org.kiji.schema.avro.*;
-import org.kiji.schema.impl.MetadataRestorer;
-import org.kiji.schema.impl.cassandra.CassandraMetadataRestorer;
-import org.kiji.schema.layout.KijiTableLayout;
-import org.kiji.schema.layout.KijiTableLayouts;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
+
+import org.apache.hadoop.hbase.util.Bytes;
+import org.junit.Test;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import org.kiji.schema.Kiji;
+import org.kiji.schema.KijiMetaTable;
+import org.kiji.schema.KijiSchemaTable;
+import org.kiji.schema.KijiSystemTable;
+import org.kiji.schema.KijiTableKeyValueDatabase;
+import org.kiji.schema.avro.KeyValueBackupEntry;
+import org.kiji.schema.avro.MetaTableBackup;
+import org.kiji.schema.avro.MetadataBackup;
+import org.kiji.schema.avro.SchemaTableBackup;
+import org.kiji.schema.avro.SchemaTableEntry;
+import org.kiji.schema.avro.SystemTableBackup;
+import org.kiji.schema.avro.SystemTableEntry;
+import org.kiji.schema.avro.TableBackup;
+import org.kiji.schema.avro.TableLayoutBackupEntry;
+import org.kiji.schema.avro.TableLayoutDesc;
+import org.kiji.schema.impl.cassandra.CassandraMetadataRestorer;
+import org.kiji.schema.layout.KijiTableLayout;
+import org.kiji.schema.layout.KijiTableLayouts;
 
 import static org.junit.Assert.*;
 
@@ -52,7 +65,8 @@ public class TestCassandraMetaTable extends CassandraKijiClientTest {
     final KijiSystemTable systemTable = kiji.getSystemTable();
 
     // Update the layout for table foo.
-    final TableLayoutDesc layout = KijiTableLayouts.getLayout(KijiTableLayouts.FOO_TEST);
+    final TableLayoutDesc layout =
+        KijiTableLayouts.getLayout(KijiTableLayouts.FOO_TEST_FORMATTED_EID);
     final KijiTableLayout updatedLayout = metaTable.updateTableLayout("foo", layout);
 
     // Insert a user-level key-value pair for table foo.
@@ -143,7 +157,8 @@ public class TestCassandraMetaTable extends CassandraKijiClientTest {
     final Kiji kiji = getKiji();
     final KijiMetaTable metaTable = kiji.getMetaTable();
 
-    final TableLayoutDesc layout = KijiTableLayouts.getLayout(KijiTableLayouts.FOO_TEST);
+    final TableLayoutDesc layout =
+        KijiTableLayouts.getLayout(KijiTableLayouts.FOO_TEST_FORMATTED_EID);
     final KijiTableLayout updatedLayout = metaTable.updateTableLayout("foo", layout);
 
     final KijiMetaTable outMeta = metaTable.putValue("foo", "key", BYTES_VALUE);
