@@ -1,5 +1,5 @@
 /**
- * (c) Copyright 2012 WibiData, Inc.
+ * (c) Copyright 2014 WibiData, Inc.
  *
  * See the NOTICE file distributed with this work for additional
  * information regarding copyright ownership.
@@ -19,24 +19,29 @@
 
 package org.kiji.schema.impl.cassandra;
 
-import com.datastax.driver.core.*;
-import com.google.common.base.Preconditions;
-import org.apache.hadoop.hbase.HConstants;
-import org.kiji.annotations.ApiAudience;
-import org.kiji.schema.*;
-import org.kiji.schema.cassandra.KijiManagedCassandraTableName;
-import org.kiji.schema.hbase.HBaseColumnName;
-import org.kiji.schema.layout.KijiTableLayout;
-import org.kiji.schema.layout.impl.ColumnNameTranslator;
-import org.kiji.schema.layout.impl.cassandra.CassandraColumnNameTranslator;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
+
+import com.datastax.driver.core.PreparedStatement;
+import com.datastax.driver.core.ResultSet;
+import com.datastax.driver.core.ResultSetFuture;
+import com.datastax.driver.core.Statement;
+import com.google.common.base.Preconditions;
+import com.google.common.collect.Lists;
+import com.google.common.collect.Sets;
+import org.kiji.schema.EntityId;
+import org.kiji.schema.KijiColumnName;
+import org.kiji.schema.KijiDataRequest;
+import org.kiji.schema.KijiTableReader;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import org.kiji.annotations.ApiAudience;
+import org.kiji.schema.cassandra.KijiManagedCassandraTableName;
+import org.kiji.schema.layout.impl.cassandra.CassandraColumnNameTranslator;
 
 /**
  * Wraps a KijiDataRequest to expose methods that generate meaningful objects in Cassandra land.
@@ -72,11 +77,10 @@ public class CassandraDataRequestAdapter {
    */
   public List<ResultSet> doScan(
       CassandraKijiTable table,
-      KijiTableLayout kijiTableLayout,
       KijiTableReader.KijiScannerOptions kijiScannerOptions
     ) throws IOException {
     // TODO: Do something with the scan options.
-    return queryCassandraTables(table, null, kijiTableLayout, false);
+    return queryCassandraTables(table, null, false);
   }
 
   /**
@@ -85,24 +89,21 @@ public class CassandraDataRequestAdapter {
    *
    * @param table
    * @param entityId EntityID for the given get.
-   * @param kijiTableLayout
    * @return
    * @throws IOException
    */
   public List<ResultSet> doGet(
       CassandraKijiTable table,
-      EntityId entityId,
-      KijiTableLayout kijiTableLayout
+      EntityId entityId
   ) throws IOException {
-    return queryCassandraTables(table, entityId, kijiTableLayout, false);
+    return queryCassandraTables(table, entityId, false);
   }
 
   public List<ResultSet> doPagedGet(
       CassandraKijiTable table,
-      EntityId entityId,
-      KijiTableLayout kijiTableLayout
+      EntityId entityId
   ) throws IOException {
-    return queryCassandraTables(table, entityId, kijiTableLayout, true);
+    return queryCassandraTables(table, entityId, true);
   }
 
   /**
@@ -110,7 +111,6 @@ public class CassandraDataRequestAdapter {
    *
    * @param table The Cassandra Kiji table to scan.
    * @param entityId Make null if this is a scan over all entity IDs (not currently supporting entity ID ranges).
-   * @param kijiTableLayout The layout for the Cassandra Kiji table to scan.
    * @param pagingEnabled If true, all columns in the data request should be paged.  If false, skip
    *                      any paged columns in the data request.
    * @return A list of results for the Cassandra query.
@@ -119,7 +119,6 @@ public class CassandraDataRequestAdapter {
   private List<ResultSet> queryCassandraTables(
       CassandraKijiTable table,
       EntityId entityId,
-      KijiTableLayout kijiTableLayout,
       boolean pagingEnabled
   ) throws IOException {
     // TODO: Or figure out how to combine multiple SELECT statements into a single RPC (IntraVert?).
@@ -142,18 +141,11 @@ public class CassandraDataRequestAdapter {
 
     // A single Kiji data request can result in many Cassandra queries, so we use asynchronous IO
     // and keep a list of all of the futures that will contain results from Cassandra.
-    HashSet<ResultSetFuture> futures = new HashSet<ResultSetFuture>();
+    Set<ResultSetFuture> futures = Sets.newHashSet();
 
     // Timestamp limits for queries.
     long maxTimestamp = mKijiDataRequest.getMaxTimestamp();
     long minTimestamp = mKijiDataRequest.getMinTimestamp();
-
-    // If this is a scan, you need to make sure that you execute at least one SELECT statement,
-    // just to get *something* back for every entity ID.  If you do not do so, then a user could
-    // create a scanner with a data request that has a single, paged column, and you would never
-    // execute a SELECT query below (because we wait to execute paged SELECT queries) and so you
-    // would never get an iterator back with any row keys at all!  Eek!
-    int numScanQueries = 0;
 
     // Use the C* admin to send queries to the C* cluster.
     CassandraAdmin admin = table.getAdmin();
@@ -186,7 +178,7 @@ public class CassandraDataRequestAdapter {
       // separate session.execute(statement) commands.
 
       // Determine whether we need to read non-counter values and/or counter values.
-      List<String> tableNames = new ArrayList();
+      List<String> tableNames = Lists.newArrayList();
 
       if (maybeContainsNonCounterValues(table, kijiColumnName)) {
         tableNames.add(nonCounterTableName);
@@ -198,39 +190,39 @@ public class CassandraDataRequestAdapter {
 
       for (String cassandraTableName : tableNames) {
         if (bIsScan) {
-          numScanQueries += queryCassandraSingleColumnAndUpdateFuturesScan(
-              admin,
-              cassandraTableName,
-              localityGroup,
-              family,
-              qualifier,
-              minTimestamp,
-              maxTimestamp,
-              column,
-              futures
-          );
+          futures.add(
+              scanSingleColumn(
+                  admin,
+                  cassandraTableName,
+                  localityGroup,
+                  family,
+                  qualifier
+          ));
         } else {
-          queryCassandraSingleColumnAndUpdateFuturesGet(
-              CassandraByteUtil.bytesToByteBuffer(entityId.getHBaseRowKey()),
-              admin,
-              cassandraTableName,
-              localityGroup,
-              family,
-              qualifier,
-              minTimestamp,
-              maxTimestamp,
-              column,
-              pagingEnabled,
-              futures
-          );
-
+          futures.add(
+              getSingleColumn(
+                  CassandraByteUtil.bytesToByteBuffer(entityId.getHBaseRowKey()),
+                  admin,
+                  cassandraTableName,
+                  localityGroup,
+                  family,
+                  qualifier,
+                  minTimestamp,
+                  maxTimestamp,
+                  column,
+                  pagingEnabled
+          ));
         }
       }
     }
 
-    if (bIsScan) {
-      possiblyAddDummyScanQueryAndUpdateFutures(
-          admin, nonCounterTableName, numScanQueries, futures);
+    if (bIsScan && futures.isEmpty()) {
+      // If this is a scan, you need to make sure that you execute at least one SELECT statement,
+      // just to get *something* back for every entity ID.  If you do not do so, then a user could
+      // create a scanner with a data request that has a single, paged column, and you would never
+      // execute a SELECT query below (because we wait to execute paged SELECT queries) and so you
+      // would never get an iterator back with any row keys at all!  Eek!
+      futures.add(dummyScan(admin, nonCounterTableName));
     }
 
     // Wait until all of the futures are done.
@@ -291,7 +283,7 @@ public class CassandraDataRequestAdapter {
     return isCounter;
   }
 
-  private void queryCassandraSingleColumnAndUpdateFuturesGet(
+  private ResultSetFuture getSingleColumn(
       ByteBuffer entityIdByteBuffer,
       CassandraAdmin admin,
       String cassandraTableName,
@@ -301,8 +293,7 @@ public class CassandraDataRequestAdapter {
       Long minTimestamp,
       Long maxTimestamp,
       KijiDataRequest.Column column,
-      boolean pagingEnabled,
-      HashSet<ResultSetFuture> resultSetFutures) {
+      boolean pagingEnabled) {
 
     Statement boundStatement;
     if (translatedQualifier != null) {
@@ -354,21 +345,16 @@ public class CassandraDataRequestAdapter {
       int pageSize = column.getPageSize();
       boundStatement = boundStatement.setFetchSize(pageSize);
     }
-    ResultSetFuture res = admin.executeAsync(boundStatement);
-    resultSetFutures.add(res);
+    return admin.executeAsync(boundStatement);
   }
 
-  private int queryCassandraSingleColumnAndUpdateFuturesScan(
+  private ResultSetFuture scanSingleColumn(
       CassandraAdmin admin,
       String cassandraTableName,
       String translatedLocalityGroup,
       String translatedFamily,
-      String translatedQualifier,
-      Long minTimestamp,
-      Long maxTimestamp,
-      KijiDataRequest.Column column,
-      HashSet<ResultSetFuture> resultSetFutures) {
-    int numScanQueries = 0;
+      String translatedQualifier) {
+    ResultSetFuture res;
 
     if (translatedQualifier != null) {
       // Fully-qualified scan.
@@ -390,13 +376,11 @@ public class CassandraDataRequestAdapter {
       );
       LOG.info("Preparing query string " + queryString);
       PreparedStatement preparedStatement = admin.getPreparedStatement(queryString);
-      ResultSetFuture res = admin.executeAsync(preparedStatement.bind(
+      res = admin.executeAsync(preparedStatement.bind(
           translatedLocalityGroup,
           translatedFamily,
           translatedQualifier));
-      resultSetFutures.add(res);
-      numScanQueries++;
-    } else if (translatedQualifier == null) {
+    } else {
       String queryString = String.format(
           "SELECT token(%s), %s, %s, %s, %s, %s, %s FROM %s WHERE %s=? AND %s=? ALLOW FILTERING",
           CassandraKiji.CASSANDRA_KEY_COL,
@@ -412,12 +396,9 @@ public class CassandraDataRequestAdapter {
       );
       LOG.info("Preparing query string " + queryString);
       PreparedStatement preparedStatement = admin.getPreparedStatement(queryString);
-      ResultSetFuture res = admin.executeAsync(preparedStatement.bind(translatedLocalityGroup, translatedFamily));
-      resultSetFutures.add(res);
-      numScanQueries++;
-
+      res = admin.executeAsync(preparedStatement.bind(translatedLocalityGroup, translatedFamily));
     }
-    return numScanQueries;
+    return res;
   }
 
   /**
@@ -429,21 +410,13 @@ public class CassandraDataRequestAdapter {
    * scan range.
    *
    */
-  private void possiblyAddDummyScanQueryAndUpdateFutures(
-      CassandraAdmin admin,
-      String cassandraTableName,
-      int numScanQueries,
-      HashSet<ResultSetFuture> resultSetFutures) {
-    if (0 == numScanQueries) {
-      String queryString = String.format(
-          "SELECT token(%s), %s FROM %s",
-          CassandraKiji.CASSANDRA_KEY_COL,
-          CassandraKiji.CASSANDRA_KEY_COL,
-          cassandraTableName
-      );
-      ResultSetFuture res = admin.executeAsync(queryString);
-      resultSetFutures.add(res);
-    }
-
+  private ResultSetFuture dummyScan(CassandraAdmin admin, String cassandraTableName) {
+    String queryString = String.format(
+        "SELECT token(%s), %s FROM %s",
+        CassandraKiji.CASSANDRA_KEY_COL,
+        CassandraKiji.CASSANDRA_KEY_COL,
+        cassandraTableName
+    );
+    return admin.executeAsync(queryString);
   }
 }
