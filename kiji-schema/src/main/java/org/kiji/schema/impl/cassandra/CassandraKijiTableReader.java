@@ -357,7 +357,7 @@ public final class CassandraKijiTableReader implements KijiTableReader {
         (CassandraColumnNameTranslator)capsule.getColumnNameTranslator()
     );
 
-    List<ResultSet> results = adapter.doGet(mTable, entityId, tableLayout);
+    List<ResultSet> results = adapter.doGet(mTable, entityId);
 
     Set<Row> allRows = Sets.newHashSet();
 
@@ -450,7 +450,7 @@ public final class CassandraKijiTableReader implements KijiTableReader {
         (CassandraColumnNameTranslator)capsule.getColumnNameTranslator()
     );
 
-    List<ResultSet> results = adapter.doScan(mTable, tableLayout, kijiScannerOptions);
+    List<ResultSet> results = adapter.doScan(mTable, kijiScannerOptions);
 
     // Now we create a KijiRowData from all of these results.
     // Parse the result.

@@ -148,7 +148,7 @@ public final class CassandraVersionPager implements KijiPager {
 
     // Should be only a single ResultSet here, because this was a data request for a single column.
     try {
-      List<ResultSet> results = adapter.doPagedGet(mTable, entityId, capsule.getLayout());
+      List<ResultSet> results = adapter.doPagedGet(mTable, entityId);
       assert(results.size() == 1);
       mRowIterator = results.get(0).iterator();
 
