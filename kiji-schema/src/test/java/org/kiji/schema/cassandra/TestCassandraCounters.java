@@ -197,6 +197,7 @@ public class TestCassandraCounters extends CassandraKijiClientTest {
     counter = mReader.get(mEntityId, request).getMostRecentCell(MAP, Q0);
     assertNull(counter);
 
+
     // Writing to a counter from a buffered writing should fail (counter writes in C* Kiji require
     // doing a read followed by an increment, so we cannot do them in batch).
     try {

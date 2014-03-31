@@ -196,47 +196,4 @@ public class TestHBaseKijiBufferedWriter extends KijiClientTest {
     assertFalse(mReader.get(oldEntityId, request).containsColumn("info", "name"));
     assertTrue(mReader.get(newEntityId, request).containsColumn("info", "name"));
   }
-
-  @Test
-  public void testSetTimestampCounter() throws Exception {
-    final EntityId entityId = mTable.getEntityId("bar");
-    final KijiDataRequest request = KijiDataRequest.create("info", "visits");
-
-    // Write a counter using timestamp 100.
-    KijiTableWriter writer = mTable.openTableWriter();
-    writer.put(entityId, "info", "visits", 100L, 1L);
-
-    KijiCell<Long> counter = mReader.get(entityId, request).getMostRecentCell("info", "visits");
-    long actual = counter.getData();
-    assertEquals(1L, actual);
-    assertEquals(100L, counter.getTimestamp());
-
-    // Verify that incrementing changes this counter.
-    writer.increment(entityId, "info", "visits", 10L);
-
-    counter = mReader.get(entityId, request).getMostRecentCell("info", "visits");
-    actual = counter.getData();
-    assertEquals(11L, actual);
-    assertEquals(100L, counter.getTimestamp());
-
-
-    // Write using timestamp 101.
-    writer.put(entityId, "info", "visits", 101L, 99L);
-
-    // Now we get the new data.
-    counter = mReader.get(entityId, request).getMostRecentCell("info", "visits");
-    actual = counter.getData();
-    assertEquals(101L, counter.getTimestamp());
-    assertEquals(99L, actual);
-
-    // Prepare a second value
-    /*
-    writer.put(entityId, "info", "visits", 0L, 0L);
-    writer.put(entityId, "info", "visits", 1L, 1L);
-    writer.put(entityId, "info", "visits", 2L, 2L);
-    writer.put(entityId, "info", "visits", 3L, 3L);
-    */
-
-    writer.close();
-  }
 }

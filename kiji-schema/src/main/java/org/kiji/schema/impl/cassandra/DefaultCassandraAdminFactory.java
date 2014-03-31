@@ -19,11 +19,8 @@
 
 package org.kiji.schema.impl.cassandra;
 
-import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.hbase.client.HBaseAdmin;
 import org.kiji.annotations.ApiAudience;
 import org.kiji.schema.KijiURI;
-import org.kiji.schema.impl.HBaseAdminFactory;
 
 import java.io.IOException;
 
