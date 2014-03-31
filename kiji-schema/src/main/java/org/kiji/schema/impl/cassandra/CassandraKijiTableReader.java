@@ -1,5 +1,5 @@
 /**
- * (c) Copyright 2012 WibiData, Inc.
+ * (c) Copyright 2014 WibiData, Inc.
  *
  * See the NOTICE file distributed with this work for additional
  * information regarding copyright ownership.
@@ -19,41 +19,45 @@
 
 package org.kiji.schema.impl.cassandra;
 
-import com.datastax.driver.core.*;
+import java.io.IOException;
+import java.util.Collection;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.atomic.AtomicReference;
+
+import com.datastax.driver.core.ResultSet;
+import com.datastax.driver.core.Row;
 import com.google.common.base.Objects;
 import com.google.common.base.Preconditions;
+import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Multimap;
 import com.google.common.collect.Sets;
-import org.apache.hadoop.hbase.client.Get;
-import org.apache.hadoop.hbase.client.HTableInterface;
-import org.apache.hadoop.hbase.client.Result;
-import org.apache.hadoop.hbase.client.Scan;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import org.kiji.annotations.ApiAudience;
-import org.kiji.schema.*;
+import org.kiji.schema.EntityId;
+import org.kiji.schema.KijiColumnName;
+import org.kiji.schema.KijiDataRequest;
+import org.kiji.schema.KijiDataRequestValidator;
+import org.kiji.schema.KijiRowData;
+import org.kiji.schema.KijiRowScanner;
+import org.kiji.schema.KijiTableReader;
+import org.kiji.schema.KijiTableReaderBuilder;
 import org.kiji.schema.KijiTableReaderBuilder.OnDecoderCacheMiss;
-import org.kiji.schema.cassandra.KijiManagedCassandraTableName;
-import org.kiji.schema.filter.KijiRowFilter;
-import org.kiji.schema.filter.KijiRowFilterApplicator;
-import org.kiji.schema.hbase.HBaseColumnName;
-import org.kiji.schema.hbase.HBaseScanOptions;
+import org.kiji.schema.NoSuchColumnException;
+import org.kiji.schema.SpecificCellDecoderFactory;
 import org.kiji.schema.impl.BoundColumnReaderSpec;
 import org.kiji.schema.impl.LayoutConsumer;
 import org.kiji.schema.impl.LayoutCapsule;
 import org.kiji.schema.layout.CellSpec;
 import org.kiji.schema.layout.ColumnReaderSpec;
-import org.kiji.schema.layout.InvalidLayoutException;
 import org.kiji.schema.layout.KijiTableLayout;
 import org.kiji.schema.layout.impl.CellDecoderProvider;
 import org.kiji.schema.layout.impl.ColumnNameTranslator;
 import org.kiji.schema.layout.impl.cassandra.CassandraColumnNameTranslator;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import java.io.IOException;
-import java.nio.ByteBuffer;
-import java.util.*;
-import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Reads from a kiji table by sending the requests directly to the C* tables.
@@ -355,7 +359,7 @@ public final class CassandraKijiTableReader implements KijiTableReader {
 
     List<ResultSet> results = adapter.doGet(mTable, entityId, tableLayout);
 
-    HashSet<Row> allRows = new HashSet<Row>();
+    Set<Row> allRows = Sets.newHashSet();
 
     for (ResultSet res : results) {
       for (Row row : res.all()) {
@@ -368,7 +372,6 @@ public final class CassandraKijiTableReader implements KijiTableReader {
     return new CassandraKijiRowData(
         mTable, dataRequest, entityId, allRows, capsule.getCellDecoderProvider());
   }
-
 
   /**
    * Useful utility method for other classes (e.g., in KijiMR) to put together raw Cassandra Row
@@ -414,7 +417,7 @@ public final class CassandraKijiTableReader implements KijiTableReader {
     final State state = mState.get();
     Preconditions.checkState(state == State.OPEN,
         "Cannot get rows from KijiTableReader instance %s in state %s.", this, state);
-    List<KijiRowData> data = new ArrayList<KijiRowData>();
+    List<KijiRowData> data = Lists.newArrayList();
     for (EntityId eid : entityIds) {
       data.add(get(eid, dataRequest));
     }
