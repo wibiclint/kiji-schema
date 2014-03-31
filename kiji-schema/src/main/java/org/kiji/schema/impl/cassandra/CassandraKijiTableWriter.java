@@ -1,5 +1,5 @@
 /**
- * (c) Copyright 2012 WibiData, Inc.
+ * (c) Copyright 2014 WibiData, Inc.
  *
  * See the NOTICE file distributed with this work for additional
  * information regarding copyright ownership.
@@ -19,29 +19,36 @@
 
 package org.kiji.schema.impl.cassandra;
 
-import com.datastax.driver.core.*;
-import com.google.common.base.Objects;
-import com.google.common.base.Preconditions;
-import org.apache.hadoop.hbase.HConstants;
-import org.kiji.annotations.ApiAudience;
-import org.kiji.schema.*;
-import org.kiji.schema.cassandra.KijiManagedCassandraTableName;
-import org.kiji.schema.impl.DefaultKijiCellEncoderFactory;
-import org.kiji.schema.impl.LayoutConsumer;
-import org.kiji.schema.impl.LayoutCapsule;
-import org.kiji.schema.layout.KijiTableLayout;
-import org.kiji.schema.layout.KijiTableLayout.LocalityGroupLayout.FamilyLayout;
-import org.kiji.schema.layout.impl.CellEncoderProvider;
-import org.kiji.schema.layout.impl.ColumnNameTranslator;
-import org.kiji.schema.layout.impl.cassandra.CassandraColumnNameTranslator;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
+
+import com.datastax.driver.core.PreparedStatement;
+import com.datastax.driver.core.ResultSet;
+import com.datastax.driver.core.Row;
+import com.datastax.driver.core.Statement;
+import com.google.common.base.Objects;
+import com.google.common.base.Preconditions;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import org.kiji.annotations.ApiAudience;
+import org.kiji.schema.DecodedCell;
+import org.kiji.schema.EntityId;
+import org.kiji.schema.KConstants;
+import org.kiji.schema.KijiCell;
+import org.kiji.schema.KijiColumnName;
+import org.kiji.schema.KijiIOException;
+import org.kiji.schema.KijiTableWriter;
+import org.kiji.schema.cassandra.KijiManagedCassandraTableName;
+import org.kiji.schema.impl.DefaultKijiCellEncoderFactory;
+import org.kiji.schema.impl.LayoutCapsule;
+import org.kiji.schema.impl.LayoutConsumer;
+import org.kiji.schema.layout.KijiTableLayout;
+import org.kiji.schema.layout.impl.CellEncoderProvider;
+import org.kiji.schema.layout.impl.ColumnNameTranslator;
+import org.kiji.schema.layout.impl.cassandra.CassandraColumnNameTranslator;
 
 /**
  * Makes modifications to a Kiji table by sending requests directly to HBase from the local client.
@@ -275,10 +282,10 @@ public final class CassandraKijiTableWriter implements KijiTableWriter {
     ));
 
     List<Row> readCounterResults = resultSet.all();
-    long currentCounterValue = 0;
 
-    if (0 == readCounterResults.size()) {
-      // Uninitialized counter, effectively a counter at 0.
+    long currentCounterValue;
+    if (readCounterResults.isEmpty()) {
+      currentCounterValue = 0; // Uninitialized counter, effectively a counter at 0.
     } else if (1 == readCounterResults.size()) {
       currentCounterValue = readCounterResults.get(0).getLong(CassandraKiji.CASSANDRA_VALUE_COL);
     } else {
@@ -366,8 +373,7 @@ public final class CassandraKijiTableWriter implements KijiTableWriter {
     }
 
     // Increment the counter appropriately to get the new value.
-    long counterIncrement = (Long) amount;
-    incrementCounterValue(entityId, family, qualifier, counterIncrement);
+    incrementCounterValue(entityId, family, qualifier, amount);
 
     // Read back the current value of the counter.
     long currentCounterValue = getCounterValue(entityId, family, qualifier);
@@ -444,8 +450,10 @@ public final class CassandraKijiTableWriter implements KijiTableWriter {
    * @param qualifier
    * @throws IOException
    */
-  private void doDeleteCell(EntityId entityId, String family, String qualifier, long timestamp) throws IOException {
-    Statement statement = mWriterCommon.getStatementDeleteCell(entityId, family, qualifier, timestamp);
+  private void doDeleteCell(EntityId entityId, String family, String qualifier, long timestamp)
+      throws IOException {
+    Statement statement =
+        mWriterCommon.getStatementDeleteCell(entityId, family, qualifier, timestamp);
     mAdmin.execute(statement);
   }
 

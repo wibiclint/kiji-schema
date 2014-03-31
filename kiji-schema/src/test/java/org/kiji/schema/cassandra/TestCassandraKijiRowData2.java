@@ -1,5 +1,5 @@
 /**
- * (c) Copyright 2012 WibiData, Inc.
+ * (c) Copyright 2014 WibiData, Inc.
  *
  * See the NOTICE file distributed with this work for additional
  * information regarding copyright ownership.
@@ -19,28 +19,40 @@
 
 package org.kiji.schema.cassandra;
 
+import java.io.IOException;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
+import java.util.NavigableMap;
+import java.util.Set;
+
 import com.datastax.driver.core.ResultSet;
 import com.datastax.driver.core.Row;
 import com.google.common.collect.Lists;
+import com.google.common.collect.Sets;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.junit.BeforeClass;
 import org.junit.Test;
-import org.kiji.schema.*;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import org.kiji.schema.EntityId;
+import org.kiji.schema.EntityIdFactory;
+import org.kiji.schema.Kiji;
+import org.kiji.schema.KijiCell;
+import org.kiji.schema.KijiDataRequest;
+import org.kiji.schema.KijiDataRequestBuilder;
 import org.kiji.schema.KijiDataRequestBuilder.ColumnsDef;
+import org.kiji.schema.KijiIOException;
+import org.kiji.schema.KijiRowData;
+import org.kiji.schema.KijiTableWriter;
 import org.kiji.schema.avro.Node;
 import org.kiji.schema.impl.LayoutCapsule;
 import org.kiji.schema.impl.cassandra.CassandraDataRequestAdapter;
 import org.kiji.schema.impl.cassandra.CassandraKijiRowData;
 import org.kiji.schema.impl.cassandra.CassandraKijiTable;
-import org.kiji.schema.layout.KijiTableLayout;
 import org.kiji.schema.layout.KijiTableLayouts;
-import org.kiji.schema.layout.impl.ColumnNameTranslator;
 import org.kiji.schema.layout.impl.cassandra.CassandraColumnNameTranslator;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import java.io.IOException;
-import java.util.*;
 
 import static org.junit.Assert.*;
 
@@ -77,7 +89,7 @@ public class TestCassandraKijiRowData2 extends CassandraKijiClientTest {
   private static final Node mNode0 = Node.newBuilder().setLabel("node0").build();
   private static final Node mNode1 = Node.newBuilder().setLabel("node1").build();
 
-  private static HashSet<Row> mAllRows;
+  private static Set<Row> mAllRows;
 
   @BeforeClass
   public static void createSharedRows() {
@@ -91,7 +103,6 @@ public class TestCassandraKijiRowData2 extends CassandraKijiClientTest {
       mSharedTable = CassandraKijiTable.downcast(kiji.openTable(TABLE_NAME));
 
       final LayoutCapsule capsule = mSharedTable.getLayoutCapsule();
-      final ColumnNameTranslator translator = capsule.getColumnNameTranslator();
 
       mEntityIdFactory = EntityIdFactory.getFactory(capsule.getLayout());
 
@@ -124,15 +135,13 @@ public class TestCassandraKijiRowData2 extends CassandraKijiClientTest {
           .addFamily(MAP);
       final KijiDataRequest dataRequestAllVersions = builder.build();
 
-      final KijiTableLayout tableLayout = mSharedTable.getLayout();
-
       CassandraDataRequestAdapter adapter = new CassandraDataRequestAdapter(
           dataRequestAllVersions,
           (CassandraColumnNameTranslator) mSharedTable.getColumnNameTranslator()
       );
 
-      List<ResultSet> results = adapter.doGet(mSharedTable, eid, tableLayout);
-      HashSet<Row> allRows = new HashSet<Row>();
+      List<ResultSet> results = adapter.doGet(mSharedTable, eid);
+      Set<Row> allRows = Sets.newHashSet();
 
       // Note that we do not order the results there, since the other classes in Kiji do not preserve
       // row ordering in results from Cassandra either.  We could modify that behavior to retain row
@@ -156,7 +165,7 @@ public class TestCassandraKijiRowData2 extends CassandraKijiClientTest {
   // A lot of test cases initialize a table with the same rows and then need to get all of the data
   // from those rows back into a set of Row objects to use in the creation of a KijiRowData.
   // Put all of the common code into this utility function!
-  private HashSet<Row> getRowsAppleBananaCarrot(EntityId eid) throws IOException {
+  private Set<Row> getRowsAppleBananaCarrot(EntityId eid) throws IOException {
     return mAllRows;
   }
 
@@ -164,7 +173,7 @@ public class TestCassandraKijiRowData2 extends CassandraKijiClientTest {
   public void testReadWithMaxVersions() throws IOException {
     final EntityId eid = mEntityIdFactory.getEntityId("row0");
 
-    HashSet<Row> allRows = getRowsAppleBananaCarrot(eid);
+    Set<Row> allRows = getRowsAppleBananaCarrot(eid);
 
     final KijiDataRequest dataRequest = KijiDataRequest.builder()
         .addColumns(ColumnsDef.create().withMaxVersions(1).add("family", "qual0"))
@@ -185,7 +194,7 @@ public class TestCassandraKijiRowData2 extends CassandraKijiClientTest {
     // Begin by inserting some data into the table.
     final EntityId eid = mEntityIdFactory.getEntityId("row0");
 
-    HashSet<Row> allRows = getRowsAppleBananaCarrot(eid);
+    Set<Row> allRows = getRowsAppleBananaCarrot(eid);
 
     final KijiDataRequest dataRequest = KijiDataRequest.builder()
         .addColumns(ColumnsDef.create().withMaxVersions(1).add("family", "qual0"))
@@ -202,7 +211,7 @@ public class TestCassandraKijiRowData2 extends CassandraKijiClientTest {
   @Test
   public void testReadWithTimeRange() throws IOException {
     final EntityId eid = mEntityIdFactory.getEntityId("row0");
-    HashSet<Row> allRows = getRowsAppleBananaCarrot(eid);
+    Set<Row> allRows = getRowsAppleBananaCarrot(eid);
 
     final KijiDataRequest dataRequest = KijiDataRequest.builder()
         .withTimeRange(2L, 6L)
@@ -239,7 +248,7 @@ public class TestCassandraKijiRowData2 extends CassandraKijiClientTest {
   @Test
   public void testReadColumnTypes() throws IOException {
     final EntityId eid = mEntityIdFactory.getEntityId("row0");
-    HashSet<Row> allRows = getRowsAppleBananaCarrot(eid);
+    Set<Row> allRows = getRowsAppleBananaCarrot(eid);
 
     final KijiDataRequest dataRequest = KijiDataRequest.builder()
         .addColumns(ColumnsDef.create().withMaxVersions(1).add("family", "qual0"))
@@ -256,7 +265,7 @@ public class TestCassandraKijiRowData2 extends CassandraKijiClientTest {
   @Test
   public void testReadFamilyTypes() throws IOException {
     final EntityId eid = mEntityIdFactory.getEntityId("row0");
-    HashSet<Row> allRows = getRowsAppleBananaCarrot(eid);
+    Set<Row> allRows = getRowsAppleBananaCarrot(eid);
 
     final KijiDataRequest dataRequest = KijiDataRequest.builder()
         .addColumns(ColumnsDef.create().add(FAMILY, QUAL0))
@@ -273,7 +282,7 @@ public class TestCassandraKijiRowData2 extends CassandraKijiClientTest {
   @Test
   public void testReadMapFamilyTypes() throws IOException {
     final EntityId eid = mEntityIdFactory.getEntityId("row0");
-    HashSet<Row> allRows = getRowsAppleBananaCarrot(eid);
+    Set<Row> allRows = getRowsAppleBananaCarrot(eid);
 
     final KijiDataRequest dataRequest = KijiDataRequest.builder()
         .addColumns(ColumnsDef.create().addFamily(MAP))
@@ -303,7 +312,7 @@ public class TestCassandraKijiRowData2 extends CassandraKijiClientTest {
   @Test
   public void testReadSpecificFamilyTypes() throws IOException {
     final EntityId eid = mEntityIdFactory.getEntityId("row0");
-    HashSet<Row> allRows = getRowsAppleBananaCarrot(eid);
+    Set<Row> allRows = getRowsAppleBananaCarrot(eid);
 
     final KijiDataRequest dataRequest = KijiDataRequest.builder()
         .addColumns(ColumnsDef.create().withMaxVersions(1).addFamily("family"))
@@ -321,7 +330,7 @@ public class TestCassandraKijiRowData2 extends CassandraKijiClientTest {
   @Test
   public void testReadSpecificTimestampTypes() throws IOException {
     final EntityId eid = mEntityIdFactory.getEntityId("row0");
-    HashSet<Row> allRows = getRowsAppleBananaCarrot(eid);
+    Set<Row> allRows = getRowsAppleBananaCarrot(eid);
 
     final KijiDataRequest dataRequest = KijiDataRequest.builder()
         .addColumns(
@@ -347,7 +356,7 @@ public class TestCassandraKijiRowData2 extends CassandraKijiClientTest {
   @Test
   public void testReadWithTimestamp() throws IOException {
     final EntityId eid = mEntityIdFactory.getEntityId("row0");
-    HashSet<Row> allRows = getRowsAppleBananaCarrot(eid);
+    Set<Row> allRows = getRowsAppleBananaCarrot(eid);
 
     final KijiDataRequest dataRequest = KijiDataRequest.builder()
         .addColumns(
@@ -367,7 +376,7 @@ public class TestCassandraKijiRowData2 extends CassandraKijiClientTest {
   @Test
   public void testReadSpecificTypes() throws IOException {
     final EntityId eid = mEntityIdFactory.getEntityId("row0");
-    HashSet<Row> allRows = getRowsAppleBananaCarrot(eid);
+    Set<Row> allRows = getRowsAppleBananaCarrot(eid);
 
     final KijiDataRequest dataRequest = KijiDataRequest.builder()
         .addColumns(ColumnsDef.create().add(FAMILY, NODEQUAL0))
@@ -383,7 +392,7 @@ public class TestCassandraKijiRowData2 extends CassandraKijiClientTest {
   @Test
   public void testIterator() throws IOException {
     final EntityId eid = mEntityIdFactory.getEntityId("row0");
-    HashSet<Row> allRows = getRowsAppleBananaCarrot(eid);
+    Set<Row> allRows = getRowsAppleBananaCarrot(eid);
 
     final KijiDataRequest dataRequest = KijiDataRequest.builder()
         .addColumns(ColumnsDef.create().withMaxVersions(3).add(FAMILY, QUAL0))
@@ -421,11 +430,10 @@ public class TestCassandraKijiRowData2 extends CassandraKijiClientTest {
     }
   }
 
-
   @Test
   public void testIteratorMaxVersion() throws IOException {
     final EntityId eid = mEntityIdFactory.getEntityId("row0");
-    HashSet<Row> allRows = getRowsAppleBananaCarrot(eid);
+    Set<Row> allRows = getRowsAppleBananaCarrot(eid);
 
     final KijiDataRequest dataRequest = KijiDataRequest.builder()
         .addColumns(ColumnsDef.create().withMaxVersions(2).add("family", "qual0"))
@@ -443,12 +451,10 @@ public class TestCassandraKijiRowData2 extends CassandraKijiClientTest {
     assertFalse(cells.hasNext());
   }
 
-
-
   @Test
   public void testGroupAsIterable() throws IOException {
     final EntityId eid = mEntityIdFactory.getEntityId("row0");
-    HashSet<Row> allRows = getRowsAppleBananaCarrot(eid);
+    Set<Row> allRows = getRowsAppleBananaCarrot(eid);
 
     final KijiDataRequest dataRequest = KijiDataRequest.builder()
         .addColumns(ColumnsDef.create().withMaxVersions(3).add("family", "qual0"))
@@ -465,5 +471,4 @@ public class TestCassandraKijiRowData2 extends CassandraKijiClientTest {
     final int cellCount = cells.size();
     assertEquals("Wrong number of cells returned by asIterable.", 3, cellCount);
   }
-
 }
