@@ -113,8 +113,12 @@ Open TODOs
   left this code ugly for now and moved on, but we need to clean this up later (and possibly reorg
   it).
 
+- We may want to consider using the Java driver's query builders instead of creating CQL strings.
+
 
 ### Performance
+
+- We should be using the token-aware load-balancing policy everywhere.
 
 - We may be doing a lot of unnecessary conversions from `ByteBuffer` to `byte[]` to final data types
   when we read data back from Cassandra tables.  (I have not looked into this much, but we should
