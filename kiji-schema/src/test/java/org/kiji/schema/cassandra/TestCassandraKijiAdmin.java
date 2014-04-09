@@ -21,7 +21,6 @@ package org.kiji.schema.cassandra;
 
 import org.junit.Before;
 import org.junit.Test;
-import org.kiji.schema.KijiClientTest;
 import org.kiji.schema.KijiTableNotFoundException;
 import org.kiji.schema.avro.TableLayoutDesc;
 import org.kiji.schema.layout.KijiTableLayout;
@@ -32,7 +31,7 @@ import java.io.IOException;
 import static org.junit.Assert.*;
 
 public class TestCassandraKijiAdmin extends CassandraKijiClientTest {
-  private static final String LAYOUT_V1 = KijiTableLayouts.SIMPLE;
+  private static final String LAYOUT_V1 = KijiTableLayouts.SIMPLE_FORMATTED_EID;
 
   /** Layout update on top of LAYOUT_V1 with an extra locality group called 'new'. */
   private static final String LAYOUT_V2 =

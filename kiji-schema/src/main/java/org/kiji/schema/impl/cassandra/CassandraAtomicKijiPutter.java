@@ -20,13 +20,11 @@
 package org.kiji.schema.impl.cassandra;
 
 import com.datastax.driver.core.BatchStatement;
-import com.datastax.driver.core.PreparedStatement;
 import com.datastax.driver.core.ResultSet;
 import com.datastax.driver.core.Statement;
 import com.google.common.base.Preconditions;
 import org.kiji.annotations.ApiAudience;
 import org.kiji.schema.*;
-import org.kiji.schema.cassandra.KijiManagedCassandraTableName;
 import org.kiji.schema.impl.DefaultKijiCellEncoderFactory;
 import org.kiji.schema.impl.LayoutCapsule;
 import org.kiji.schema.impl.LayoutConsumer;
@@ -38,9 +36,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
-import java.nio.ByteBuffer;
 import java.util.ArrayList;
-import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
@@ -169,7 +165,7 @@ public final class CassandraAtomicKijiPutter implements AtomicKijiPutter {
     final State oldState = mState.getAndSet(State.OPEN);
     Preconditions.checkState(oldState == State.UNINITIALIZED,
         "Cannot open AtomicKijiPutter instance in state %s.", oldState);
-    mWriterCommon = new CassandraKijiWriterCommon(mTable, mWriterLayoutCapsule);
+    mWriterCommon = new CassandraKijiWriterCommon(mTable);
   }
 
   /** Resets the current transaction. */
@@ -295,8 +291,13 @@ public final class CassandraAtomicKijiPutter implements AtomicKijiPutter {
     final KijiColumnName kijiColumnName = new KijiColumnName(family, qualifier);
     CassandraColumnNameTranslator translator = (CassandraColumnNameTranslator)capsule.getColumnNameTranslator();
 
-    Statement statement = mWriterCommon.getStatementPutNotCounter(
-        mEntityId, family, qualifier, timestamp, value);
+    Statement statement = mWriterCommon.getPutStatement(
+        mWriterLayoutCapsule.getCellEncoderProvider(),
+        mEntityId,
+        family,
+        qualifier,
+        timestamp,
+        value);
     mStatements.add(statement);
   }
 

@@ -20,12 +20,10 @@
 package org.kiji.schema.impl.cassandra;
 
 import java.io.IOException;
-import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 
-import com.datastax.driver.core.PreparedStatement;
 import com.datastax.driver.core.ResultSet;
 import com.datastax.driver.core.ResultSetFuture;
 import com.datastax.driver.core.Statement;
@@ -190,39 +188,50 @@ public class CassandraDataRequestAdapter {
 
       for (String cassandraTableName : tableNames) {
         if (bIsScan) {
-          futures.add(
-              scanSingleColumn(
-                  admin,
-                  cassandraTableName,
-                  localityGroup,
-                  family,
-                  qualifier
-          ));
+          Statement statement = CQLUtils.getColumnScanStatement(
+              admin,
+              table.getLayout(),
+              cassandraTableName,
+              localityGroup,
+              family,
+              qualifier);
+          if (pagingEnabled) {
+            statement.setFetchSize(column.getPageSize());
+          }
+          futures.add(admin.executeAsync(statement));
         } else {
-          futures.add(
-              getSingleColumn(
-                  CassandraByteUtil.bytesToByteBuffer(entityId.getHBaseRowKey()),
+          Statement statement =
+              CQLUtils.getColumnGetStatement(
                   admin,
+                  table.getLayout(),
                   cassandraTableName,
+                  entityId,
                   localityGroup,
                   family,
                   qualifier,
-                  minTimestamp,
-                  maxTimestamp,
-                  column,
-                  pagingEnabled
-          ));
+                  null,
+                  qualifier == null ? null : minTimestamp,
+                  qualifier == null ? null : maxTimestamp,
+                  qualifier == null ? null : column.getMaxVersions());
+          if (pagingEnabled) {
+            statement.setFetchSize(column.getPageSize());
+          }
+          futures.add(admin.executeAsync(statement));
         }
       }
     }
 
     if (bIsScan && futures.isEmpty()) {
       // If this is a scan, you need to make sure that you execute at least one SELECT statement,
-      // just to get *something* back for every entity ID.  If you do not do so, then a user could
+      // just to get back every entity ID.  If you do not do so, then a user could
       // create a scanner with a data request that has a single, paged column, and you would never
       // execute a SELECT query below (because we wait to execute paged SELECT queries) and so you
       // would never get an iterator back with any row keys at all!  Eek!
-      futures.add(dummyScan(admin, nonCounterTableName));
+
+      // TODO: do we need to scan the counter table as well?
+      futures.add(
+          admin.executeAsync(
+              CQLUtils.getEntityIDScanStatement(admin, table.getLayout(), nonCounterTableName)));
     }
 
     // Wait until all of the futures are done.
@@ -281,142 +290,5 @@ public class CassandraDataRequestAdapter {
       isCounter = true;
     }
     return isCounter;
-  }
-
-  private ResultSetFuture getSingleColumn(
-      ByteBuffer entityIdByteBuffer,
-      CassandraAdmin admin,
-      String cassandraTableName,
-      String translatedLocalityGroup,
-      String translatedFamily,
-      String translatedQualifier,
-      Long minTimestamp,
-      Long maxTimestamp,
-      KijiDataRequest.Column column,
-      boolean pagingEnabled) {
-
-    Statement boundStatement;
-    if (translatedQualifier != null) {
-      // Fully-qualified get.
-      // TODO: Depending on filters, we may have to drop the LIMIT here.
-      // Let's say that a client makes a data request with a filter with a qualifier regex and
-      // specifies maxVersions.  We cannot put the qualifier regex into
-      String queryString = String.format(
-          "SELECT * FROM %s WHERE %s=? AND %s=? AND %s=? AND %s=? AND %s >= ? and %s < ? LIMIT ?",
-          cassandraTableName,
-          CassandraKiji.CASSANDRA_KEY_COL,
-          CassandraKiji.CASSANDRA_LOCALITY_GROUP_COL,
-          CassandraKiji.CASSANDRA_FAMILY_COL,
-          CassandraKiji.CASSANDRA_QUALIFIER_COL,
-          CassandraKiji.CASSANDRA_VERSION_COL,
-          CassandraKiji.CASSANDRA_VERSION_COL
-      );
-
-      LOG.info("Preparing query string for single-row get of fully-qualified column: " + queryString);
-      LOG.info(String.format("\tUsing limit %d", column.getMaxVersions()));
-
-      PreparedStatement preparedStatement = admin.getPreparedStatement(queryString);
-      boundStatement = preparedStatement.bind(
-          entityIdByteBuffer,
-          translatedLocalityGroup,
-          translatedFamily,
-          translatedQualifier,
-          minTimestamp,
-          maxTimestamp,
-          column.getMaxVersions());
-    } else {
-      String queryString = String.format(
-          "SELECT * FROM %s WHERE %s=? AND %s=? AND %s=?",
-          cassandraTableName,
-          CassandraKiji.CASSANDRA_KEY_COL,
-          CassandraKiji.CASSANDRA_LOCALITY_GROUP_COL,
-          CassandraKiji.CASSANDRA_FAMILY_COL
-      );
-      LOG.info("Preparing query string " + queryString);
-
-      PreparedStatement preparedStatement = admin.getPreparedStatement(queryString);
-      boundStatement = preparedStatement.bind(
-          entityIdByteBuffer,
-          translatedLocalityGroup,
-          translatedFamily
-      );
-    }
-    if (pagingEnabled) {
-      int pageSize = column.getPageSize();
-      boundStatement = boundStatement.setFetchSize(pageSize);
-    }
-    return admin.executeAsync(boundStatement);
-  }
-
-  private ResultSetFuture scanSingleColumn(
-      CassandraAdmin admin,
-      String cassandraTableName,
-      String translatedLocalityGroup,
-      String translatedFamily,
-      String translatedQualifier) {
-    ResultSetFuture res;
-
-    if (translatedQualifier != null) {
-      // Fully-qualified scan.
-      // Note - we cannot use "LIMIT" in this Cassandra query because we need to perform this
-      // query across multiple rows.
-      String queryString = String.format(
-          "SELECT token(%s), %s, %s, %s, %s, %s, %s FROM %s WHERE %s=? AND %s=? AND %s=? ALLOW FILTERING",
-          CassandraKiji.CASSANDRA_KEY_COL,
-          CassandraKiji.CASSANDRA_KEY_COL,
-          CassandraKiji.CASSANDRA_LOCALITY_GROUP_COL,
-          CassandraKiji.CASSANDRA_FAMILY_COL,
-          CassandraKiji.CASSANDRA_QUALIFIER_COL,
-          CassandraKiji.CASSANDRA_VERSION_COL,
-          CassandraKiji.CASSANDRA_VALUE_COL,
-          cassandraTableName,
-          CassandraKiji.CASSANDRA_LOCALITY_GROUP_COL,
-          CassandraKiji.CASSANDRA_FAMILY_COL,
-          CassandraKiji.CASSANDRA_QUALIFIER_COL
-      );
-      LOG.info("Preparing query string " + queryString);
-      PreparedStatement preparedStatement = admin.getPreparedStatement(queryString);
-      res = admin.executeAsync(preparedStatement.bind(
-          translatedLocalityGroup,
-          translatedFamily,
-          translatedQualifier));
-    } else {
-      String queryString = String.format(
-          "SELECT token(%s), %s, %s, %s, %s, %s, %s FROM %s WHERE %s=? AND %s=? ALLOW FILTERING",
-          CassandraKiji.CASSANDRA_KEY_COL,
-          CassandraKiji.CASSANDRA_KEY_COL,
-          CassandraKiji.CASSANDRA_LOCALITY_GROUP_COL,
-          CassandraKiji.CASSANDRA_FAMILY_COL,
-          CassandraKiji.CASSANDRA_QUALIFIER_COL,
-          CassandraKiji.CASSANDRA_VERSION_COL,
-          CassandraKiji.CASSANDRA_VALUE_COL,
-          cassandraTableName,
-          CassandraKiji.CASSANDRA_LOCALITY_GROUP_COL,
-          CassandraKiji.CASSANDRA_FAMILY_COL
-      );
-      LOG.info("Preparing query string " + queryString);
-      PreparedStatement preparedStatement = admin.getPreparedStatement(queryString);
-      res = admin.executeAsync(preparedStatement.bind(translatedLocalityGroup, translatedFamily));
-    }
-    return res;
-  }
-
-  /**
-   * Possibly add a dummy get to ensure that we get back *some* data for every row in a scan.
-   *
-   * This is necessary because a user could create a scanner with a data request that contains
-   * *only* paged columns.  The user won't be able to access `KijiRowData` instances for a given
-   * entity ID to get the pagers for the requested columns without *some* data for every row in the
-   * scan range.
-   *
-   */
-  private ResultSetFuture dummyScan(CassandraAdmin admin, String cassandraTableName) {
-    String queryString = String.format(
-        "SELECT token(%s), %s FROM %s",
-        CassandraKiji.CASSANDRA_KEY_COL,
-        CassandraKiji.CASSANDRA_KEY_COL,
-        cassandraTableName
-    );
-    return admin.executeAsync(queryString);
   }
 }

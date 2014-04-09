@@ -19,19 +19,21 @@
 
 package org.kiji.schema.cassandra;
 
-import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.hbase.HBaseConfiguration;
 import org.junit.Test;
-import org.kiji.schema.*;
-import org.kiji.schema.KijiDataRequestBuilder.ColumnsDef;
-import org.kiji.schema.impl.cassandra.CassandraKijiRowData;
-import org.kiji.schema.layout.KijiTableLayouts;
-import org.kiji.schema.util.VersionInfo;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.Iterator;
-import java.util.NavigableMap;
+import org.kiji.schema.Kiji;
+import org.kiji.schema.KijiDataRequest;
+import org.kiji.schema.KijiDataRequestBuilder.ColumnsDef;
+import org.kiji.schema.KijiRowData;
+import org.kiji.schema.KijiRowScanner;
+import org.kiji.schema.KijiSystemTable;
+import org.kiji.schema.KijiTable;
+import org.kiji.schema.KijiTableReader;
+import org.kiji.schema.KijiTableWriter;
+import org.kiji.schema.layout.KijiTableLayouts;
+import org.kiji.schema.util.VersionInfo;
 
 import static org.junit.Assert.*;
 
@@ -49,45 +51,44 @@ public class TestCassandraCreateKijiTable extends CassandraKijiClientTest {
     LOG.info("Opening an in-memory kiji instance");
     final Kiji kiji = getKiji();
 
+    LOG.info(String.format("Opened fake Kiji '%s'.", kiji.getURI()));
+
+    final KijiSystemTable systemTable = kiji.getSystemTable();
+    assertTrue("Client data version should support installed Kiji instance data version",
+        VersionInfo.getClientDataVersion().compareTo(systemTable.getDataVersion()) >= 0);
+
+    assertNotNull(kiji.getSchemaTable());
+    assertNotNull(kiji.getMetaTable());
+
+    kiji.createTable(KijiTableLayouts.getLayout(KijiTableLayouts.SIMPLE_FORMATTED_EID));
+
+    final KijiTable table = kiji.openTable("table");
     try {
-      LOG.info(String.format("Opened fake Kiji '%s'.", kiji.getURI()));
 
-      final KijiSystemTable systemTable = kiji.getSystemTable();
-      assertTrue("Client data version should support installed Kiji instance data version",
-          VersionInfo.getClientDataVersion().compareTo(systemTable.getDataVersion()) >= 0);
-
-      assertNotNull(kiji.getSchemaTable());
-      assertNotNull(kiji.getMetaTable());
-
-      kiji.createTable(KijiTableLayouts.getLayout(KijiTableLayouts.SIMPLE));
-
-      final KijiTable table = kiji.openTable("table");
+      final KijiTableWriter writer = table.openTableWriter();
       try {
+        writer.put(table.getEntityId("row1"), "family", "column", 0L, "Value at timestamp 0.");
+        writer.put(table.getEntityId("row1"), "family", "column", 1L, "Value at timestamp 1.");
+      } finally {
+        writer.close();
+      }
 
-        final KijiTableWriter writer = table.openTableWriter();
+      final KijiTableReader reader = table.openTableReader();
+      try {
+        final KijiDataRequest dataRequest = KijiDataRequest.builder()
+            .addColumns(ColumnsDef.create().withMaxVersions(100).add("family", "column"))
+            .build();
+
+        // Try this as a get.
+        final KijiRowData rowData = reader.get(table.getEntityId("row1"), dataRequest);
+        String s = rowData.getValue("family", "column", 0L).toString();
+        assertEquals(s, "Value at timestamp 0.");
+
+        // Try this as a scan.
+        int rowCounter = 0;
+        final KijiRowScanner rowScanner = reader.getScanner(dataRequest);
         try {
-          writer.put(table.getEntityId("row1"), "family", "column", 0L, "Value at timestamp 0.");
-          writer.put(table.getEntityId("row1"), "family", "column", 1L, "Value at timestamp 1.");
-        } finally {
-          writer.close();
-        }
-
-        final KijiTableReader reader = table.openTableReader();
-        try {
-          final KijiDataRequest dataRequest = KijiDataRequest.builder()
-              .addColumns(ColumnsDef.create().withMaxVersions(100).add("family", "column"))
-              .build();
-
-          // Try this as a get.
-          final KijiRowData rowData = reader.get(table.getEntityId("row1"), dataRequest);
-          String s = rowData.getValue("family", "column", 0L).toString();
-          assertEquals(s, "Value at timestamp 0.");
-
-          // Try this as a scan.
-          final KijiRowScanner rowScanner = reader.getScanner(dataRequest);
-
           // Should be just one row, with two versions.
-          int rowCounter = 0;
           for (KijiRowData kijiRowData : rowScanner) {
             LOG.info("Read from scanner! " + kijiRowData.toString());
             // Should see two versions for qualifier "column".
@@ -95,16 +96,15 @@ public class TestCassandraCreateKijiTable extends CassandraKijiClientTest {
             assertEquals("Value at timestamp 1.", kijiRowData.getValue("family", "column", 1L).toString());
             rowCounter++;
           }
-          assertEquals(1, rowCounter);
         } finally {
-          reader.close();
+          rowScanner.close();
         }
+        assertEquals(1, rowCounter);
       } finally {
-        table.release();
+        reader.close();
       }
-
     } finally {
-      //kiji.release();
+      table.release();
     }
   }
 }

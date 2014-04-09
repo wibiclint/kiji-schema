@@ -21,14 +21,11 @@ package org.kiji.schema.cassandra;
 
 import java.util.regex.Pattern;
 
-import com.google.common.base.Joiner;
 import com.google.common.base.Preconditions;
-import org.apache.commons.lang.StringUtils;
 
 import org.kiji.annotations.ApiAudience;
 import org.kiji.annotations.ApiStability;
 import org.kiji.schema.KijiURI;
-import org.kiji.schema.NotAKijiManagedTableException;
 
 /**
  * <p>Multiple instances of Kiji can be installed on a single Cassandra cluster.  Within a Kiji
@@ -81,8 +78,8 @@ import org.kiji.schema.NotAKijiManagedTableException;
  * "experimental" installation, there is a single Kiji table "baz."
  * </p>
  *
- * Note that Cassandra will not allow us to put "." into our keyspace and table names, so we have to use another character as a delimter.  I chose  underscore here.
- *
+ * Note that Cassandra does not allow the "." character in keyspace or table names, so the "_"
+ * character is used instead.
  */
 @ApiAudience.Framework
 @ApiStability.Evolving
@@ -90,10 +87,6 @@ public final class KijiManagedCassandraTableName {
 
   /** The first component of all Cassandra table names managed by Kiji. */
   public static final String KIJI_COMPONENT = "kiji";
-
-  /** Regexp matching Kiji system tables. */
-  public static final Pattern KIJI_SYSTEM_TABLES_REGEX =
-      Pattern.compile("kiji[_](.*)[.](meta|system|schema_hash|schema_id)");
 
   /** The name component used for the Kiji meta table. */
   private static final String KIJI_META_KEY_VALUE_COMPONENT = "meta_key_value";
@@ -125,9 +118,6 @@ public final class KijiManagedCassandraTableName {
   /** The Kiji instance name. */
   private final String mKijiInstanceName;
 
-  /** The Kiji table name, or null if it is not a user-space Kiji table. */
-  private final String mKijiTableName;
-
   /**
    * Constructs a Kiji-managed Cassandra table name.  The name will have quotes in it so that it
    * can be used in CQL queries without additional processing (CQL is case-insensitive without
@@ -144,7 +134,6 @@ public final class KijiManagedCassandraTableName {
         kijiInstanceName,
         type);
     mKijiInstanceName = kijiInstanceName;
-    mKijiTableName = null;
   }
 
   /**
@@ -169,7 +158,6 @@ public final class KijiManagedCassandraTableName {
         type,
         kijiTableName);
     mKijiInstanceName = kijiInstanceName;
-    mKijiTableName = kijiTableName;
   }
 
   /**
@@ -323,7 +311,7 @@ public final class KijiManagedCassandraTableName {
     if (!(other instanceof KijiManagedCassandraTableName)) {
       return false;
     }
-    return toString().equals(other.toString());
+    return mCassandraTableName.equals(((KijiManagedCassandraTableName) other).mCassandraTableName);
   }
 
   @Override

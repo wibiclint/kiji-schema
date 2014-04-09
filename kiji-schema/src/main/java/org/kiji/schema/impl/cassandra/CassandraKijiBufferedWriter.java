@@ -19,28 +19,27 @@
 
 package org.kiji.schema.impl.cassandra;
 
-import com.datastax.driver.core.*;
+import java.io.IOException;
+import java.util.ArrayList;
+
+import com.datastax.driver.core.BatchStatement;
+import com.datastax.driver.core.Statement;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Lists;
-import org.apache.hadoop.hbase.HConstants;
 import org.apache.hadoop.util.StringUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import org.kiji.annotations.ApiAudience;
 import org.kiji.annotations.Inheritance;
-import org.kiji.schema.*;
+import org.kiji.schema.EntityId;
+import org.kiji.schema.KijiBufferedWriter;
 import org.kiji.schema.cassandra.KijiManagedCassandraTableName;
 import org.kiji.schema.impl.DefaultKijiCellEncoderFactory;
 import org.kiji.schema.impl.LayoutCapsule;
 import org.kiji.schema.impl.LayoutConsumer;
-import org.kiji.schema.layout.KijiTableLayout.LocalityGroupLayout.FamilyLayout;
 import org.kiji.schema.layout.impl.CellEncoderProvider;
 import org.kiji.schema.layout.impl.cassandra.CassandraColumnNameTranslator;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import java.io.IOException;
-import java.nio.ByteBuffer;
-import java.util.ArrayList;
-import java.util.List;
 
 /**
  * Cassandra implementation of a batch KijiTableWriter.
@@ -188,8 +187,7 @@ public class CassandraKijiBufferedWriter implements KijiBufferedWriter {
         mTable.getName()
     );
 
-    mWriterCommon = new CassandraKijiWriterCommon(mTable, mWriterLayoutCapsule);
-
+    mWriterCommon = new CassandraKijiWriterCommon(mTable);
   }
 
   // ----------------------------------------------------------------------------------------------
@@ -214,7 +212,13 @@ public class CassandraKijiBufferedWriter implements KijiBufferedWriter {
     }
 
     Statement putStatement =
-        mWriterCommon.getStatementPutNotCounter(entityId, family, qualifier, timestamp, value);
+        mWriterCommon.getPutStatement(
+            mWriterLayoutCapsule.getCellEncoderProvider(),
+            entityId,
+            family,
+            qualifier,
+            timestamp,
+            value);
 
     synchronized (mInternalLock) {
       Preconditions.checkState(mState == State.OPEN,
@@ -263,8 +267,8 @@ public class CassandraKijiBufferedWriter implements KijiBufferedWriter {
   /** {@inheritDoc} */
   @Override
   public void deleteRow(EntityId entityId) throws IOException {
-    updateBufferWithDelete(mWriterCommon.getStatementDeleteRow(entityId));
-    updateBufferWithCounterDelete(mWriterCommon.getStatementDeleteRowCounter(entityId));
+    updateBufferWithDelete(mWriterCommon.getDeleteRowStatement(entityId));
+    updateBufferWithCounterDelete(mWriterCommon.getDeleteCounterRowStatement(entityId));
   }
 
   /** {@inheritDoc} */
@@ -278,8 +282,8 @@ public class CassandraKijiBufferedWriter implements KijiBufferedWriter {
   /** {@inheritDoc} */
   @Override
   public void deleteFamily(EntityId entityId, String family) throws IOException {
-    updateBufferWithDelete(mWriterCommon.getStatementDeleteFamily(entityId, family));
-    updateBufferWithCounterDelete(mWriterCommon.getStatementDeleteFamilyCounter(entityId, family));
+    updateBufferWithDelete(mWriterCommon.getDeleteFamilyStatement(entityId, family));
+    updateBufferWithCounterDelete(mWriterCommon.getDeleteCounterFamilyStatement(entityId, family));
   }
 
   /** {@inheritDoc} */
@@ -294,11 +298,11 @@ public class CassandraKijiBufferedWriter implements KijiBufferedWriter {
   /** {@inheritDoc} */
   @Override
   public void deleteColumn(EntityId entityId, String family, String qualifier) throws IOException {
-    Statement statement = mWriterCommon.getStatementDeleteColumn(entityId, family, qualifier);
     if (mWriterCommon.isCounterColumn(family, qualifier)) {
-      updateBufferWithCounterDelete(statement);
+      updateBufferWithCounterDelete(
+          mWriterCommon.getDeleteCounterStatement(entityId, family, qualifier));
     } else {
-      updateBufferWithDelete(statement);
+      updateBufferWithDelete(mWriterCommon.getDeleteColumnStatement(entityId, family, qualifier));
     }
   }
 
@@ -314,27 +318,20 @@ public class CassandraKijiBufferedWriter implements KijiBufferedWriter {
   /** {@inheritDoc} */
   @Override
   public void deleteCell(EntityId entityId, String family, String qualifier) throws IOException {
-    // Okay if this is a counter, because we know what the timestamp is.
-    if (mWriterCommon.isCounterColumn(family, qualifier)) {
-      Statement statement = mWriterCommon.getStatementDeleteCell(
-          entityId, family, qualifier, KConstants.CASSANDRA_COUNTER_TIMESTAMP);
-      updateBufferWithCounterDelete(statement);
-    } else {
-      throw new UnsupportedOperationException(
-          "Cannot delete only most-recent version of a cell in Cassandra Kiji."
-      );
-    }
+    throw new UnsupportedOperationException(
+        "Cannot delete only most-recent version of a cell in Cassandra Kiji.");
   }
 
   /** {@inheritDoc} */
   @Override
   public void deleteCell(EntityId entityId, String family, String qualifier, long timestamp)
       throws IOException {
-    Statement statement = mWriterCommon.getStatementDeleteCell(entityId, family, qualifier, timestamp);
     if (mWriterCommon.isCounterColumn(family, qualifier)) {
-      updateBufferWithCounterDelete(statement);
+      throw new UnsupportedOperationException(
+          "Cannot delete specific version of counter column in Cassandra Kiji.");
     } else {
-      updateBufferWithDelete(statement);
+      updateBufferWithDelete(
+          mWriterCommon.getDeleteCellStatement(entityId, family, qualifier, timestamp));
     }
   }
 

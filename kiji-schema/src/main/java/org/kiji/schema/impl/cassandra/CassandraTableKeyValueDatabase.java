@@ -151,7 +151,8 @@ public class CassandraTableKeyValueDatabase
 
     // Standard C* table layout.  Use text key + timestamp as composite primary key to allow selection by timestamp.
     String tableDescription = String.format(
-        "(%s text, %s text, %s timestamp, %s blob, PRIMARY KEY (%s, %s, %s)) WITH CLUSTERING ORDER BY (%s ASC, %s DESC);",
+        "CREATE TABLE %s (%s text, %s text, %s timestamp, %s blob, PRIMARY KEY (%s, %s, %s)) WITH CLUSTERING ORDER BY (%s ASC, %s DESC);",
+        tableName,
         KV_COLUMN_TABLE,
         KV_COLUMN_KEY,
         KV_COLUMN_TIME,

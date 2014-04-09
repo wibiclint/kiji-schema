@@ -364,7 +364,9 @@ public class CassandraSystemTable implements KijiSystemTable {
 
     // The layout of this table is straightforward - just blob to blob!
     // TODO: Any check here first for whether the table exists?
-    String tableLayout = "(key text PRIMARY KEY, value blob)";
+    String tableLayout =
+        String.format("CREATE TABLE %s (%s text PRIMARY KEY, %s blob);",
+            systemTableName, KEY_COLUMN, VALUE_COLUMN);
 
     admin.createTable(systemTableName, tableLayout);
     CassandraTableInterface ctable = admin.getCassandraTableInterface(systemTableName);

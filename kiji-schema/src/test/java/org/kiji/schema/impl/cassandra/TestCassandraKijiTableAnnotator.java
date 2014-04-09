@@ -30,9 +30,6 @@ import org.kiji.schema.Kiji;
 import org.kiji.schema.KijiColumnName;
 import org.kiji.schema.KijiTableAnnotator;
 import org.kiji.schema.cassandra.CassandraKijiClientTest;
-import org.kiji.schema.impl.cassandra.CassandraKiji;
-import org.kiji.schema.impl.cassandra.CassandraKijiTable;
-import org.kiji.schema.impl.cassandra.CassandraKijiTableAnnotator;
 import org.kiji.schema.layout.KijiTableLayouts;
 import org.kiji.schema.util.InstanceBuilder;
 
@@ -65,7 +62,7 @@ public class TestCassandraKijiTableAnnotator extends CassandraKijiClientTest {
   @Before
   public void setup() throws IOException {
     mKiji = new InstanceBuilder(getKiji())
-        .withTable(KijiTableLayouts.getLayout(KijiTableLayouts.USER_TABLE))
+        .withTable(KijiTableLayouts.getLayout(KijiTableLayouts.USER_TABLE_FORMATTED_EID))
         .build();
     mTable = CassandraKijiTable.downcast(mKiji.openTable("user"));
     mAnnotator = mTable.openTableAnnotator();
