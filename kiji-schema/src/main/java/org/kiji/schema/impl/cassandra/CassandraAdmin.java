@@ -109,14 +109,14 @@ public abstract class CassandraAdmin implements Closeable {
    * can add lots of extra boilerplate checks in here.
    *
    * @param tableName The name of the table to create.
-   * @param cassandraTableLayout A string with the table layout.
+   * @param createTableStatement A string with the table layout.
    */
-  public CassandraTableInterface createTable(String tableName, String cassandraTableLayout) {
+  public CassandraTableInterface createTable(String tableName, String createTableStatement) {
     Preconditions.checkArgument(KijiManagedCassandraTableName.tableNameIsFormattedForCQL(tableName));
 
     // TODO: Keep track of all tables associated with this session
-    LOG.info("Creating table " + tableName);
-    getSession().execute("CREATE TABLE " + tableName + " " + cassandraTableLayout + ";");
+    LOG.info("Creating table {} with statement {}.", tableName, createTableStatement);
+    getSession().execute(createTableStatement);
 
     // Check that the table actually exists
     assert(tableExists(tableName));

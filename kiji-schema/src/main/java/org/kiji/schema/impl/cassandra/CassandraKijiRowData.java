@@ -222,12 +222,11 @@ public final class CassandraKijiRowData implements KijiRowData {
       LOG.info("Reading a row back...");
 
       // Get the Cassandra key (entity Id), qualifier, timestamp, and value.
-      ByteBuffer eidByteBuffer = row.getBytes(CassandraKiji.CASSANDRA_KEY_COL);
-      Long timestamp = row.getLong(CassandraKiji.CASSANDRA_VERSION_COL);
+      Long timestamp = row.getLong(CQLUtils.VERSION_COL);
 
-      String cassandraRawLocalityGroup = row.getString(CassandraKiji.CASSANDRA_LOCALITY_GROUP_COL);
-      String cassandraRawFamily = row.getString(CassandraKiji.CASSANDRA_FAMILY_COL);
-      String cassandraRawQualifier = row.getString(CassandraKiji.CASSANDRA_QUALIFIER_COL);
+      String cassandraRawLocalityGroup = row.getString(CQLUtils.LOCALITY_GROUP_COL);
+      String cassandraRawFamily = row.getString(CQLUtils.FAMILY_COL);
+      String cassandraRawQualifier = row.getString(CQLUtils.QUALIFIER_COL);
 
       KijiColumnName kijiColumnName;
       try {
@@ -258,10 +257,10 @@ public final class CassandraKijiRowData implements KijiRowData {
       // Most values will not be from counters, so we use getBytes.
       ByteBuffer value;
       try {
-        value = row.getBytes(CassandraKiji.CASSANDRA_VALUE_COL);
+        value = row.getBytes(CQLUtils.VALUE_COL);
       } catch (InvalidTypeException e) {
         if (e.getMessage().equals("Column value is of type counter")) {
-          long counter =  row.getLong(CassandraKiji.CASSANDRA_VALUE_COL);
+          long counter =  row.getLong(CQLUtils.VALUE_COL);
           value = ByteBufferUtil.bytes(counter);
         } else {
           throw new KijiIOException(e);
@@ -961,5 +960,4 @@ public final class CassandraKijiRowData implements KijiRowData {
       }
     }
   }
-
 }

@@ -154,10 +154,11 @@ public class TestCassandraCounters extends CassandraKijiClientTest {
     assertEquals(1L, actual);
     assertEquals(KConstants.CASSANDRA_COUNTER_TIMESTAMP, counter.getTimestamp());
 
-    mWriter.deleteCell(mEntityId, MAP, Q0);
-    assertFalse(mReader
-        .get(mEntityId, request)
-        .containsCell(MAP, Q0, KConstants.CASSANDRA_COUNTER_TIMESTAMP));
+    mWriter.deleteColumn(mEntityId, MAP, Q0);
+    assertFalse(
+        mReader
+            .get(mEntityId, request)
+            .containsCell(MAP, Q0, KConstants.CASSANDRA_COUNTER_TIMESTAMP));
 
     // Issue in Cassandra Kiji - After deleting a counter, that counter is *gone* forever.  No way
     // to use it again.
@@ -177,7 +178,7 @@ public class TestCassandraCounters extends CassandraKijiClientTest {
     assertEquals(1L, actual);
     assertEquals(KConstants.CASSANDRA_COUNTER_TIMESTAMP, counter.getTimestamp());
 
-    mBuffered.deleteCell(mEntityId, MAP, Q0);
+    mBuffered.deleteColumn(mEntityId, MAP, Q0);
 
     // No flush yet, data should still be there:
     counter = mReader.get(mEntityId, request).getMostRecentCell(MAP, Q0);

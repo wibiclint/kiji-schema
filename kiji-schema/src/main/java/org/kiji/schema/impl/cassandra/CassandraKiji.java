@@ -743,13 +743,6 @@ public final class CassandraKiji implements Kiji {
     return mZKClient;
   }
 
-  // Useful static members for referring to different fields in the C* tables.
-  public static String CASSANDRA_KEY_COL = "key";
-  public static String CASSANDRA_LOCALITY_GROUP_COL = "lg";
-  public static String CASSANDRA_FAMILY_COL = "family";
-  public static String CASSANDRA_QUALIFIER_COL = "qualifier";
-  public static String CASSANDRA_VERSION_COL = "version";
-  public static String CASSANDRA_VALUE_COL = "value";
 
   /**
    * Creates a Kiji table in a Cassandra instance, without checking for validation compatibility and
@@ -767,7 +760,7 @@ public final class CassandraKiji implements Kiji {
     final KijiURI tableURI = KijiURI.newBuilder(mURI).withTableName(tableLayout.getName()).build();
 
     // This will validate the layout and may throw an InvalidLayoutException.
-    final KijiTableLayout kijiTableLayout = KijiTableLayout.newLayout(tableLayout);
+    final KijiTableLayout layout = KijiTableLayout.newLayout(tableLayout);
 
     if (getMetaTable().tableExists(tableLayout.getName())) {
       throw new KijiAlreadyExistsException(
@@ -775,7 +768,8 @@ public final class CassandraKiji implements Kiji {
     }
 
     if (tableLayout.getKeysFormat() instanceof RowKeyFormat) {
-      LOG.warn("Usage of 'RowKeyFormat' is deprecated. New tables should use 'RowKeyFormat2'.");
+      throw new InvalidLayoutException(
+          "CassandraKiji does not support 'RowKeyFormat', instead use 'RowKeyFormat2'.");
     }
 
     getMetaTable().updateTableLayout(tableLayout.getName(), tableLayout);
@@ -787,7 +781,7 @@ public final class CassandraKiji implements Kiji {
       try {
         final ZooKeeperMonitor monitor = new ZooKeeperMonitor(mZKClient);
         try {
-          final byte[] layoutId = Bytes.toBytes(kijiTableLayout.getDesc().getLayoutId());
+          final byte[] layoutId = Bytes.toBytes(layout.getDesc().getLayoutId());
           monitor.notifyNewTableLayout(tableURI, layoutId, -1);
         } finally {
           monitor.close();
@@ -803,70 +797,23 @@ public final class CassandraKiji implements Kiji {
     String kijiTableName = tableLayout.getName();
 
     // Create a C* table name for this Kiji table.
-    KijiManagedCassandraTableName cTableName = KijiManagedCassandraTableName.getKijiTableName(
-        mURI,
-        kijiTableName
-    );
-
-    String cassandraTableLayout = String.format(
-        "(%s blob, %s text, %s text, %s text, %s bigint, %s blob, PRIMARY KEY (%s, %s, %s, %s, %s)) WITH CLUSTERING ORDER BY (%s ASC, %s ASC, %s ASC, %s DESC);",
-        CASSANDRA_KEY_COL,
-        CASSANDRA_LOCALITY_GROUP_COL,
-        CASSANDRA_FAMILY_COL,
-        CASSANDRA_QUALIFIER_COL,
-        CASSANDRA_VERSION_COL,
-        CASSANDRA_VALUE_COL,
-        CASSANDRA_KEY_COL,
-        CASSANDRA_LOCALITY_GROUP_COL,
-        CASSANDRA_FAMILY_COL,
-        CASSANDRA_QUALIFIER_COL,
-        CASSANDRA_VERSION_COL,
-        CASSANDRA_LOCALITY_GROUP_COL,
-        CASSANDRA_FAMILY_COL,
-        CASSANDRA_QUALIFIER_COL,
-        CASSANDRA_VERSION_COL
-    );
+    String tableName =
+        KijiManagedCassandraTableName.getKijiTableName(mURI, kijiTableName).toString();
 
     // Create the table!
-    mAdmin.createTable(cTableName.toString(), cassandraTableLayout);
+    mAdmin.createTable(tableName, CQLUtils.getCreateTableStatement(tableName, layout));
 
-    // Add a secondary index on the timestamp.
-    String query = String.format(
-        "CREATE INDEX ON %s (%s)",
-        cTableName.toString(),
-        CASSANDRA_VERSION_COL
-    );
-
-    mAdmin.execute(query);
+    // Add a secondary index on the version.
+    mAdmin.execute(CQLUtils.getCreateIndexStatement(tableName, CQLUtils.VERSION_COL));
 
     // Also create a second table, which we can use for counters.
     // Create a C* table name for this Kiji table.
-    KijiManagedCassandraTableName counterTableName =
-        KijiManagedCassandraTableName.getKijiCounterTableName(mURI, kijiTableName);
+    String counterTableName =
+        KijiManagedCassandraTableName.getKijiCounterTableName(mURI, kijiTableName).toString();
 
-    String counterTableLayout = String.format(
-        "(%s blob, %s text, %s text, %s text, %s bigint, %s counter, PRIMARY KEY (%s, %s, %s, %s, %s)) WITH CLUSTERING ORDER BY (%s ASC, %s ASC, %s ASC, %s DESC);",
-        CASSANDRA_KEY_COL,
-        CASSANDRA_LOCALITY_GROUP_COL,
-        CASSANDRA_FAMILY_COL,
-        CASSANDRA_QUALIFIER_COL,
-        CASSANDRA_VERSION_COL,
-        CASSANDRA_VALUE_COL,
-        CASSANDRA_KEY_COL,
-        CASSANDRA_LOCALITY_GROUP_COL,
-        CASSANDRA_FAMILY_COL,
-        CASSANDRA_QUALIFIER_COL,
-        CASSANDRA_VERSION_COL,
-        CASSANDRA_LOCALITY_GROUP_COL,
-        CASSANDRA_FAMILY_COL,
-        CASSANDRA_QUALIFIER_COL,
-        CASSANDRA_VERSION_COL
-    );
+    String createCounterTableStatement = CQLUtils.getCreateCounterTableStatement(counterTableName, layout);
 
     // Create the table!
-    mAdmin.createTable(counterTableName.toString(), counterTableLayout);
-
+    mAdmin.createTable(counterTableName, createCounterTableStatement);
   }
-
-
 }

@@ -198,7 +198,8 @@ public final class CassandraTableLayoutDatabase implements KijiTableLayoutDataba
 
     // For the rest of the table, the layout ID is a string, then we store the actual layout and update as blobs.
     String tableDescription = String.format(
-        "(%s text, %s timestamp, %s text, %s blob, %s blob, PRIMARY KEY (%s, %s)) WITH CLUSTERING ORDER BY (%s DESC);",
+        "CREATE TABLE %s (%s text, %s timestamp, %s text, %s blob, %s blob, PRIMARY KEY (%s, %s)) WITH CLUSTERING ORDER BY (%s DESC);",
+        tableName,
         QUALIFIER_TABLE,
         QUALIFIER_TIME,
         QUALIFIER_LAYOUT_ID,

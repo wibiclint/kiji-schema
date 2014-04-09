@@ -35,6 +35,7 @@ import org.apache.avro.specific.SpecificDatumWriter;
 import org.apache.commons.io.output.ByteArrayOutputStream;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hbase.HConstants;
+import org.jruby.ext.ffi.Type$i$0$0$alignment;
 import org.kiji.annotations.ApiAudience;
 import org.kiji.schema.KijiSchemaTable;
 import org.kiji.schema.KijiURI;
@@ -748,7 +749,8 @@ public class CassandraSchemaTable implements KijiSchemaTable {
     // Let's try to make this somewhat readable...
     // TODO: Table should order by DESC for time
     String tableDescription = String.format(
-        "(%s blob, %s timestamp, %s blob, PRIMARY KEY (%s, %s));",
+        "CREATE TABLE %s (%s blob, %s timestamp, %s blob, PRIMARY KEY (%s, %s));",
+        tableName,
         SCHEMA_COLUMN_HASH_KEY,
         SCHEMA_COLUMN_TIME,
         SCHEMA_COLUMN_VALUE,
@@ -766,7 +768,8 @@ public class CassandraSchemaTable implements KijiSchemaTable {
   private static CassandraTableInterface installIdTable(CassandraAdmin admin, String tableName) {
     // TODO: Table should order by DESC for time
     String tableDescription = String.format(
-        "(%s bigint, %s timestamp, %s blob, PRIMARY KEY (%s, %s));",
+        "CREATE TABLE %s (%s bigint, %s timestamp, %s blob, PRIMARY KEY (%s, %s));",
+        tableName,
         SCHEMA_COLUMN_ID_KEY,
         SCHEMA_COLUMN_TIME,
         SCHEMA_COLUMN_VALUE,
@@ -785,7 +788,8 @@ public class CassandraSchemaTable implements KijiSchemaTable {
       CassandraAdmin admin,
       String tableName) throws IOException {
     String tableDescription = String.format(
-        "(%s text PRIMARY KEY, %s counter);",
+        "CREATE TABLE %s (%s text PRIMARY KEY, %s counter);",
+        tableName,
         SCHEMA_COUNTER_COLUMN_KEY,
         SCHEMA_COUNTER_COLUMN_VALUE
     );

@@ -1,5 +1,5 @@
 /**
- * (c) Copyright 2012 WibiData, Inc.
+ * (c) Copyright 2014 WibiData, Inc.
  *
  * See the NOTICE file distributed with this work for additional
  * information regarding copyright ownership.
@@ -17,7 +17,7 @@
  * limitations under the License.
  */
 {
-  name : "table",
+  name : "user",
   keys_format : {
     encoding : "FORMATTED",
     components : [ {
@@ -27,14 +27,24 @@
   },
   locality_groups : [ {
     name : "default",
+    description : "Default data stored forever on disk.",
     in_memory : false,
-    max_versions : 3,
+    max_versions : 2147483647,
     ttl_seconds : 2147483647,
     compression_type : "GZ",
     families : [ {
-      name : "family",
+      name : "info",
+      description : "Basic user info.",
       columns : [ {
-        name : "column",
+        name : "name",
+        description : "The user's full name.",
+        column_schema : {
+          type : "INLINE",
+          value : '"string"'
+        }
+      }, {
+        name : "email",
+        description : "The user's email address.",
         column_schema : {
           type : "INLINE",
           value : '"string"'
@@ -42,11 +52,20 @@
       } ]
     } ]
   }, {
-    name : "new",
-    in_memory : false,
+    name : "inMemory",
+    description : "For data that needs to be served with very low latency.",
+    in_memory : true,
     max_versions : 1,
     ttl_seconds : 2147483647,
-    compression_type : "GZ"
+    compression_type : "NONE",
+    families : [ {
+      name : "networks",
+      description : "Map from the names of friend networks to friend networks.",
+      map_schema : {
+        type : "CLASS",
+        value : "org.kiji.schema.avro.Node"
+      }
+    } ]
   } ],
   version : "layout-1.1"
 }

@@ -1,28 +1,20 @@
 package org.kiji.schema.impl.cassandra;
 
-import com.datastax.driver.core.PreparedStatement;
-import com.datastax.driver.core.Session;
+import java.io.IOException;
+import java.nio.ByteBuffer;
+
 import com.datastax.driver.core.Statement;
 import com.google.common.base.Preconditions;
-import org.apache.hadoop.hbase.HConstants;
-import org.kiji.schema.EntityId;
-import org.kiji.schema.KijiCellEncoder;
-import org.kiji.schema.KijiColumnName;
-import org.kiji.schema.NoSuchColumnException;
-import org.kiji.schema.cassandra.KijiManagedCassandraTableName;
-import org.kiji.schema.hbase.HBaseColumnName;
-import org.kiji.schema.layout.KijiTableLayout;
-import org.kiji.schema.layout.impl.cassandra.CassandraColumnNameTranslator;
-import org.kiji.schema.impl.cassandra.CassandraKijiTableWriter.WriterLayoutCapsule;
+import org.kiji.schema.layout.impl.CellEncoderProvider;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.IOError;
-import java.io.IOException;
-import java.nio.ByteBuffer;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
+import org.kiji.schema.EntityId;
+import org.kiji.schema.KijiColumnName;
+import org.kiji.schema.NoSuchColumnException;
+import org.kiji.schema.cassandra.KijiManagedCassandraTableName;
+import org.kiji.schema.layout.KijiTableLayout;
+import org.kiji.schema.layout.impl.cassandra.CassandraColumnNameTranslator;
 
 /**
  * Contains code common to a TableWriter and BufferedWriter.
@@ -34,17 +26,12 @@ class CassandraKijiWriterCommon {
 
   private final CassandraKijiTable mTable;
 
-  private volatile WriterLayoutCapsule mWriterLayoutCapsule;
-
   private final String mTableName;
 
   private final String mCounterTableName;
 
-  public CassandraKijiWriterCommon(
-      CassandraKijiTable table,
-      CassandraKijiTableWriter.WriterLayoutCapsule capsule) {
+  public CassandraKijiWriterCommon(CassandraKijiTable table) {
     mTable = table;
-    mWriterLayoutCapsule = capsule;
     mAdmin = mTable.getAdmin();
     mTableName = KijiManagedCassandraTableName
         .getKijiTableName(mTable.getURI(), mTable.getName()).toString();
@@ -53,25 +40,20 @@ class CassandraKijiWriterCommon {
   }
 
   public boolean isCounterColumn(String family, String qualifier) throws IOException {
-    return mWriterLayoutCapsule
+    return mTable.getLayoutCapsule()
         .getLayout()
         .getCellSpec(new KijiColumnName(family, qualifier))
         .isCounter();
   }
-  public boolean isCounterColumn(String family) throws IOException {
-    return mWriterLayoutCapsule
-        .getLayout()
-        .getCellSpec(new KijiColumnName(family))
-        .isCounter();
-  }
 
-  private static int getTimeToLive(
-      WriterLayoutCapsule capsule,
-      String family) {
+  private static int getTTL(KijiTableLayout layout, String family) {
     // Get the locality group name from the column name.
-    KijiTableLayout.LocalityGroupLayout localityGroupLayout =
-        capsule.getLayout().getFamilyMap().get(family).getLocalityGroup();
-    return localityGroupLayout.getDesc().getTtlSeconds();
+    return layout
+      .getFamilyMap()
+      .get(family)
+      .getLocalityGroup()
+      .getDesc()
+      .getTtlSeconds();
   }
 
   /**
@@ -81,225 +63,155 @@ class CassandraKijiWriterCommon {
    * @param family The column family of the destination cell.
    * @param qualifier The column qualifier of the destination cell.
    * @param timestamp The timestamp of the destination cell.
-   * @param value The value of the destination cell.
-   * @param <T> The type of the destination cell.
+   * @param value The bytes to be written to the destination cell.
    * @return A CQL `Statement` that implements the put.
    * @throws IOException If something goes wrong (e.g., the column does not exist).
    */
-  public<T> Statement getStatementPutNotCounter(
+  public <T> Statement getPutStatement(
+      CellEncoderProvider encoderProvider,
       EntityId entityId,
       String family,
       String qualifier,
       long timestamp,
       T value) throws IOException {
-    final CassandraKijiTableWriter.WriterLayoutCapsule capsule = mWriterLayoutCapsule;
     Preconditions.checkArgument(!isCounterColumn(family, qualifier));
 
-    // Encode the entity ID and value as ByteBuffers (Cassandra "blobs").
-    final KijiCellEncoder cellEncoder =
-        capsule.getCellEncoderProvider().getEncoder(family, qualifier);
-
-    final ByteBuffer rowKey = CassandraByteUtil.bytesToByteBuffer(entityId.getHBaseRowKey());
-    final byte[] encoded = cellEncoder.encode(value);
-    final ByteBuffer encodedByteBuffer = CassandraByteUtil.bytesToByteBuffer(encoded);
-
-    int timeToLive = getTimeToLive(capsule, family);
-
-    // Create the CQL statement to insert data.
-    String queryText = String.format(
-        "INSERT INTO %s (%s, %s, %s, %s, %s, %s) VALUES (?, ?, ?, ?, ?, ?) ",
-        mTableName,
-        CassandraKiji.CASSANDRA_KEY_COL,
-        CassandraKiji.CASSANDRA_LOCALITY_GROUP_COL,
-        CassandraKiji.CASSANDRA_FAMILY_COL,
-        CassandraKiji.CASSANDRA_QUALIFIER_COL,
-        CassandraKiji.CASSANDRA_VERSION_COL,
-        CassandraKiji.CASSANDRA_VALUE_COL);
-
-    if (timeToLive != HConstants.FOREVER) {
-      queryText += " USING TTL " + timeToLive + " ";
-    }
-
-    queryText += ";";
-
-    LOG.info(queryText);
+    int ttl = getTTL(mTable.getLayout(), family);
 
     final KijiColumnName columnName = new KijiColumnName(family, qualifier);
     final CassandraColumnNameTranslator translator =
-        (CassandraColumnNameTranslator) capsule.getColumnNameTranslator();
+        (CassandraColumnNameTranslator) mTable.getColumnNameTranslator();
 
-    PreparedStatement preparedStatement = mAdmin.getPreparedStatement(queryText);
-    return preparedStatement.bind(
-        rowKey,
+    final ByteBuffer valueBytes =
+        CassandraByteUtil.bytesToByteBuffer(
+            encoderProvider.getEncoder(family, qualifier).encode(value));
+
+    return CQLUtils.getInsertStatement(
+        mAdmin,
+        mTable.getLayout(),
+        mTableName,
+        entityId,
         translator.toCassandraLocalityGroup(columnName),
         translator.toCassandraColumnFamily(columnName),
         translator.toCassandraColumnQualifier(columnName),
         timestamp,
-        encodedByteBuffer
-    );
+        valueBytes,
+        ttl);
   }
 
-  public Statement getStatementDeleteCell(
-      EntityId entityId, String family, String qualifier, long timestamp) throws IOException {
-    final WriterLayoutCapsule capsule = mWriterLayoutCapsule;
-    final KijiTableLayout.LocalityGroupLayout.FamilyLayout familyLayout = capsule.getLayout().getFamilyMap().get(family);
-    if (null == familyLayout) {
-      throw new NoSuchColumnException(String.format("Family '%s' not found.", family));
-    }
+  public Statement getDeleteCellStatement(
+      EntityId entityId,
+      String family,
+      String qualifier,
+      long version
+  ) throws IOException {
+    checkFamily(family);
 
     final CassandraColumnNameTranslator translator =
-        (CassandraColumnNameTranslator) capsule.getColumnNameTranslator();
+        (CassandraColumnNameTranslator) mTable.getColumnNameTranslator();
     final KijiColumnName kijiColumnName = new KijiColumnName(family, qualifier);
 
-    final ByteBuffer rowKey = CassandraByteUtil.bytesToByteBuffer(entityId.getHBaseRowKey());
-
-    String tableName = isCounterColumn(family, qualifier) ? mCounterTableName : mTableName;
-
-    String queryString = String.format(
-        "DELETE FROM %s WHERE %s=? AND %s=? AND %s=? AND %s=? AND %s=?",
-        tableName,
-        CassandraKiji.CASSANDRA_KEY_COL,
-        CassandraKiji.CASSANDRA_LOCALITY_GROUP_COL,
-        CassandraKiji.CASSANDRA_FAMILY_COL,
-        CassandraKiji.CASSANDRA_QUALIFIER_COL,
-        CassandraKiji.CASSANDRA_VERSION_COL
-    );
-
-    PreparedStatement preparedStatement = mAdmin.getPreparedStatement(queryString);
-    return preparedStatement.bind(
-        rowKey,
+    return CQLUtils.getDeleteCellStatement(
+        mAdmin,
+        mTable.getLayout(),
+        mTableName,
+        entityId,
         translator.toCassandraLocalityGroup(kijiColumnName),
         translator.toCassandraColumnFamily(kijiColumnName),
         translator.toCassandraColumnQualifier(kijiColumnName),
-        timestamp
-    );
+        version);
   }
 
-  public Statement getStatementDeleteColumn(
-      EntityId entityId, String family, String qualifier) throws IOException {
-    final WriterLayoutCapsule capsule = mWriterLayoutCapsule;
-    final KijiTableLayout.LocalityGroupLayout.FamilyLayout familyLayout = capsule.getLayout().getFamilyMap().get(family);
-    if (null == familyLayout) {
-      throw new NoSuchColumnException(String.format("Family '%s' not found.", family));
-    }
+  public Statement getDeleteColumnStatement(EntityId entityId, String family, String qualifier)
+      throws IOException {
+    checkFamily(family);
 
     final CassandraColumnNameTranslator translator =
-        (CassandraColumnNameTranslator) capsule.getColumnNameTranslator();
+        (CassandraColumnNameTranslator) mTable.getColumnNameTranslator();
     final KijiColumnName kijiColumnName = new KijiColumnName(family, qualifier);
 
-    final ByteBuffer rowKey = CassandraByteUtil.bytesToByteBuffer(entityId.getHBaseRowKey());
-
-    String tableName = isCounterColumn(family, qualifier) ? mCounterTableName : mTableName;
-
-    // TODO: Prepare this statement first.
-    String queryString = String.format(
-        "DELETE FROM %s WHERE %s=? AND %s=? AND %s=? AND %s=?",
-        tableName,
-        CassandraKiji.CASSANDRA_KEY_COL,
-        CassandraKiji.CASSANDRA_LOCALITY_GROUP_COL,
-        CassandraKiji.CASSANDRA_FAMILY_COL,
-        CassandraKiji.CASSANDRA_QUALIFIER_COL
-    );
-
-    PreparedStatement preparedStatement = mAdmin.getPreparedStatement(queryString);
-    return preparedStatement.bind(
-        rowKey,
+    return CQLUtils.getDeleteColumnStatement(
+        mAdmin,
+        mTable.getLayout(),
+        mTableName,
+        entityId,
         translator.toCassandraLocalityGroup(kijiColumnName),
         translator.toCassandraColumnFamily(kijiColumnName),
-        translator.toCassandraColumnQualifier(kijiColumnName)
-    );
+        translator.toCassandraColumnQualifier(kijiColumnName));
   }
 
-  /**
-   * Does the non-counter deletes.
-   * @param entityId
-   * @param family
-   * @return
-   * @throws IOException
-   */
-  public Statement getStatementDeleteFamily(EntityId entityId, String family) throws IOException {
-    return getStatementDeleteFamilyWithTableName(mTableName, entityId, family);
-  }
-
-  public Statement getStatementDeleteFamilyCounter(
+  public Statement getDeleteCounterStatement(
       EntityId entityId,
-      String family) throws IOException {
-    return getStatementDeleteFamilyWithTableName(mCounterTableName, entityId, family);
-  }
-
-  /**
-   * Common code for deleting counter and non-counter cells.
-   *
-   * @param tableName
-   * @param entityId
-   * @param family
-   * @return
-   * @throws IOException
-   */
-  private Statement getStatementDeleteFamilyWithTableName(
-      String tableName,
-      EntityId entityId,
-      String family) throws IOException {
-    final WriterLayoutCapsule capsule = mWriterLayoutCapsule;
-    final KijiTableLayout.LocalityGroupLayout.FamilyLayout familyLayout =
-        capsule.getLayout().getFamilyMap().get(family);
-    if (null == familyLayout) {
-      throw new NoSuchColumnException(String.format("Family '%s' not found.", family));
-    }
+      String family,
+      String qualifier
+  ) throws IOException {
+    checkFamily(family);
 
     final CassandraColumnNameTranslator translator =
-        (CassandraColumnNameTranslator) capsule.getColumnNameTranslator();
-    final KijiColumnName kijiColumnName = new KijiColumnName(family);
+        (CassandraColumnNameTranslator) mTable.getColumnNameTranslator();
+    final KijiColumnName kijiColumnName = new KijiColumnName(family, qualifier);
 
-    final ByteBuffer rowKey = CassandraByteUtil.bytesToByteBuffer(entityId.getHBaseRowKey());
-
-    // TODO: Prepare this statement first.
-    String queryString = String.format(
-        "DELETE FROM %s WHERE %s=? AND %s=? AND %s=?",
-        tableName,
-        CassandraKiji.CASSANDRA_KEY_COL,
-        CassandraKiji.CASSANDRA_LOCALITY_GROUP_COL,
-        CassandraKiji.CASSANDRA_FAMILY_COL
-    );
-
-    PreparedStatement preparedStatement = mAdmin.getPreparedStatement(queryString);
-    return preparedStatement.bind(
-        rowKey,
+    return CQLUtils.getDeleteColumnStatement(
+        mAdmin,
+        mTable.getLayout(),
+        mCounterTableName,
+        entityId,
         translator.toCassandraLocalityGroup(kijiColumnName),
-        translator.toCassandraColumnFamily(kijiColumnName)
-    );
+        translator.toCassandraColumnFamily(kijiColumnName),
+        translator.toCassandraColumnQualifier(kijiColumnName));
   }
 
-  public Statement getStatementDeleteRow(EntityId entityId) throws IOException {
-    return getStatementDeleteRowWithTableName(mTableName, entityId);
+  public Statement getDeleteFamilyStatement(EntityId entityId, String family) throws IOException {
+    checkFamily(family);
+
+    final CassandraColumnNameTranslator translator =
+        (CassandraColumnNameTranslator) mTable.getColumnNameTranslator();
+    final KijiColumnName kijiColumnName = new KijiColumnName(family, null);
+
+    return CQLUtils.getDeleteFamilyStatement(
+        mAdmin,
+        mTable.getLayout(),
+        mTableName,
+        entityId,
+        translator.toCassandraLocalityGroup(kijiColumnName),
+        translator.toCassandraColumnFamily(kijiColumnName));
   }
 
-  public Statement getStatementDeleteRowCounter(EntityId entityId) throws IOException {
-    return getStatementDeleteRowWithTableName(mCounterTableName, entityId);
+
+  public Statement getDeleteCounterFamilyStatement(EntityId entityId, String family)
+      throws IOException {
+    checkFamily(family);
+
+    final CassandraColumnNameTranslator translator =
+        (CassandraColumnNameTranslator) mTable.getColumnNameTranslator();
+    final KijiColumnName kijiColumnName = new KijiColumnName(family, null);
+
+    return CQLUtils.getDeleteFamilyStatement(
+        mAdmin,
+        mTable.getLayout(),
+        mCounterTableName,
+        entityId,
+        translator.toCassandraLocalityGroup(kijiColumnName),
+        translator.toCassandraColumnFamily(kijiColumnName));
   }
 
-  private Statement getStatementDeleteRowWithTableName(
-      String tableName,
-      EntityId entityId) throws IOException {
-    final ByteBuffer rowKey = CassandraByteUtil.bytesToByteBuffer(entityId.getHBaseRowKey());
-
-    // TODO: Prepare this statement first.
-    String queryString = String.format(
-        "DELETE FROM %s WHERE %s=?",
-        tableName,
-        CassandraKiji.CASSANDRA_KEY_COL
-    );
-
-    PreparedStatement preparedStatement = mAdmin.getPreparedStatement(queryString);
-    return preparedStatement.bind(rowKey);
+  public Statement getDeleteRowStatement(EntityId entityId) throws IOException {
+    return CQLUtils.getDeleteRowStatement(mAdmin, mTable.getLayout(), mTableName, entityId);
   }
 
-  // Get the Statement for an increment to a counter cell.
+  public Statement getDeleteCounterRowStatement(EntityId entityId) throws IOException {
+    return CQLUtils.getDeleteRowStatement(mAdmin, mTable.getLayout(), mCounterTableName, entityId);
+  }
 
-  // Do a put to a counter cell.
-
-
-
-
-
+  /**
+   * Checks that the provided column family exists in this table.
+   *
+   * @param family to check.
+   * @throws NoSuchColumnException if the family does not exist.
+   */
+  private void checkFamily(String family) throws NoSuchColumnException {
+    if (!mTable.getLayout().getFamilyMap().containsKey(family)) {
+      throw new NoSuchColumnException(String.format("Family '%s' not found.", family));
+    }
+  }
 }

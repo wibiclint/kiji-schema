@@ -22,7 +22,6 @@ package org.kiji.schema.impl.cassandra;
 import com.datastax.driver.core.BoundStatement;
 import com.datastax.driver.core.PreparedStatement;
 import com.datastax.driver.core.Row;
-import com.datastax.driver.core.Session;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Iterators;
 import com.google.common.collect.PeekingIterator;
@@ -37,7 +36,6 @@ import org.slf4j.LoggerFactory;
 
 import java.io.Closeable;
 import java.io.IOException;
-import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedHashSet;
 import java.util.NoSuchElementException;
@@ -146,12 +144,12 @@ public final class CassandraQualifierPager implements Iterator<String[]>, Closea
     // we aren't restricting the qualifiers at all.
     String queryString = String.format(
         "SELECT %s, %s from %s WHERE %s=? AND %s=? AND %s=?",
-        CassandraKiji.CASSANDRA_QUALIFIER_COL,
-        CassandraKiji.CASSANDRA_VERSION_COL,
+        CQLUtils.QUALIFIER_COL,
+        CQLUtils.VERSION_COL,
         cassandraTableName,
-        CassandraKiji.CASSANDRA_KEY_COL,
-        CassandraKiji.CASSANDRA_LOCALITY_GROUP_COL,
-        CassandraKiji.CASSANDRA_FAMILY_COL
+        CQLUtils.RAW_KEY_COL,
+        CQLUtils.LOCALITY_GROUP_COL,
+        CQLUtils.FAMILY_COL
     );
 
 
@@ -202,28 +200,28 @@ public final class CassandraQualifierPager implements Iterator<String[]>, Closea
     if (null != minQualifier && rangeFilter.isIncludeMin()) {
       queryString += String.format(
           " AND %s >= ? ",
-          CassandraKiji.CASSANDRA_QUALIFIER_COL
+          CQLUtils.QUALIFIER_COL
       );
     }
 
     if (null != minQualifier && !rangeFilter.isIncludeMin()) {
       queryString += String.format(
           " AND %s > ? ",
-          CassandraKiji.CASSANDRA_QUALIFIER_COL
+          CQLUtils.QUALIFIER_COL
       );
     }
 
     if (null != maxQualifier && rangeFilter.isIncludeMax()) {
       queryString += String.format(
           " AND %s <= ? ",
-          CassandraKiji.CASSANDRA_QUALIFIER_COL
+          CQLUtils.QUALIFIER_COL
       );
     }
 
     if (null != maxQualifier && !rangeFilter.isIncludeMax()) {
       queryString += String.format(
           " AND %s < ? ",
-          CassandraKiji.CASSANDRA_QUALIFIER_COL
+          CQLUtils.QUALIFIER_COL
       );
     }
 
@@ -292,7 +290,7 @@ public final class CassandraQualifierPager implements Iterator<String[]>, Closea
     // Verify that we properly finished off all of the repeated qualifier values during the last
     // call to this method.
     assert(null == mMinQualifier ||
-        !mMinQualifier.equals(mRowIterator.peek().getString(CassandraKiji.CASSANDRA_QUALIFIER_COL)));
+        !mMinQualifier.equals(mRowIterator.peek().getString(CQLUtils.QUALIFIER_COL)));
 
     LinkedHashSet<String> qualifiers = new LinkedHashSet<String>();
 
@@ -306,16 +304,16 @@ public final class CassandraQualifierPager implements Iterator<String[]>, Closea
       // range criteria.
       boolean bAtLeastOneExistsInTimeRange = false;
 
-      mMinQualifier = mRowIterator.peek().getString(CassandraKiji.CASSANDRA_QUALIFIER_COL);
+      mMinQualifier = mRowIterator.peek().getString(CQLUtils.QUALIFIER_COL);
       assert(null != mMinQualifier);
 
       // Remove all of the duplicates.
       while (mRowIterator.hasNext() && mRowIterator
           .peek()
-          .getString(CassandraKiji.CASSANDRA_QUALIFIER_COL)
+          .getString(CQLUtils.QUALIFIER_COL)
           .equals(mMinQualifier)) {
 
-        long timestamp = mRowIterator.peek().getLong(CassandraKiji.CASSANDRA_VERSION_COL);
+        long timestamp = mRowIterator.peek().getLong(CQLUtils.VERSION_COL);
         if (timestamp >= minTimestamp && timestamp < maxTimestamp) {
           bAtLeastOneExistsInTimeRange = true;
         }

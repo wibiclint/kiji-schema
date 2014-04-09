@@ -350,7 +350,7 @@ public class TestCassandraKijiRowData extends CassandraKijiClientTest {
     mWriter.put(mEntityId, FAMILY, QUAL0, 2L, "string2");
 
     final KijiDataRequest dataRequest = KijiDataRequest.builder()
-        .addColumns(ColumnsDef.create().withMaxVersions(1).addFamily("map"))
+        .addColumns(ColumnsDef.create().withMaxVersions(1).addFamily(MAP))
         .build();
 
     final KijiRowData row1 = mReader.get(mEntityId, dataRequest);
