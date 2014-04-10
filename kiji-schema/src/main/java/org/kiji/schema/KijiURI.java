@@ -223,19 +223,19 @@ public class KijiURI {
      * Zookeeper quorum: comma-separated list of Zookeeper host names or IP addresses.
      * Preserves user ordering.
      */
-    ImmutableList<String> mZookeeperQuorum;
+    protected ImmutableList<String> mZookeeperQuorum;
 
     /** Zookeeper client port number. */
-    int mZookeeperClientPort;
+    protected int mZookeeperClientPort;
 
     /** Kiji instance name. Null means unset. */
-    String mInstanceName;
+    protected String mInstanceName;
 
     /** Kiji table name. Null means unset. */
-    String mTableName;
+    protected String mTableName;
 
     /** Kiji column names. Never null. Empty means unset. Preserves user ordering. */
-    ImmutableList<KijiColumnName> mColumnNames;
+    protected ImmutableList<KijiColumnName> mColumnNames;
 
     /**
      * Constructs a new builder for KijiURIs.

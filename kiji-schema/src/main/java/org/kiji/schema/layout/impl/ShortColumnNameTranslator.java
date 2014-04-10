@@ -53,10 +53,10 @@ public class ShortColumnNameTranslator extends KijiColumnNameTranslator {
   public static final String SEPARATOR = ":";
 
   /** The table to translate names for. */
-  final KijiTableLayout mTableLayout;
+  protected final KijiTableLayout mTableLayout;
 
   /** A map from ColumnId to its locality group. */
-  final Map<ColumnId, LocalityGroupLayout> mLocalityGroups;
+  protected final Map<ColumnId, LocalityGroupLayout> mLocalityGroups;
 
   /**
    * Creates a new <code>ShortColumnNameTranslator</code> instance.
