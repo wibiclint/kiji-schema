@@ -18,21 +18,22 @@
  */
 package org.kiji.schema.impl.cassandra;
 
+import java.io.IOException;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.atomic.AtomicReference;
+
 import com.google.common.base.Objects;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
 import org.apache.hadoop.hbase.util.Bytes;
+
 import org.kiji.annotations.ApiAudience;
 import org.kiji.schema.KijiColumnName;
 import org.kiji.schema.KijiTable;
 import org.kiji.schema.KijiTableAnnotator;
 import org.kiji.schema.NoSuchColumnException;
-
-import java.io.IOException;
-import java.util.Map;
-import java.util.Set;
-import java.util.concurrent.atomic.AtomicReference;
 
 /** Cassandra implementation of {@link org.kiji.schema.KijiTableAnnotator}. */
 @ApiAudience.Private

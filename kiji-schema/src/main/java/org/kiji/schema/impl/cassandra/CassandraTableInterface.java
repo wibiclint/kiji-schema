@@ -1,5 +1,4 @@
 package org.kiji.schema.impl.cassandra;
-import com.datastax.driver.core.Session;
 
 /**
  * Provides interface somewhat like HTableInterface, but for C*.

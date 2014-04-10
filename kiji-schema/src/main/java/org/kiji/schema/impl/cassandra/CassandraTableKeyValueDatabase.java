@@ -19,25 +19,29 @@
 
 package org.kiji.schema.impl.cassandra;
 
+import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.util.Date;
+import java.util.HashSet;
+import java.util.List;
+import java.util.NavigableMap;
+import java.util.Set;
+
 import com.datastax.driver.core.PreparedStatement;
 import com.datastax.driver.core.ResultSet;
 import com.datastax.driver.core.Row;
-import com.datastax.driver.core.Session;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import org.kiji.annotations.ApiAudience;
 import org.kiji.schema.KijiTableKeyValueDatabase;
 import org.kiji.schema.KijiURI;
 import org.kiji.schema.avro.KeyValueBackup;
 import org.kiji.schema.avro.KeyValueBackupEntry;
 import org.kiji.schema.cassandra.KijiManagedCassandraTableName;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import java.io.IOException;
-import java.nio.ByteBuffer;
-import java.util.*;
 
 /**
 * Manages key-value pairs on a per table basis. Storage of these key-value pairs is provided by

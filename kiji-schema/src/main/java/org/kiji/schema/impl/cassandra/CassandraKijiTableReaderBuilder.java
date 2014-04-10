@@ -18,17 +18,18 @@
  */
 package org.kiji.schema.impl.cassandra;
 
+import java.io.IOException;
+import java.util.Map;
+
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableMultimap;
 import com.google.common.collect.Multimap;
+
 import org.kiji.annotations.ApiAudience;
 import org.kiji.schema.KijiColumnName;
 import org.kiji.schema.KijiTableReaderBuilder;
 import org.kiji.schema.layout.ColumnReaderSpec;
-
-import java.io.IOException;
-import java.util.Map;
 
 /** C* implementation of KijiTableReaderBuilder. */
 @ApiAudience.Private

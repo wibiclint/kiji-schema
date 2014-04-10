@@ -28,7 +28,6 @@ import com.datastax.driver.core.Row;
 import com.datastax.driver.core.Statement;
 import com.google.common.base.Objects;
 import com.google.common.base.Preconditions;
-import org.kiji.schema.layout.KijiColumnNameTranslator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -44,18 +43,15 @@ import org.kiji.schema.cassandra.KijiManagedCassandraTableName;
 import org.kiji.schema.impl.DefaultKijiCellEncoderFactory;
 import org.kiji.schema.impl.LayoutCapsule;
 import org.kiji.schema.impl.LayoutConsumer;
+import org.kiji.schema.layout.KijiColumnNameTranslator;
 import org.kiji.schema.layout.KijiTableLayout;
-import org.kiji.schema.layout.impl.CellEncoderProvider;
 import org.kiji.schema.layout.impl.CassandraColumnNameTranslator;
+import org.kiji.schema.layout.impl.CellEncoderProvider;
 
 /**
- * Makes modifications to a Kiji table by sending requests directly to HBase from the local client.
+ * Makes modifications to a Kiji table by sending requests directly to Cassandra from the local
+ * client.
  *
- * <p> This writer flushes immediately to HBase, so there is no need to call flush() explicitly.
- * All put, increment, delete, and verify operations will cause a synchronous RPC call to HBase.
- * </p>
- * <p> This writer acquires a dedicated HTable object for its entire life span. </p>
- * <p> This class is not thread-safe and must be synchronized externally. </p>
  */
 @ApiAudience.Private
 public final class CassandraKijiTableWriter implements KijiTableWriter {
@@ -82,9 +78,6 @@ public final class CassandraKijiTableWriter implements KijiTableWriter {
 
   /** Processes layout update from the KijiTable to which this writer writes. */
   private final InnerLayoutUpdater mInnerLayoutUpdater = new InnerLayoutUpdater();
-
-  /** Dedicated HTable connection. */
-  //private final CassandraTableInterface mCTable;
 
   /**
    * All state which should be modified atomically to reflect an update to the underlying table's
@@ -238,6 +231,14 @@ public final class CassandraKijiTableWriter implements KijiTableWriter {
   // ----------------------------------------------------------------------------------------------
   // Counter set, get, increment.
 
+  /**
+   * Determine whether a column contains a counter value.
+   *
+   * @param family of the column to check.
+   * @param qualifier of the column to check.
+   * @return whether the column contains a counter value.
+   * @throws IOException if there is a problem getting the table layout.
+   */
   private boolean isCounterColumn(String family, String qualifier) throws IOException {
     return mWriterLayoutCapsule
         .getLayout()
@@ -245,6 +246,15 @@ public final class CassandraKijiTableWriter implements KijiTableWriter {
         .isCounter();
   }
 
+  /**
+   * Get the value of a counter.
+   *
+   * @param entityId of the row containing the counter.
+   * @param family of the column containing the counter.
+   * @param qualifier of the column containing the counter.
+   * @return the value of the counter.
+   * @throws IOException if there is a problem reading the counter value.
+   */
   private long getCounterValue(
       EntityId entityId,
       String family,
@@ -286,6 +296,15 @@ public final class CassandraKijiTableWriter implements KijiTableWriter {
     return currentCounterValue;
   }
 
+  /**
+   * Increment the value of a counter.
+   *
+   * @param entityId of the row containing the counter.
+   * @param family of the column containing the counter.
+   * @param qualifier of the column containing the counter.
+   * @param counterIncrement by which to increment the counter.
+   * @throws IOException if there is a problem incrementing the counter value.
+   */
   private <T> void incrementCounterValue(
       EntityId entityId,
       String family,
@@ -313,6 +332,15 @@ public final class CassandraKijiTableWriter implements KijiTableWriter {
             counterIncrement));
   }
 
+  /**
+   * Perform a put to a counter.
+   * @param entityId of the row containing the counter.
+   * @param family of the column containing the counter.
+   * @param qualifier of the column containing the counter.
+   * @param value to write to the counter.
+   * @param <T> The value to write to the counter.
+   * @throws IOException if there is a problem writing the counter.
+   */
   private <T> void doCounterPut(
       EntityId entityId,
       String family,
@@ -345,7 +373,8 @@ public final class CassandraKijiTableWriter implements KijiTableWriter {
         "Cannot increment cell to KijiTableWriter instance %s in state %s.", this, state);
 
     if (!isCounterColumn(family, qualifier)) {
-      throw new UnsupportedOperationException(String.format("Column '%s:%s' is not a counter", family, qualifier));
+      throw new UnsupportedOperationException(
+          String.format("Column '%s:%s' is not a counter", family, qualifier));
     }
 
     // Increment the counter appropriately to get the new value.
@@ -378,7 +407,8 @@ public final class CassandraKijiTableWriter implements KijiTableWriter {
   /** {@inheritDoc} */
   @Override
   public void deleteRow(EntityId entityId, long upToTimestamp) throws IOException {
-    throw new UnsupportedOperationException("Cannot delete with up-to timestamp in Cassandra Kiji.");
+    throw new UnsupportedOperationException(
+        "Cannot delete with up-to timestamp in Cassandra Kiji.");
   }
 
   /** {@inheritDoc} */
@@ -398,7 +428,8 @@ public final class CassandraKijiTableWriter implements KijiTableWriter {
   @Override
   public void deleteFamily(EntityId entityId, String family, long upToTimestamp)
       throws IOException {
-    throw new UnsupportedOperationException("Cannot delete with up-to timestamp in Cassandra Kiji.");
+    throw new UnsupportedOperationException(
+        "Cannot delete with up-to timestamp in Cassandra Kiji.");
   }
 
   /** {@inheritDoc} */
@@ -422,7 +453,8 @@ public final class CassandraKijiTableWriter implements KijiTableWriter {
   @Override
   public void deleteColumn(EntityId entityId, String family, String qualifier, long upToTimestamp)
       throws IOException {
-    throw new UnsupportedOperationException("Cannot delete with up-to timestamp in Cassandra Kiji.");
+    throw new UnsupportedOperationException(
+        "Cannot delete with up-to timestamp in Cassandra Kiji.");
   }
 
   /** {@inheritDoc} */

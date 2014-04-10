@@ -38,16 +38,15 @@ import org.kiji.schema.cassandra.KijiManagedCassandraTableName;
 import org.kiji.schema.impl.DefaultKijiCellEncoderFactory;
 import org.kiji.schema.impl.LayoutCapsule;
 import org.kiji.schema.impl.LayoutConsumer;
-import org.kiji.schema.layout.impl.CellEncoderProvider;
 import org.kiji.schema.layout.impl.CassandraColumnNameTranslator;
+import org.kiji.schema.layout.impl.CellEncoderProvider;
 
 /**
  * Cassandra implementation of a batch KijiTableWriter.
  *
  * For now, this implementation is less featured than the HBaseKijiBufferedWriter.  We choose when
- * to execute a series of writes not when the buffer reaches a certain size in raw bytes, but whether
- * when it reaches a certain size in the total number of puts (INSERT statements).
- *
+ * to execute a series of writes not when the buffer reaches a certain size in raw bytes, but
+ * whether when it reaches a certain size in the total number of puts (INSERT statements).
  * We also do not combine puts to the same entity ID together into a single put.
  *
  * We arbitrarily choose to flush the write buffer when it contains 100 statements.
@@ -208,7 +207,8 @@ public class CassandraKijiBufferedWriter implements KijiBufferedWriter {
     // Cassandra requires doing a read to get the current counter value, followed by an increment.
     if (mWriterCommon.isCounterColumn(family, qualifier)) {
       // TODO: Better error message.
-      throw new UnsupportedOperationException("Cannot perform a counter set with a buffered writer.");
+      throw new UnsupportedOperationException(
+          "Cannot perform a counter set with a buffered writer.");
     }
 
     Statement putStatement =
@@ -253,6 +253,12 @@ public class CassandraKijiBufferedWriter implements KijiBufferedWriter {
     }
   }
 
+  /**
+   * Add a counter delete to the buffer and update the current buffer size.
+   *
+   * @param statement A counter delete to add to the buffer.
+   * @throws IOException in case of an error on flush.
+   */
   private void updateBufferWithCounterDelete(Statement statement) throws IOException {
     // TODO: Figure out how big a delete actually is.
     synchronized (mInternalLock) {

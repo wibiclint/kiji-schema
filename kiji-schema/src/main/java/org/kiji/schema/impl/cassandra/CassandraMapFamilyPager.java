@@ -19,15 +19,21 @@
 
 package org.kiji.schema.impl.cassandra;
 
-import com.google.common.base.Preconditions;
-import org.kiji.annotations.ApiAudience;
-import org.kiji.schema.*;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import java.io.IOException;
 import java.util.NavigableMap;
 import java.util.TreeMap;
+
+import com.google.common.base.Preconditions;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import org.kiji.annotations.ApiAudience;
+import org.kiji.schema.EntityId;
+import org.kiji.schema.KijiColumnName;
+import org.kiji.schema.KijiColumnPagingNotEnabledException;
+import org.kiji.schema.KijiDataRequest;
+import org.kiji.schema.KijiPager;
+import org.kiji.schema.KijiRowData;
 
 /**
  * Cassandra implementation of KijiPager for map-type families.
@@ -38,10 +44,10 @@ import java.util.TreeMap;
  * </p>
  *
  * <p>
- *   This pager conforms to the KijiPager interface, in order to implement
- *   {@link org.kiji.schema.KijiRowData#getPager(String)}.
- *   More straightforward interfaces are available using {@link org.kiji.schema.impl.cassandra.CassandraQualifierPager} and
- *   {@link org.kiji.schema.impl.cassandra.CassandraQualifierIterator}.
+ *   This pager conforms to the KijiPager interface, in order to implement {@link
+ *   org.kiji.schema.KijiRowData#getPager(String)}. More straightforward interfaces are available
+ *   using {@link org.kiji.schema.impl.cassandra.CassandraQualifierPager} and {@link
+ *   org.kiji.schema.impl.cassandra.CassandraQualifierIterator}.
  * </p>
  *
  * @see org.kiji.schema.impl.cassandra.CassandraQualifierPager
@@ -57,6 +63,15 @@ public final class CassandraMapFamilyPager implements KijiPager {
   private final KijiDataRequest mDataRequest;
   private final EntityId mEntityId;
 
+  /**
+   * Constructor for a Cassandra map-family pager.
+   *
+   * @param entityId for the row for the pager.
+   * @param dataRequest for the paged data.
+   * @param table from which to read.
+   * @param family the map-family over which to page.
+   * @throws KijiColumnPagingNotEnabledException if paging is not enabled.
+   */
   CassandraMapFamilyPager(
       EntityId entityId,
       KijiDataRequest dataRequest,
@@ -104,6 +119,13 @@ public final class CassandraMapFamilyPager implements KijiPager {
     }
   }
 
+  /**
+   * Create an empty `KijiRowData` instance from a string of qualifiers for a given family.
+   *
+   * @param qualifiers for the columnf family.
+   * @return the empty KijiRowData.
+   * @throws IOException if there is a problem constructing the row data.
+   */
   private KijiRowData createRowDataFromQualifiers(String[] qualifiers) throws IOException {
     NavigableMap<String, NavigableMap<String, NavigableMap<Long, byte[]>>> map =
         new TreeMap<String, NavigableMap<String, NavigableMap<Long, byte[]>>>();

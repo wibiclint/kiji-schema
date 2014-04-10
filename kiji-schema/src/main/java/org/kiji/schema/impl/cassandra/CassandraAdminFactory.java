@@ -19,10 +19,10 @@
 
 package org.kiji.schema.impl.cassandra;
 
+import java.io.IOException;
+
 import org.kiji.annotations.ApiAudience;
 import org.kiji.schema.KijiURI;
-
-import java.io.IOException;
 
 /**
  * Factory for CassandraAdmin.
@@ -38,7 +38,7 @@ public interface CassandraAdminFactory {
    *
    * @param uri The URI for a Cassandra Kiji instance.
    * @return A CassandraAdmin for this instance.
-   * @throws IOException
+   * @throws IOException if there is a problem creating the Kiji instance.
    */
   CassandraAdmin create(KijiURI uri) throws IOException;
 }

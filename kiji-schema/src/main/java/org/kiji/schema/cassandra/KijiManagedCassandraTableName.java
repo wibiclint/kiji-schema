@@ -19,8 +19,6 @@
 
 package org.kiji.schema.cassandra;
 
-import java.util.regex.Pattern;
-
 import com.google.common.base.Preconditions;
 
 import org.kiji.annotations.ApiAudience;
@@ -146,7 +144,10 @@ public final class KijiManagedCassandraTableName {
    *     or `KIJI_COUNTER_COMPONENT`.
    * @param kijiTableName The name of the user-space Kiji table.
    */
-  private KijiManagedCassandraTableName(String kijiInstanceName, String type, String kijiTableName) {
+  private KijiManagedCassandraTableName(
+      String kijiInstanceName,
+      String type,
+      String kijiTableName) {
     Preconditions.checkArgument(
         type.equals(KIJI_TABLE_COMPONENT) || type.equals(KIJI_COUNTER_COMPONENT)
     );
@@ -171,7 +172,8 @@ public final class KijiManagedCassandraTableName {
   }
 
   /**
-   * Gets a new instance of a Kiji-managed Cassandra table that holds the Kiji user-defined key-value pairs.
+   * Gets a new instance of a Kiji-managed Cassandra table that holds the Kiji user-defined
+   * key-value pairs.
    *
    * @param kijiURI The name of the Kiji instance.
    * @return The name of the Cassandra table used to store the Kiji meta table.
@@ -201,7 +203,8 @@ public final class KijiManagedCassandraTableName {
   }
 
   /**
-   * Gets a new instance of a Kiji-managed Cassandra table that holds the Kiji schema IDs counter table.
+   * Gets a new instance of a Kiji-managed Cassandra table that holds the Kiji schema IDs counter
+   * table.
    *
    * @param kijiURI The name of the Kiji instance.
    * @return The name of the Cassandra table used to store the Kiji schema IDs counter table.
@@ -228,7 +231,10 @@ public final class KijiManagedCassandraTableName {
    * @return The name of the Cassandra table used to store the user-space Kiji table.
    */
   public static KijiManagedCassandraTableName getKijiTableName(KijiURI kijiURI, String tableName) {
-    return new KijiManagedCassandraTableName(kijiURI.getInstance(), KIJI_TABLE_COMPONENT, tableName);
+    return new KijiManagedCassandraTableName(
+        kijiURI.getInstance(),
+        KIJI_TABLE_COMPONENT,
+        tableName);
   }
 
   /**
@@ -242,7 +248,10 @@ public final class KijiManagedCassandraTableName {
   public static KijiManagedCassandraTableName getKijiCounterTableName(
       KijiURI kijiURI,
       String tableName) {
-    return new KijiManagedCassandraTableName(kijiURI.getInstance(), KIJI_COUNTER_COMPONENT, tableName);
+    return new KijiManagedCassandraTableName(
+        kijiURI.getInstance(),
+        KIJI_COUNTER_COMPONENT,
+        tableName);
   }
 
   /**

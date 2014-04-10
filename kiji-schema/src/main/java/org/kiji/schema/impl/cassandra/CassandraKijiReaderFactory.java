@@ -19,13 +19,13 @@
 
 package org.kiji.schema.impl.cassandra;
 
+import java.io.IOException;
+import java.util.Map;
+
 import org.kiji.annotations.ApiAudience;
 import org.kiji.schema.KijiColumnName;
 import org.kiji.schema.KijiReaderFactory;
 import org.kiji.schema.layout.CellSpec;
-
-import java.io.IOException;
-import java.util.Map;
 
 /** Factory for Table Writers. */
 @ApiAudience.Private

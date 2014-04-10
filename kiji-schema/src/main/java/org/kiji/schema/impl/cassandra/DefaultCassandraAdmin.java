@@ -1,15 +1,13 @@
 package org.kiji.schema.impl.cassandra;
 
+import java.util.List;
+
 import com.datastax.driver.core.Cluster;
-import com.datastax.driver.core.ResultSet;
 import com.datastax.driver.core.Session;
 import com.google.common.base.Preconditions;
+
 import org.kiji.schema.CassandraKijiURI;
 import org.kiji.schema.KijiURI;
-import org.kiji.schema.cassandra.KijiManagedCassandraTableName;
-
-import java.io.Closeable;
-import java.util.List;
 
 /**
  * Lightweight wrapper to mimic the functionality of HBaseAdmin.

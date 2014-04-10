@@ -19,25 +19,30 @@
 
 package org.kiji.schema.impl.cassandra;
 
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.concurrent.atomic.AtomicReference;
+
 import com.datastax.driver.core.BatchStatement;
 import com.datastax.driver.core.ResultSet;
 import com.datastax.driver.core.Statement;
 import com.google.common.base.Preconditions;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import org.kiji.annotations.ApiAudience;
-import org.kiji.schema.*;
+import org.kiji.schema.AtomicKijiPutter;
+import org.kiji.schema.EntityId;
+import org.kiji.schema.KijiCellEncoder;
+import org.kiji.schema.KijiColumnName;
+import org.kiji.schema.KijiIOException;
 import org.kiji.schema.impl.DefaultKijiCellEncoderFactory;
 import org.kiji.schema.impl.LayoutCapsule;
 import org.kiji.schema.impl.LayoutConsumer;
 import org.kiji.schema.impl.cassandra.CassandraKijiTableWriter.WriterLayoutCapsule;
 import org.kiji.schema.layout.LayoutUpdatedException;
-import org.kiji.schema.layout.impl.CellEncoderProvider;
 import org.kiji.schema.layout.impl.CassandraColumnNameTranslator;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import java.io.IOException;
-import java.util.ArrayList;
-import java.util.concurrent.atomic.AtomicReference;
+import org.kiji.schema.layout.impl.CellEncoderProvider;
 
 /**
  * Cassandra implementation of AtomicKijiPutter.
@@ -55,8 +60,7 @@ import java.util.concurrent.atomic.AtomicReference;
 @ApiAudience.Private
 public final class CassandraAtomicKijiPutter implements AtomicKijiPutter {
   // TODO: Implement compare-and-set.  Should be possible in C* 2.0.6.
-  // See this thread on the C* user list:
-  // http://mail-archives.apache.org/mod_mbox/cassandra-user/201402.mbox/%3CCAKkz8Q3Q9KC0uhX5-XmZ4w8HXyL8Bt_-A1iJbn3xGW7uYvJ0xw%40mail.gmail.com%3E
+  // See this thread on the C* user list: http://tinyurl.com/lcz73s3
 
   private static final Logger LOG = LoggerFactory.getLogger(CassandraAtomicKijiPutter.class);
 
@@ -232,7 +236,6 @@ public final class CassandraAtomicKijiPutter implements AtomicKijiPutter {
         "Cannot checkAndCommit a transaction on an AtomicKijiPutter instance in state %s.", state);
     final WriterLayoutCapsule capsule = getWriterLayoutCapsule();
     final KijiColumnName kijiColumnName = new KijiColumnName(family, qualifier);
-    //final HBaseColumnName columnName = capsule.getColumnNameTranslator().toHBaseColumnName(kijiColumnName);
     final byte[] encoded;
 
     // If passed value is null, then let encoded value be null.
@@ -251,13 +254,17 @@ public final class CassandraAtomicKijiPutter implements AtomicKijiPutter {
 
     // TODO: Possibly suport checkAndCommit if cell to check and cell to set are the same.
 
-    throw new KijiIOException("Cassandra Kiji cannot yet support check-and-commit that inserts more than one cell.");
+    throw new KijiIOException(
+        "Cassandra Kiji cannot yet support check-and-commit that inserts more than one cell.");
   }
 
   /** {@inheritDoc} */
   @Override
   public void rollback() {
-    Preconditions.checkState(mStatements != null, "rollback() must be paired with a call to begin()");
+    Preconditions.checkState(
+        mStatements != null,
+        "rollback() must be paired with a call to begin()"
+    );
     final State state = mState.get();
     Preconditions.checkState(state == State.OPEN,
         "Cannot rollback a transaction on an AtomicKijiPutter instance in state %s.", state);
@@ -276,9 +283,14 @@ public final class CassandraAtomicKijiPutter implements AtomicKijiPutter {
 
   /** {@inheritDoc} */
   @Override
-  public <T> void put(String family, String qualifier, long timestamp, T value) throws IOException {
-    Preconditions.checkState(mStatements != null, "calls to put() must be between calls to begin() and "
-        + "commit(), checkAndCommit(), or rollback()");
+  public <T> void put(
+      String family,
+      String qualifier,
+      long timestamp,
+      T value) throws IOException {
+    Preconditions.checkState(mStatements != null,
+        "calls to put() must be between calls to begin() and "
+            + "commit(), checkAndCommit(), or rollback()");
     final State state = mState.get();
     Preconditions.checkState(state == State.OPEN,
         "Cannot put cell to an AtomicKijiPutter instance in state %s.", state);
@@ -286,10 +298,6 @@ public final class CassandraAtomicKijiPutter implements AtomicKijiPutter {
 
     final KijiCellEncoder cellEncoder =
         capsule.getCellEncoderProvider().getEncoder(family, qualifier);
-    final byte[] encoded = cellEncoder.encode(value);
-
-    final KijiColumnName kijiColumnName = new KijiColumnName(family, qualifier);
-    CassandraColumnNameTranslator translator = (CassandraColumnNameTranslator)capsule.getColumnNameTranslator();
 
     Statement statement = mWriterCommon.getPutStatement(
         mWriterLayoutCapsule.getCellEncoderProvider(),
@@ -306,8 +314,8 @@ public final class CassandraAtomicKijiPutter implements AtomicKijiPutter {
    * is in progress.
    *
    * @return the WriterLayoutCapsule for this writer.
-   * @throws org.kiji.schema.layout.LayoutUpdatedException in case the table layout has been updated while a transaction is
-   * in progress
+   * @throws org.kiji.schema.layout.LayoutUpdatedException in case the table layout has been
+   * updated while a transaction is in progress
    */
   private WriterLayoutCapsule getWriterLayoutCapsule() throws LayoutUpdatedException {
     synchronized (mLock) {

@@ -19,32 +19,41 @@
 
 package org.kiji.schema.impl.cassandra;
 
+import java.io.IOException;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.NavigableMap;
+import java.util.Set;
+import java.util.concurrent.atomic.AtomicReference;
+
 import com.google.common.base.Objects;
 import com.google.common.base.Preconditions;
 import org.apache.hadoop.conf.Configuration;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import org.kiji.annotations.ApiAudience;
 import org.kiji.schema.KijiMetaTable;
 import org.kiji.schema.KijiSchemaTable;
 import org.kiji.schema.KijiTableKeyValueDatabase;
 import org.kiji.schema.KijiURI;
-import org.kiji.schema.avro.*;
+import org.kiji.schema.avro.KeyValueBackup;
+import org.kiji.schema.avro.MetaTableBackup;
+import org.kiji.schema.avro.TableBackup;
+import org.kiji.schema.avro.TableLayoutDesc;
+import org.kiji.schema.avro.TableLayoutsBackup;
 import org.kiji.schema.cassandra.KijiManagedCassandraTableName;
 import org.kiji.schema.layout.KijiTableLayout;
 import org.kiji.schema.layout.KijiTableLayoutDatabase;
 import org.kiji.schema.layout.impl.cassandra.CassandraTableLayoutDatabase;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import java.io.IOException;
-import java.util.*;
-import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * An implementation of the KijiMetaTable that uses the 'kiji-meta' C* table as the backing
  * store.
  */
 @ApiAudience.Private
-public class CassandraMetaTable implements KijiMetaTable {
+public final class CassandraMetaTable implements KijiMetaTable {
 
   private static final Logger LOG = LoggerFactory.getLogger(CassandraMetaTable.class);
   private static final Logger CLEANUP_LOG =
@@ -72,10 +81,9 @@ public class CassandraMetaTable implements KijiMetaTable {
   /** The layout table to which we delegate the work of storing per-table layout metadata. */
   private final KijiTableLayoutDatabase mTableLayoutDatabase;
 
-  /** The table to which we delegate storing per-table meta data, in the form of key value pairs.  */
+  /** The table to which we delegate storing per-table meta data, in the form of key value pairs. */
   private final KijiTableKeyValueDatabase<?> mTableKeyValueDatabase;
-  // TODO: Make KijiTableLayoutDatabase thread-safe, so we can call CassandraMetaTable thread-safe, too.
-
+  // TODO: Make KijiTableLayoutDatabase thread-safe, so we can call CassandraMetaTable thread-safe.
   /**
    * Creates an CassandraTableInterface for the specified table.
    *
@@ -121,6 +129,7 @@ public class CassandraMetaTable implements KijiMetaTable {
    * @param conf The Hadoop configuration.
    * @param schemaTable The Kiji schema table.
    * @param admin Wrapper around open C* session.
+   * @return a reference to the meta table.
    * @throws java.io.IOException If there is an error.
    */
   public static CassandraMetaTable createAssumingTableExists(
@@ -172,7 +181,8 @@ public class CassandraMetaTable implements KijiMetaTable {
    * @param cLayoutTable The C* table that stores table layout information.
    * @param cKeyValueTable The C* table that stores user-specified key-value pairs.
    * @param tableLayoutDatabase A database of table layouts to which to delegate layout storage.
-   * @param tableKeyValueDatabase A database of key-value pairs to which to delegate metadata storage.
+   * @param tableKeyValueDatabase A database of key-value pairs to which to delegate metadata
+   *     storage.
    */
   private CassandraMetaTable(
       KijiURI kijiURI,
@@ -362,7 +372,8 @@ public class CassandraMetaTable implements KijiMetaTable {
    */
   public static void install(CassandraAdmin admin, KijiURI uri)
     throws IOException {
-    // Create separate tables for the layout information and for the user key-value store.  Since these are separate tables now, delegate to their respective classes.
+    // Create separate tables for the layout information and for the user key-value store.  Since
+    // these are separate tables now, delegate to their respective classes.
     CassandraTableLayoutDatabase.install(admin, uri);
     CassandraTableKeyValueDatabase.install(admin, uri);
   }

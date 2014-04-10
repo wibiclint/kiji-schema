@@ -19,35 +19,6 @@
 
 package org.kiji.schema.impl.cassandra;
 
-import com.google.common.base.Objects;
-import com.google.common.base.Preconditions;
-import com.google.common.collect.ImmutableSet;
-import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.fs.Path;
-import org.apache.hadoop.hbase.mapreduce.LoadIncrementalHFiles;
-import org.apache.hadoop.hbase.util.Bytes;
-import org.apache.zookeeper.KeeperException;
-import org.kiji.annotations.ApiAudience;
-import org.kiji.schema.*;
-import org.kiji.schema.avro.RowKeyFormat;
-import org.kiji.schema.avro.RowKeyFormat2;
-import org.kiji.schema.cassandra.KijiManagedCassandraTableName;
-import org.kiji.schema.impl.LayoutCapsule;
-import org.kiji.schema.impl.LayoutConsumer;
-import org.kiji.schema.impl.Versions;
-import org.kiji.schema.layout.KijiTableLayout;
-import org.kiji.schema.layout.KijiColumnNameTranslator;
-import org.kiji.schema.layout.impl.ZooKeeperClient;
-import org.kiji.schema.layout.impl.ZooKeeperMonitor;
-import org.kiji.schema.layout.impl.ZooKeeperMonitor.LayoutTracker;
-import org.kiji.schema.layout.impl.ZooKeeperMonitor.LayoutUpdateHandler;
-import org.kiji.schema.layout.impl.CassandraColumnNameTranslator;
-import org.kiji.schema.util.Debug;
-import org.kiji.schema.util.JvmId;
-import org.kiji.schema.util.VersionInfo;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -56,6 +27,50 @@ import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
+
+import com.google.common.base.Objects;
+import com.google.common.base.Preconditions;
+import com.google.common.collect.ImmutableSet;
+import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.hbase.mapreduce.LoadIncrementalHFiles;
+import org.apache.hadoop.hbase.util.Bytes;
+import org.apache.zookeeper.KeeperException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import org.kiji.annotations.ApiAudience;
+import org.kiji.schema.EntityId;
+import org.kiji.schema.EntityIdFactory;
+import org.kiji.schema.InternalKijiError;
+import org.kiji.schema.Kiji;
+import org.kiji.schema.KijiIOException;
+import org.kiji.schema.KijiReaderFactory;
+import org.kiji.schema.KijiRegion;
+import org.kiji.schema.KijiTable;
+import org.kiji.schema.KijiTableAnnotator;
+import org.kiji.schema.KijiTableNotFoundException;
+import org.kiji.schema.KijiTableReader;
+import org.kiji.schema.KijiTableWriter;
+import org.kiji.schema.KijiURI;
+import org.kiji.schema.KijiWriterFactory;
+import org.kiji.schema.RuntimeInterruptedException;
+import org.kiji.schema.avro.RowKeyFormat;
+import org.kiji.schema.avro.RowKeyFormat2;
+import org.kiji.schema.cassandra.KijiManagedCassandraTableName;
+import org.kiji.schema.impl.LayoutCapsule;
+import org.kiji.schema.impl.LayoutConsumer;
+import org.kiji.schema.impl.Versions;
+import org.kiji.schema.layout.KijiColumnNameTranslator;
+import org.kiji.schema.layout.KijiTableLayout;
+import org.kiji.schema.layout.impl.CassandraColumnNameTranslator;
+import org.kiji.schema.layout.impl.ZooKeeperClient;
+import org.kiji.schema.layout.impl.ZooKeeperMonitor;
+import org.kiji.schema.layout.impl.ZooKeeperMonitor.LayoutTracker;
+import org.kiji.schema.layout.impl.ZooKeeperMonitor.LayoutUpdateHandler;
+import org.kiji.schema.util.Debug;
+import org.kiji.schema.util.JvmId;
+import org.kiji.schema.util.VersionInfo;
 
 /**
  * <p>A KijiTable that exposes the underlying Cassandra implementation.</p>
@@ -230,8 +245,10 @@ public final class CassandraKijiTable implements KijiTable {
           "New layout ID %s does not match most recent layout ID %s from meta-table.",
           newLayoutId, newLayout.getDesc().getLayoutId());
 
-      mLayoutCapsule =
-          new CassandraLayoutCapsule(newLayout, new CassandraColumnNameTranslator(newLayout), CassandraKijiTable.this);
+      mLayoutCapsule = new CassandraLayoutCapsule(
+          newLayout,
+          new CassandraColumnNameTranslator(newLayout),
+          CassandraKijiTable.this);
 
       // Propagates the new layout to all consumers:
       synchronized (mLayoutConsumers) {
@@ -332,7 +349,10 @@ public final class CassandraKijiTable implements KijiTable {
           .setSchemaTable(mKiji.getSchemaTable());
       mLayoutMonitor = null;
       mLayoutTracker = null;
-      mLayoutCapsule = new CassandraLayoutCapsule(layout, new CassandraColumnNameTranslator(layout), this);
+      mLayoutCapsule = new CassandraLayoutCapsule(
+          layout,
+          new CassandraColumnNameTranslator(layout),
+          this);
     }
 
     mWriterFactory = new CassandraKijiWriterFactory(this);
@@ -457,8 +477,8 @@ public final class CassandraKijiTable implements KijiTable {
   /**
    * <p>
    * Get the set of registered layout consumers.  All layout consumers should be updated using
-   * {@link org.kiji.schema.impl.LayoutConsumer#update(org.kiji.schema.impl.LayoutCapsule)} before this
-   * table reports that it has successfully update its layout.
+   * {@link org.kiji.schema.impl.LayoutConsumer#update(org.kiji.schema.impl.LayoutCapsule)} before
+   * this table reports that it has successfully update its layout.
    * </p>
    * <p>
    * This method is package private for testing purposes only.  It should not be used externally.
@@ -487,7 +507,8 @@ public final class CassandraKijiTable implements KijiTable {
     Preconditions.checkState(state == State.OPEN,
         "Cannot update layout consumers for a KijiTable in state %s.", state);
     layout.setSchemaTable(mKiji.getSchemaTable());
-    final LayoutCapsule capsule = new CassandraLayoutCapsule(layout, new CassandraColumnNameTranslator(layout), this);
+    final LayoutCapsule capsule =
+        new CassandraLayoutCapsule(layout, new CassandraColumnNameTranslator(layout), this);
     synchronized (mLayoutConsumers) {
       for (LayoutConsumer consumer : mLayoutConsumers) {
         consumer.update(capsule);

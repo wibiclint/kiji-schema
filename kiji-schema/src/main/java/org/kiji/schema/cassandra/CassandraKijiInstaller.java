@@ -23,28 +23,26 @@ import java.io.IOException;
 import java.util.Collections;
 import java.util.Map;
 
+import com.datastax.driver.core.exceptions.AlreadyExistsException;
 import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.hbase.client.HBaseAdmin;
-import org.kiji.schema.*;
-import org.kiji.schema.hbase.HBaseFactory;
-import org.kiji.schema.impl.cassandra.*;
-import org.kiji.schema.impl.hbase.HBaseMetaTable;
-import org.kiji.schema.impl.hbase.HBaseSchemaTable;
-import org.kiji.schema.impl.hbase.HBaseSystemTable;
-import org.kiji.schema.util.LockFactory;
-import org.kiji.schema.util.ResourceUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import com.datastax.driver.core.exceptions.AlreadyExistsException;
-import com.datastax.driver.core.exceptions.QueryExecutionException;
-import com.datastax.driver.core.ResultSet;
-import com.datastax.driver.core.Cluster;
-import com.datastax.driver.core.Session;
-
 
 import org.kiji.annotations.ApiAudience;
 import org.kiji.annotations.ApiStability;
+import org.kiji.schema.Kiji;
+import org.kiji.schema.KijiAlreadyExistsException;
+import org.kiji.schema.KijiInvalidNameException;
+import org.kiji.schema.KijiURI;
+import org.kiji.schema.impl.cassandra.CassandraAdmin;
+import org.kiji.schema.impl.cassandra.CassandraAdminFactory;
+import org.kiji.schema.impl.cassandra.CassandraKijiFactory;
+import org.kiji.schema.impl.cassandra.CassandraMetaTable;
+import org.kiji.schema.impl.cassandra.CassandraSchemaTable;
+import org.kiji.schema.impl.cassandra.CassandraSystemTable;
 import org.kiji.schema.security.CassandraKijiSecurityManager;
+import org.kiji.schema.util.LockFactory;
+import org.kiji.schema.util.ResourceUtils;
 
 /** Installs or uninstalls Kiji instances from an Cassandra cluster. */
 @ApiAudience.Public
@@ -139,7 +137,6 @@ public final class CassandraKijiInstaller {
    * @param conf Hadoop configuration.
    * @throws IOException on I/O error.
    * @throws KijiInvalidNameException if the instance name is invalid.
-   * @throws KijiNotInstalledException if the specified instance does not exist.
    */
   public void uninstall(KijiURI uri, Configuration conf)
       throws IOException {

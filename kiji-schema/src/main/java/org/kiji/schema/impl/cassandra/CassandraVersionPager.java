@@ -19,24 +19,31 @@
 
 package org.kiji.schema.impl.cassandra;
 
-import com.datastax.driver.core.ResultSet;
-import com.datastax.driver.core.Row;
-import com.google.common.base.Preconditions;
-import org.kiji.annotations.ApiAudience;
-import org.kiji.schema.*;
-import org.kiji.schema.KijiDataRequest.Column;
-import org.kiji.schema.KijiDataRequestBuilder.ColumnsDef;
-import org.kiji.schema.impl.LayoutCapsule;
-import org.kiji.schema.layout.impl.CellDecoderProvider;
-import org.kiji.schema.layout.impl.CassandraColumnNameTranslator;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import java.io.IOException;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.NoSuchElementException;
+
+import com.datastax.driver.core.ResultSet;
+import com.datastax.driver.core.Row;
+import com.google.common.base.Preconditions;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import org.kiji.annotations.ApiAudience;
+import org.kiji.schema.EntityId;
+import org.kiji.schema.KijiColumnName;
+import org.kiji.schema.KijiColumnPagingNotEnabledException;
+import org.kiji.schema.KijiDataRequest;
+import org.kiji.schema.KijiDataRequest.Column;
+import org.kiji.schema.KijiDataRequestBuilder.ColumnsDef;
+import org.kiji.schema.KijiIOException;
+import org.kiji.schema.KijiPager;
+import org.kiji.schema.KijiRowData;
+import org.kiji.schema.impl.LayoutCapsule;
+import org.kiji.schema.layout.impl.CassandraColumnNameTranslator;
+import org.kiji.schema.layout.impl.CellDecoderProvider;
 
 /**
  * Pages through the versions of a fully-qualified column.

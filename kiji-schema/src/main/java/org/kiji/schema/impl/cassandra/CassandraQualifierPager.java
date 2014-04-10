@@ -19,26 +19,31 @@
 
 package org.kiji.schema.impl.cassandra;
 
+import java.io.Closeable;
+import java.io.IOException;
+import java.util.Iterator;
+import java.util.LinkedHashSet;
+import java.util.NoSuchElementException;
+
 import com.datastax.driver.core.BoundStatement;
 import com.datastax.driver.core.PreparedStatement;
 import com.datastax.driver.core.Row;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Iterators;
 import com.google.common.collect.PeekingIterator;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import org.kiji.annotations.ApiAudience;
-import org.kiji.schema.*;
+import org.kiji.schema.EntityId;
+import org.kiji.schema.KijiColumnName;
+import org.kiji.schema.KijiColumnPagingNotEnabledException;
+import org.kiji.schema.KijiDataRequest;
+import org.kiji.schema.NoSuchColumnException;
 import org.kiji.schema.cassandra.KijiManagedCassandraTableName;
 import org.kiji.schema.filter.KijiColumnFilter;
 import org.kiji.schema.filter.KijiColumnRangeFilter;
 import org.kiji.schema.layout.impl.CassandraColumnNameTranslator;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import java.io.Closeable;
-import java.io.IOException;
-import java.util.Iterator;
-import java.util.LinkedHashSet;
-import java.util.NoSuchElementException;
 
 /**
  * Pages through the many qualifiers of a map-type family.
@@ -89,7 +94,8 @@ public final class CassandraQualifierPager implements Iterator<String[]>, Closea
    * @param dataRequest The requested data.
    * @param table The Kiji table that this row belongs to.
    * @param family Iterate through the qualifiers from this map-type family.
-   * @throws org.kiji.schema.KijiColumnPagingNotEnabledException If paging is not enabled for the specified family.
+   * @throws org.kiji.schema.KijiColumnPagingNotEnabledException If paging is not enabled for the
+   *   specified family.
    */
   public CassandraQualifierPager(
       EntityId entityId,

@@ -1,5 +1,5 @@
 /**
- * (c) Copyright 2012 WibiData, Inc.
+ * (c) Copyright 2014 WibiData, Inc.
  *
  * See the NOTICE file distributed with this work for additional
  * information regarding copyright ownership.
@@ -19,7 +19,12 @@
 
 package org.kiji.schema.cassandra;
 
+import java.io.IOException;
+
 import org.apache.hadoop.conf.Configuration;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import org.kiji.annotations.ApiAudience;
 import org.kiji.annotations.ApiStability;
 import org.kiji.annotations.Inheritance;
@@ -29,10 +34,6 @@ import org.kiji.schema.KijiURI;
 import org.kiji.schema.impl.cassandra.CassandraAdminFactory;
 import org.kiji.schema.layout.impl.ZooKeeperClient;
 import org.kiji.schema.util.LockFactory;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import java.io.IOException;
 
 /** Factory for Cassandra instances based on URIs. */
 @ApiAudience.Framework
@@ -91,8 +92,8 @@ public interface CassandraFactory extends PriorityProvider {
    * Creates and opens a ZooKeeperClient for a given Kiji instance.
    *
    * <p>
-   *   Caller must release the ZooKeeperClient object with {@link org.kiji.schema.layout.impl.ZooKeeperClient#release()}
-   *   when done with it.
+   *   Caller must release the ZooKeeperClient object with {@link
+   *   org.kiji.schema.layout.impl.ZooKeeperClient#release()} when done with it.
    * </p>.
    *
    * @param uri URI of the Kiji instance for which to create a ZooKeeperClient.

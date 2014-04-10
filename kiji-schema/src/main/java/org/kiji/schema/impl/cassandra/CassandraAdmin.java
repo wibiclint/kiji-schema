@@ -1,15 +1,42 @@
-package org.kiji.schema.impl.cassandra;
+/**
+ * (c) Copyright 2014 WibiData, Inc.
+ *
+ * See the NOTICE file distributed with this work for additional
+ * information regarding copyright ownership.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 
-import com.datastax.driver.core.*;
-import com.google.common.base.Preconditions;
-import org.apache.commons.lang.StringUtils;
-import org.kiji.schema.KijiURI;
-import org.kiji.schema.cassandra.KijiManagedCassandraTableName;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+package org.kiji.schema.impl.cassandra;
 
 import java.io.Closeable;
 import java.util.Collection;
+
+import com.datastax.driver.core.Metadata;
+import com.datastax.driver.core.PreparedStatement;
+import com.datastax.driver.core.ResultSet;
+import com.datastax.driver.core.ResultSetFuture;
+import com.datastax.driver.core.Session;
+import com.datastax.driver.core.Statement;
+import com.datastax.driver.core.TableMetadata;
+import com.google.common.base.Preconditions;
+import org.apache.commons.lang.StringUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import org.kiji.schema.KijiURI;
+import org.kiji.schema.cassandra.KijiManagedCassandraTableName;
+
 
 /**
  * Lightweight wrapper to mimic the functionality of HBaseAdmin (and provide other functionality).
@@ -80,9 +107,9 @@ public abstract class CassandraAdmin implements Closeable {
     String keyspace = KijiManagedCassandraTableName.getCassandraKeyspaceFormattedForCQL(kijiURI);
     LOG.info(String.format("Creating keyspace %s (if missing) for %s.", keyspace, kijiURI));
 
-    // TODO: Check whether keyspace is > 48 characters long and if so provide Kiji error to the user.
-    String queryText = "CREATE KEYSPACE IF NOT EXISTS " + keyspace +
-        " WITH REPLICATION = {'class' : 'SimpleStrategy', 'replication_factor': 1}";
+    // TODO: Check whether keyspace is > 48 characters long and if so provide Kiji error to user.
+    String queryText = "CREATE KEYSPACE IF NOT EXISTS " + keyspace
+        + " WITH REPLICATION = {'class' : 'SimpleStrategy', 'replication_factor': 1}";
     ResultSet resultSet = getSession().execute(queryText);
     LOG.info(resultSet.toString());
     getSession().execute(String.format("USE %s", keyspace));
@@ -110,9 +137,11 @@ public abstract class CassandraAdmin implements Closeable {
    *
    * @param tableName The name of the table to create.
    * @param createTableStatement A string with the table layout.
+   * @return An interface for the table.
    */
   public CassandraTableInterface createTable(String tableName, String createTableStatement) {
-    Preconditions.checkArgument(KijiManagedCassandraTableName.tableNameIsFormattedForCQL(tableName));
+    Preconditions.checkArgument(
+        KijiManagedCassandraTableName.tableNameIsFormattedForCQL(tableName));
 
     // TODO: Keep track of all tables associated with this session
     LOG.info("Creating table {} with statement {}.", tableName, createTableStatement);
@@ -133,40 +162,66 @@ public abstract class CassandraAdmin implements Closeable {
    * @return The interface for the specified Cassandra table.
    */
   public CassandraTableInterface getCassandraTableInterface(String tableName) {
-    Preconditions.checkArgument(KijiManagedCassandraTableName.tableNameIsFormattedForCQL(tableName));
+    Preconditions.checkArgument(
+        KijiManagedCassandraTableName.tableNameIsFormattedForCQL(tableName));
     assert(tableExists(tableName));
     return CassandraTableInterface.createFromCassandraAdmin(this, tableName);
   }
 
   // TODO: Add something for disabling this table.
+
+  /**
+   * Disable a table.
+   *
+   * @param tableName of the table to disable.
+   */
   public void disableTable(String tableName) { }
 
   // TODO: Just return true for now since we aren't disabling any Cassandra tables yet.
+
+  /**
+   * Check whether a table is enabled.
+   *
+   * @param tableName of the table to check.
+   * @return whether the table is enabled.
+   */
   public boolean isTableEnabled(String tableName) {
     return true;
   }
 
+  /**
+   * Delete a Cassandra table.
+   *
+   * @param tableName of the table to delete.
+   */
   public void deleteTable(String tableName) {
-    Preconditions.checkArgument(KijiManagedCassandraTableName.tableNameIsFormattedForCQL(tableName));
+    Preconditions.checkArgument(
+        KijiManagedCassandraTableName.tableNameIsFormattedForCQL(tableName));
     // TODO: Check first that the table actually exists?
     String queryString = String.format("DROP TABLE IF EXISTS %s;", tableName);
     LOG.info("Deleting table " + tableName);
     getSession().execute(queryString);
   }
 
+  /**
+   * Check whether the keyspace for this Kiji instance is empty.
+   *
+   * @return whether the keyspace is empty.
+   */
   public boolean keyspaceIsEmpty() {
     Preconditions.checkNotNull(getSession());
     Preconditions.checkNotNull(getSession().getCluster());
     Preconditions.checkNotNull(getSession().getCluster().getMetadata());
     String keyspace = KijiManagedCassandraTableName.getCassandraKeyspaceFormattedForCQL(mKijiURI);
-    //String noQuotesKeyspace = stripQuotes(keyspace);
-    //Preconditions.checkNotNull(getSession().getCluster().getMetadata().getKeyspace(noQuotesKeyspace));
     Preconditions.checkNotNull(getSession().getCluster().getMetadata().getKeyspace(keyspace));
     Collection<TableMetadata> tables =
         getSession().getCluster().getMetadata().getKeyspace(keyspace).getTables();
     return (tables.isEmpty());
   }
 
+  /**
+   * Delete the keyspace for this Kiji instance.
+   */
   public void deleteKeyspace() {
     // TODO: Track whether keyspace exists and assert appropriate keyspace state in all methods.
     String keyspace = KijiManagedCassandraTableName.getCassandraKeyspaceFormattedForCQL(mKijiURI);
@@ -175,8 +230,17 @@ public abstract class CassandraAdmin implements Closeable {
     assert (!keyspaceExists(keyspace));
   }
 
+  /**
+   * Check whether a given Cassandra table exists.
+   *
+   * Useful for double checking that `CREATE TABLE` statements have succeeded.
+   *
+   * @param tableName of the Cassandra table to check for.
+   * @return Whether the table exists.
+   */
   public boolean tableExists(String tableName) {
-    Preconditions.checkArgument(KijiManagedCassandraTableName.tableNameIsFormattedForCQL(tableName));
+    Preconditions.checkArgument(
+        KijiManagedCassandraTableName.tableNameIsFormattedForCQL(tableName));
     Preconditions.checkNotNull(getSession());
     Metadata metadata = getSession().getCluster().getMetadata();
 
@@ -196,6 +260,8 @@ public abstract class CassandraAdmin implements Closeable {
   }
 
   // TODO: Implement close method
+  /** {@inheritDoc} */
+  @Override
   public void close() {
     // Cannot close this right now without wreaking havoc in the unit tests.
     //getSession().shutdown();
@@ -203,24 +269,59 @@ public abstract class CassandraAdmin implements Closeable {
 
   // ----------------------------------------------------------------------------------------------
   // Code to wrap around the Cassandra Session to ensure that all queries are cached.
+
+  /**
+   * Execute a statement, using a prepared statement if one already exists for the statement, and
+   * creating and caching a prepared statement otherwise.
+   *
+   * @param statement The statement to execute.
+   * @return The results of executing the statement.
+   */
   public ResultSet execute(Statement statement) {
     return mSession.execute(statement);
   }
 
+  /**
+   * Execute a query, using a prepared statement if one already exists for the query, and creating
+   * and caching a prepared statement otherwise.
+   *
+   * @param query The query to execute.
+   * @return The results of executing the query.
+   */
   public ResultSet execute(String query) {
     PreparedStatement preparedStatement = mStatementCache.getPreparedStatement(query);
     return mSession.execute(preparedStatement.bind());
   }
 
+  /**
+   * Asynchronously execute a statement, using a prepared statement if one already exists for the
+   * statement, and creating and caching a prepared statement otherwise.
+   *
+   * @param statement The statement to execute.
+   * @return The results of executing the statement.
+   */
   public ResultSetFuture executeAsync(Statement statement) {
     return mSession.executeAsync(statement);
   }
 
+  /**
+   * Asynchronously execute a query, using a prepared statement if one already exists for the
+   * query, and creating and caching a prepared statement otherwise.
+   *
+   * @param query The query to execute.
+   * @return The results of executing the query.
+   */
   public ResultSetFuture executeAsync(String query) {
     PreparedStatement preparedStatement = mStatementCache.getPreparedStatement(query);
     return mSession.executeAsync(preparedStatement.bind());
   }
 
+  /**
+   * Get the prepared statement for a query.
+   *
+   * @param query for which to get the prepared statement.
+   * @return a prepared statement for the query.
+   */
   public PreparedStatement getPreparedStatement(String query) {
     return mStatementCache.getPreparedStatement(query);
   }

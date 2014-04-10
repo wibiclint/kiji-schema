@@ -1,5 +1,5 @@
 /**
- * (c) Copyright 2012 WibiData, Inc.
+ * (c) Copyright 2014 WibiData, Inc.
  *
  * See the NOTICE file distributed with this work for additional
  * information regarding copyright ownership.
@@ -19,16 +19,28 @@
 
 package org.kiji.schema.impl.cassandra;
 
-import com.datastax.driver.core.PreparedStatement;
-import com.datastax.driver.core.Row;
-import com.datastax.driver.core.Session;
-import com.datastax.driver.core.ResultSet;
+import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.util.AbstractMap.SimpleEntry;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
+import java.util.Properties;
+import java.util.concurrent.atomic.AtomicReference;
 
+import com.datastax.driver.core.PreparedStatement;
+import com.datastax.driver.core.ResultSet;
+import com.datastax.driver.core.Row;
 import com.google.common.base.Objects;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Maps;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hbase.util.Bytes;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import org.kiji.annotations.ApiAudience;
 import org.kiji.schema.Kiji;
 import org.kiji.schema.KijiNotInstalledException;
@@ -42,14 +54,6 @@ import org.kiji.schema.util.CloseableIterable;
 import org.kiji.schema.util.Debug;
 import org.kiji.schema.util.ProtocolVersion;
 import org.kiji.schema.util.ResourceUtils;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import java.io.IOException;
-import java.nio.ByteBuffer;
-import java.util.AbstractMap.SimpleEntry;
-import java.util.*;
-import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * <p>The Kiji system table that is stored in Cassandra.</p>
@@ -60,7 +64,7 @@ import java.util.concurrent.atomic.AtomicReference;
  * and the value V is stored in the "value:" column.<p>
  */
 @ApiAudience.Private
-public class CassandraSystemTable implements KijiSystemTable {
+public final class CassandraSystemTable implements KijiSystemTable {
   private static final Logger LOG = LoggerFactory.getLogger(CassandraSystemTable.class);
   private static final Logger CLEANUP_LOG =
       LoggerFactory.getLogger("cleanup." + CassandraSystemTable.class.getName());
@@ -138,6 +142,8 @@ public class CassandraSystemTable implements KijiSystemTable {
    * @param kijiURI URI of the Kiji instance this table belongs to.
    * @param conf Hadoop configuration (not used now)
    * @param admin Wrapper around open C* session.
+   * @return a reference to the system table.
+   * @throws java.io.IOException if there is a problem communicating with Cassandra.
    */
   public static CassandraSystemTable createAssumingTableExists(
       KijiURI kijiURI,
@@ -147,8 +153,8 @@ public class CassandraSystemTable implements KijiSystemTable {
     return new CassandraSystemTable(kijiURI, newSystemTable(kijiURI, conf, admin));
   }
 
-  private final PreparedStatement preparedStatementGetValue;
-  private final PreparedStatement preparedStatementPutValue;
+  private final PreparedStatement mPreparedStatementGetValue;
+  private final PreparedStatement mPreparedStatementPutValue;
 
   /**
    * Wrap an existing Cassandra table that is assumed to be the table that stores the
@@ -171,12 +177,13 @@ public class CassandraSystemTable implements KijiSystemTable {
     String queryText;
 
     // Prepare some statements for CQL queries
-    queryText = "SELECT " + VALUE_COLUMN + " FROM " +  mTable.getTableName() +
-        " WHERE " + KEY_COLUMN + "=?";
-    preparedStatementGetValue = mTable.getAdmin().getPreparedStatement(queryText);
+    queryText = "SELECT " + VALUE_COLUMN + " FROM " +  mTable.getTableName()
+        + " WHERE " + KEY_COLUMN + "=?";
+    mPreparedStatementGetValue = mTable.getAdmin().getPreparedStatement(queryText);
 
-    queryText = "INSERT INTO " +  mTable.getTableName() + "(" + KEY_COLUMN + "," + VALUE_COLUMN + ") VALUES(?,?);";
-    preparedStatementPutValue = mTable.getAdmin().getPreparedStatement(queryText);
+    queryText = "INSERT INTO " +  mTable.getTableName() + "(" + KEY_COLUMN + "," + VALUE_COLUMN
+        + ") VALUES(?,?);";
+    mPreparedStatementPutValue = mTable.getAdmin().getPreparedStatement(queryText);
 
   }
 
@@ -251,17 +258,19 @@ public class CassandraSystemTable implements KijiSystemTable {
     final State state = mState.get();
     Preconditions.checkState(state == State.OPEN,
         "Cannot get value from SystemTable instance in state %s.", state);
-    ResultSet resultSet = mTable.getAdmin().execute(preparedStatementGetValue.bind(key));
+    ResultSet resultSet = mTable.getAdmin().execute(mPreparedStatementGetValue.bind(key));
 
     // Extra the value from the byte buffer, otherwise return this empty buffer
     // TODO: Some additional sanity checks here?
     List<Row> rows = resultSet.all();
+    Preconditions.checkArgument(
+        rows.size() <= 1,
+        "Expected to get back exactly zero or one rows from query to get value from system table, "
+          + "but got back " + rows
+    );
     if (rows.size() == 1) {
       Row row = rows.get(0);
       return CassandraByteUtil.byteBuffertoBytes(row.getBytes(VALUE_COLUMN));
-    } else if (rows.size() > 0) {
-      assert(false) :
-      "Expected to get back exactly zero or one rows from query to get value from system table, but got back " + rows;
     }
     return null;
   }
@@ -275,7 +284,7 @@ public class CassandraSystemTable implements KijiSystemTable {
         "Cannot put value into SystemTable instance in state %s.", state);
     ByteBuffer valAsByteBuffer = CassandraByteUtil.bytesToByteBuffer(value);
     // TODO: Check for success?
-    mTable.getAdmin().execute(preparedStatementPutValue.bind(key, valAsByteBuffer));
+    mTable.getAdmin().execute(mPreparedStatementPutValue.bind(key, valAsByteBuffer));
   }
 
   /** {@inheritDoc} */

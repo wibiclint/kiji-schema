@@ -19,6 +19,16 @@
 
 package org.kiji.schema.impl.cassandra;
 
+import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.util.Collection;
+import java.util.Iterator;
+import java.util.Map;
+import java.util.NavigableMap;
+import java.util.NavigableSet;
+import java.util.NoSuchElementException;
+import java.util.TreeMap;
+
 import com.datastax.driver.core.Row;
 import com.datastax.driver.core.exceptions.InvalidTypeException;
 import com.google.common.base.Objects;
@@ -27,22 +37,29 @@ import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
 import org.apache.avro.Schema;
 import org.apache.cassandra.utils.ByteBufferUtil;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import org.kiji.annotations.ApiAudience;
-import org.kiji.schema.*;
+import org.kiji.schema.EntityId;
+import org.kiji.schema.KijiCell;
+import org.kiji.schema.KijiCellDecoder;
+import org.kiji.schema.KijiColumnName;
+import org.kiji.schema.KijiColumnPagingNotEnabledException;
+import org.kiji.schema.KijiDataRequest;
+import org.kiji.schema.KijiIOException;
+import org.kiji.schema.KijiPager;
+import org.kiji.schema.KijiRowData;
+import org.kiji.schema.KijiTableReaderBuilder;
+import org.kiji.schema.NoSuchColumnException;
 import org.kiji.schema.filter.KijiColumnFilter;
 import org.kiji.schema.impl.BoundColumnReaderSpec;
 import org.kiji.schema.impl.LayoutCapsule;
 import org.kiji.schema.layout.ColumnReaderSpec;
 import org.kiji.schema.layout.KijiTableLayout;
-import org.kiji.schema.layout.impl.CellDecoderProvider;
 import org.kiji.schema.layout.impl.CassandraColumnNameTranslator;
+import org.kiji.schema.layout.impl.CellDecoderProvider;
 import org.kiji.schema.util.TimestampComparator;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import java.io.IOException;
-import java.nio.ByteBuffer;
-import java.util.*;
 
 /**
  * An implementation of KijiRowData that wraps an Cassandra Result object.
@@ -81,7 +98,8 @@ public final class CassandraKijiRowData implements KijiRowData {
    * @return a new CellDecoderProvider for the specified Cassandra KijiTable.
    * @throws java.io.IOException on I/O error.
    */
-  private static CellDecoderProvider createCellProvider(CassandraKijiTable table) throws IOException {
+  private static CellDecoderProvider createCellProvider(
+      CassandraKijiTable table) throws IOException {
     final LayoutCapsule capsule = table.getLayoutCapsule();
     return new CellDecoderProvider(
         capsule.getLayout(),
@@ -126,12 +144,12 @@ public final class CassandraKijiRowData implements KijiRowData {
   /**
    * Package-private constructor, useful for creating a KijiRowData from a previously-created map.
    *
-   * @param table
-   * @param dataRequest
-   * @param entityId
-   * @param map
-   * @param decoderProvider
-   * @throws IOException
+   * @param table The table to which the row data belongs.
+   * @param dataRequest The data request from which the row data was derived.
+   * @param entityId The entity ID for this row.
+   * @param map of family to qualifier to version to value.
+   * @param decoderProvider for this row data.
+   * @throws IOException if there is a problem creating the row data.
    */
   CassandraKijiRowData(
       CassandraKijiTable table,
@@ -149,7 +167,8 @@ public final class CassandraKijiRowData implements KijiRowData {
   }
 
   /**
-   * Get the decoder for the given column from the {@link org.kiji.schema.layout.impl.CellDecoderProvider}.
+   * Get the decoder for the given column from the {@link
+   * org.kiji.schema.layout.impl.CellDecoderProvider}.
    *
    * @param column column for which to get a cell decoder.
    * @param <T> the type of the value encoded in the cell.
@@ -214,7 +233,8 @@ public final class CassandraKijiRowData implements KijiRowData {
     mFilteredMap = new TreeMap<String, NavigableMap<String, NavigableMap<Long, byte[]>>>();
 
     // Need to translate from short names in Cassandra table into longer names in Kiji table.
-    final CassandraColumnNameTranslator columnNameTranslator = new CassandraColumnNameTranslator(mTableLayout);
+    final CassandraColumnNameTranslator columnNameTranslator =
+        new CassandraColumnNameTranslator(mTableLayout);
 
     // Go through every column in the result set and add the data to the filtered map.
     for (Row row : mRows) {
@@ -278,10 +298,10 @@ public final class CassandraKijiRowData implements KijiRowData {
   /**
    * Insert this value into the map if it is valid with respect to the data request.
    *
-   * @param family
-   * @param qualifier
-   * @param timestamp
-   * @param value
+   * @param family of the value to insert.
+   * @param qualifier of the value to insert.
+   * @param timestamp of the value to insert.
+   * @param value to insert.
    */
   private void checkDataRequestAndInsertValueIntoMap(
       String family,
@@ -789,8 +809,10 @@ public final class CassandraKijiRowData implements KijiRowData {
      * @param eId of the rowdata we are iterating over.
      * @throws java.io.IOException on I/O error
      */
-    protected KijiCellIterator(KijiColumnName columnName, CassandraKijiRowData rowdata, EntityId eId)
-        throws IOException {
+    protected KijiCellIterator(
+        KijiColumnName columnName,
+        CassandraKijiRowData rowdata,
+        EntityId eId) throws IOException {
       mColumn = columnName;
       // Get info about the data request for this column.
       KijiDataRequest.Column columnRequest = rowdata.mDataRequest.getRequestForColumn(mColumn);
@@ -856,7 +878,6 @@ public final class CassandraKijiRowData implements KijiRowData {
       LOG.info("Getting next cell for iterator.");
 
       if (mVersionIterator.hasNext()) {
-        LOG.info("The version iterator has another value -> there are more values for the current qualifier");
         // If the current version-to-value iterator has another value, then create a cell from that
         // and return it.
         Map.Entry<Long, byte[]> nextVersionAndValue = mVersionIterator.next();
@@ -885,7 +906,8 @@ public final class CassandraKijiRowData implements KijiRowData {
         }
 
         // Start an iterator for a new column and repeat.
-        Map.Entry<String, NavigableMap<Long, byte[]>> qualifierAndValues = mQualifierIterator.next();
+        Map.Entry<String, NavigableMap<Long, byte[]>> qualifierAndValues
+            = mQualifierIterator.next();
 
         mCurrentQualifier = qualifierAndValues.getKey();
         mVersionIterator = qualifierAndValues.getValue().entrySet().iterator();

@@ -19,24 +19,19 @@
 
 package org.kiji.schema;
 
-import com.google.common.base.Joiner;
-import com.google.common.base.Preconditions;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableSortedSet;
-import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.hbase.HBaseConfiguration;
-import org.apache.hadoop.hbase.HConstants;
-import org.kiji.annotations.ApiAudience;
-import org.kiji.annotations.ApiStability;
-import org.kiji.schema.util.KijiNameValidator;
-
 import java.io.File;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.util.Arrays;
 import java.util.Collection;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
+
+import com.google.common.base.Joiner;
+import com.google.common.collect.ImmutableList;
+import com.google.common.collect.ImmutableSortedSet;
+
+import org.kiji.annotations.ApiAudience;
+import org.kiji.annotations.ApiStability;
+
 
 /**
  * URI that uniquely identifies a Cassandra Kiji instance, table, column(s).
@@ -46,7 +41,9 @@ import java.util.regex.Pattern;
  *   KijiURI objects can be constructed directly from parsing a URI string:
  * </p>
  * <pre><code>
- *   final KijiURI uri = KijiURI.newBuilder("kiji-cassandra://127.0.0.1:2181/127.0.0.1/9160/default/mytable/col").build();
+ *   final KijiURI uri = KijiURI
+ *       .newBuilder("kiji-cassandra://127.0.0.1:2181/127.0.0.1/9160/default/mytable/col")
+ *       .build();
  * </code></pre>
  *
  * <p>
@@ -105,8 +102,8 @@ public final class CassandraKijiURI extends KijiURI {
    *
    * @param zookeeperQuorum Zookeeper quorum.
    * @param zookeeperClientPort Zookeeper client port.
-   * @param cassandraNodes
-   * @param cassandraClientPort
+   * @param cassandraNodes Addresses of Cassandra nodes to which to connect.
+   * @param cassandraClientPort Cassandra native protocol port.
    * @param instanceName Instance name.
    * @param tableName Table name.
    * @param columnNames Column names.
@@ -126,16 +123,34 @@ public final class CassandraKijiURI extends KijiURI {
     mCassandraClientPort = cassandraClientPort;
   }
 
+  /**
+   * Get ZooKeeper quorum for the URI.
+   *
+   * @param uri to parse.
+   * @return Iterable over the ZooKeeper nodes.
+   */
   private static Iterable<String> parseZookeeperQuorum(URI uri) {
     final AuthorityParser parser = new AuthorityParser(uri);
     return parser.getZookeeperQuorum();
   }
 
+  /**
+   * Get The ZooKeeper client port for the URI.
+   *
+   * @param uri to parse.
+   * @return The ZooKeeper client port.
+   */
   private static int parseZookeeperClientPort(URI uri) {
     final AuthorityParser parser = new AuthorityParser(uri);
     return parser.getZookeeperClientPort();
   }
 
+  /**
+   * Parse the Cassandra nodes for the URI.
+   *
+   * @param uri to parse.
+   * @return The Cassandra nodes in the URI.
+   */
   private static Iterable<String> parseCassandraNodes(URI uri) {
     final String[] pathWithCassandraInfo = new File(uri.getPath()).toString().split("/");
 
@@ -152,13 +167,19 @@ public final class CassandraKijiURI extends KijiURI {
       if (!hosts.endsWith(")")) {
         throw new KijiURIException(uri.toString(), "Invalid Cassandra host list");
       }
-      hosts = hosts.substring(1, hosts.length()-1);
+      hosts = hosts.substring(1, hosts.length() - 1);
     }
 
     String[] hostList = hosts.split(",");
     return new ImmutableList.Builder<String>().addAll(Arrays.asList(hostList)).build();
   }
 
+  /**
+   * Parse the Cassandra native protocol client port from the URI.
+   *
+   * @param uri to parse.
+   * @return The Cassandra native protocol port from the URI.
+   */
   private static int parseCassandraClientPort(URI uri) {
     final String[] pathWithCassandraInfo = new File(uri.getPath()).toString().split("/");
 
@@ -175,10 +196,17 @@ public final class CassandraKijiURI extends KijiURI {
     }
   }
 
+  /**
+   * Parse the Kiji instance name from the URI.
+   *
+   * @param uri to parse.
+   * @return the Kiji instance name.
+   */
   private static String parseInstanceName(URI uri) {
     final String[] pathWithCassandraInfo = new File(uri.getPath()).toString().split("/");
     // Copy the Kiji parts of the path
-    final String[] path = Arrays.copyOfRange(pathWithCassandraInfo, 3, pathWithCassandraInfo.length);
+    final String[] path =
+        Arrays.copyOfRange(pathWithCassandraInfo, 3, pathWithCassandraInfo.length);
 
     if (path.length > 3) {
       throw new KijiURIException(uri.toString(),
@@ -194,11 +222,17 @@ public final class CassandraKijiURI extends KijiURI {
     return instanceName;
   }
 
+  /**
+   * Parse the Kiji table name from the URI.
+   *
+   * @param uri to parse.
+   * @return The Kiji table name from the URI.
+   */
   private static String parseTableName(URI uri) {
-
     final String[] pathWithCassandraInfo = new File(uri.getPath()).toString().split("/");
     // Copy the Kiji parts of the path
-    final String[] path = Arrays.copyOfRange(pathWithCassandraInfo, 3, pathWithCassandraInfo.length);
+    final String[] path =
+        Arrays.copyOfRange(pathWithCassandraInfo, 3, pathWithCassandraInfo.length);
 
     if (path.length > 3) {
       throw new KijiURIException(uri.toString(),
@@ -215,10 +249,17 @@ public final class CassandraKijiURI extends KijiURI {
     return tableName;
   }
 
+  /**
+   * Parse all of the column names from the URI.
+   *
+   * @param uri to parse.
+   * @return The Kiji column names in the URI.
+   */
   private static Iterable<KijiColumnName> parseColumnNames(URI uri) {
     final String[] pathWithCassandraInfo = new File(uri.getPath()).toString().split("/");
     // Copy the Kiji parts of the path
-    final String[] path = Arrays.copyOfRange(pathWithCassandraInfo, 3, pathWithCassandraInfo.length);
+    final String[] path =
+        Arrays.copyOfRange(pathWithCassandraInfo, 3, pathWithCassandraInfo.length);
 
     if (path.length > 3) {
       throw new KijiURIException(uri.toString(),
@@ -277,6 +318,8 @@ public final class CassandraKijiURI extends KijiURI {
      *
      * @param zookeeperQuorum The initial zookeeper quorum.
      * @param zookeeperClientPort The initial zookeeper client port.
+     * @param cassandraNodes The initial Cassandra nodes.
+     * @param cassandraClientPort The Cassandra native-protocol port.
      * @param instanceName The initial instance name.
      * @param tableName The initial table name.
      * @param columnNames The initial column names.
@@ -589,8 +632,7 @@ public final class CassandraKijiURI extends KijiURI {
         getCassandraClientPort());
   }
 
-  /**
-   * {@inheritDoc}
-   */
+  /** {@inheritDoc} */
+  @Override
   public boolean isCassandra() { return true; }
 }

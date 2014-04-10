@@ -30,11 +30,10 @@ import com.datastax.driver.core.ResultSet;
 import com.datastax.driver.core.Row;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ComparisonChain;
+import com.google.common.collect.Iterators;
 import com.google.common.collect.Lists;
 import com.google.common.collect.PeekingIterator;
-import com.google.common.collect.Iterators;
 import com.google.common.collect.Sets;
-import org.kiji.schema.KijiRowKeyComponents;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -44,6 +43,7 @@ import org.kiji.schema.EntityIdFactory;
 import org.kiji.schema.KijiDataRequest;
 import org.kiji.schema.KijiIOException;
 import org.kiji.schema.KijiRowData;
+import org.kiji.schema.KijiRowKeyComponents;
 import org.kiji.schema.KijiRowScanner;
 import org.kiji.schema.layout.KijiTableLayout;
 import org.kiji.schema.layout.impl.CellDecoderProvider;
@@ -100,7 +100,7 @@ public class CassandraKijiRowScanner implements KijiRowScanner {
    * @param dataRequest of scan.
    * @param cellDecoderProvider of table being scanned.
    * @param resultSets of scan.
-   * @throws IOException
+   * @throws IOException if there is a problem creating the row scanner.
    */
   public CassandraKijiRowScanner(
       CassandraKijiTable table,
@@ -192,17 +192,17 @@ public class CassandraKijiRowScanner implements KijiRowScanner {
       // Cassandra Rows which
 
 
-      // Cassandra row data at the head of all of the various Row iterators that we have.  Creating the
-      // KijiRowData is tricky only because every Cassandra Row object may not contain an entry for
-      // every Kiji entity ID.  We can use the backing Cassandra table's "token" function to order the
-      // Cassandra Rows by partition key (Cassandra should always return Rows to use in the order
-      // dictated by the token function of the partition keys).
+      // Cassandra row data at the head of all of the various Row iterators that we have.
+      // Creating the KijiRowData is tricky only because every Cassandra Row object may not contain
+      // an entry for every Kiji entity ID.  We can use the backing Cassandra table's "token"
+      // function to order the Cassandra Rows by partition key (Cassandra should always return Rows
+      // to use in the order dictated by the token function of the partition keys).
 
       // The CassandraDataRequestAdapter adds token(key) to the query that creates the Cassandra Row
       // data that we deal with in this method.
 
-      // Therefore, to create a KijiRowData, we get the entity ID with the lowest token value from all
-      // of our iterators over Cassandra Rows, get all of the data for the rows with that
+      // Therefore, to create a KijiRowData, we get the entity ID with the lowest token value
+      // from all of our iterators over Cassandra Rows, get all of the data for the rows with that
       // lowest-token-value entity ID, and then stitch them together.
 
       Row firstRow = mRowsIterator.next();
@@ -241,7 +241,7 @@ public class CassandraKijiRowScanner implements KijiRowScanner {
    * must be from the same table.  The Rows are first compared by their partion key token, and then
    * by the entity ID components they contain.
    */
-  private static class RowComparator implements Comparator<Row> {
+  private final static class RowComparator implements Comparator<Row> {
     private final String mTokenColumn;
     private final KijiTableLayout mLayout;
 

@@ -30,14 +30,14 @@ import com.datastax.driver.core.Statement;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Sets;
-import org.kiji.schema.EntityId;
-import org.kiji.schema.KijiColumnName;
-import org.kiji.schema.KijiDataRequest;
-import org.kiji.schema.KijiTableReader;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import org.kiji.annotations.ApiAudience;
+import org.kiji.schema.EntityId;
+import org.kiji.schema.KijiColumnName;
+import org.kiji.schema.KijiDataRequest;
+import org.kiji.schema.KijiTableReader;
 import org.kiji.schema.cassandra.KijiManagedCassandraTableName;
 import org.kiji.schema.layout.impl.CassandraColumnNameTranslator;
 
@@ -72,6 +72,10 @@ public class CassandraDataRequestAdapter {
 
   /**
    * Executes the Cassandra scan request and returns a list of `ResultSet` objects.
+   *
+   * @param table The table to scan.
+   * @param kijiScannerOptions Options for the scan.
+   * @return A list of `ResultSet`s from executing the scan.
    */
   public List<ResultSet> doScan(
       CassandraKijiTable table,
@@ -85,10 +89,10 @@ public class CassandraDataRequestAdapter {
    * Perform a Cassandra CQL "SELECT" statement (like an HBase Get).  Will ignore any columns with
    * paging enabled (use `doPagedGet` for requests with paging).
    *
-   * @param table
-   * @param entityId EntityID for the given get.
-   * @return
-   * @throws IOException
+   * @param table The table from which to fetch data.
+   * @param entityId The entity ID for the row from which to fetch data.
+   * @return A list of `ResultSet`s from executing the get.
+   * @throws IOException if there is a problem executing the get.
    */
   public List<ResultSet> doGet(
       CassandraKijiTable table,
@@ -97,6 +101,15 @@ public class CassandraDataRequestAdapter {
     return queryCassandraTables(table, entityId, false);
   }
 
+  /**
+   * Perform a Cassandra CQL "SELECT" statement (like an HBase Get).  Will fetch only columns with
+   * paging enabled (use `doGet` for requests without paging).
+   *
+   * @param table The table from which to fetch data.
+   * @param entityId The entity ID for the row from which to fetch data.
+   * @return A list of `ResultSet`s from executing the get.
+   * @throws IOException if there is a problem executing the get.
+   */
   public List<ResultSet> doPagedGet(
       CassandraKijiTable table,
       EntityId entityId
@@ -247,6 +260,10 @@ public class CassandraDataRequestAdapter {
    *  Check whether this column could specify non-counter values.  Return false iff this column
    *  name refers to a fully-qualified column of type COUNTER or a map-type family of type COUNTER.
    *
+   * @param table The table to check for counters.
+   * @param kijiColumnName The column to check for counters.
+   * @return whether this column could contain non-column values.
+   * @throws IOException if there is a problem reading the table.
    */
   private boolean maybeContainsNonCounterValues(
       CassandraKijiTable table,
@@ -269,9 +286,14 @@ public class CassandraDataRequestAdapter {
   }
 
   /**
-   *  Check whether this column could specify non-counter values.  Return false iff this column
-   *  name refers to a fully-qualified column of type COUNTER or a map-type family of type COUNTER.
+   *  Check whether this column could specify counter values.  Return false iff this column name
+   *  refers to a fully-qualified column that is not of type COUNTER or a map-type family not of
+   *  type COUNTER.
    *
+   * @param table to check for counter values.
+   * @param kijiColumnName to check for counter values.
+   * @return whether the column *may* contain counter values.
+   * @throws IOException if there is a problem reading the table.
    */
   private boolean maybeContainsCounterValues(
       CassandraKijiTable table,

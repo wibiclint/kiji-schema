@@ -19,6 +19,11 @@
 
 package org.kiji.schema.impl.cassandra;
 
+import java.io.IOException;
+import java.util.List;
+import java.util.Map;
+import java.util.NavigableMap;
+
 import com.google.common.base.Function;
 import com.google.common.base.Objects;
 import com.google.common.collect.Lists;
@@ -26,6 +31,9 @@ import com.google.common.collect.Maps;
 import com.google.common.collect.Multimap;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.zookeeper.KeeperException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import org.kiji.schema.InternalKijiError;
 import org.kiji.schema.KijiMetaTable;
 import org.kiji.schema.KijiURI;
@@ -42,13 +50,6 @@ import org.kiji.schema.layout.impl.ZooKeeperMonitor.UsersTracker;
 import org.kiji.schema.layout.impl.ZooKeeperMonitor.UsersUpdateHandler;
 import org.kiji.schema.util.Lock;
 import org.kiji.schema.util.Time;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import java.io.IOException;
-import java.util.List;
-import java.util.Map;
-import java.util.NavigableMap;
 
 /**
  * Updates the layout of a Cassandra Kiji table.

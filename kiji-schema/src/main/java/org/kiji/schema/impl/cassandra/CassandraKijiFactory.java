@@ -19,35 +19,35 @@
 
 package org.kiji.schema.impl.cassandra;
 
+import java.io.IOException;
+import java.util.Map;
+
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hbase.HBaseConfiguration;
+
 import org.kiji.annotations.ApiAudience;
 import org.kiji.delegation.Priority;
 import org.kiji.schema.Kiji;
 import org.kiji.schema.KijiFactory;
 import org.kiji.schema.KijiURI;
 import org.kiji.schema.cassandra.CassandraFactory;
-import org.kiji.schema.hbase.HBaseFactory;
-
-import java.io.IOException;
-import java.util.Map;
 
 /** Factory for constructing instances of CassandraKiji. */
 @ApiAudience.Private
 public final class CassandraKijiFactory implements KijiFactory {
 
   /** Singleton C* Kiji factory. */
-  private static CassandraKijiFactory SINGLETON = null;
+  private static CassandraKijiFactory singleton = null;
 
   /**
    * Getting for singleton instance.
    * @return The singleton CassandraKijiFactory.
    */
   public static CassandraKijiFactory get() {
-    if (null == SINGLETON) {
-      SINGLETON = new CassandraKijiFactory();
+    if (null == singleton) {
+      singleton = new CassandraKijiFactory();
     }
-    return SINGLETON;
+    return singleton;
   }
 
   /** {@inheritDoc} */

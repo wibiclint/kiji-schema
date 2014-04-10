@@ -17,33 +17,13 @@
  * limitations under the License.
  */
 
-package org.kiji.schema.impl.cassandra;
-
-import java.nio.ByteBuffer;
-
 /**
- * Useful static classes for converting between ByteBuffers and byte arrays.
+ * Cassandra-specific KijiSchema behavior.
+ *
+ * <p>Most of KijiSchema implements an abstract key-value store database on top of some underlying
+ * physical storage medium. In practice this is built on top of Apache Cassandra or HBase.
+ * Cassandra-specific options and mechanisms that are part of KijiSchema's API reside in this
+ * package.
+ * </p>
  */
-public class CassandraByteUtil {
-  /**
-   * Turn a ByteBuffer into a byte[].
-   *
-   * @param byteBuffer to turn into a byte[].
-   * @return the resulting byte[].
-   */
-  public static byte[] byteBuffertoBytes(ByteBuffer byteBuffer) {
-    byte[] bytes = new byte[byteBuffer.remaining()];
-    byteBuffer.get(bytes);
-    return bytes;
-  }
-
-  /**
-   * Turn a byte[] into a ByteBuffer.
-   *
-   * @param bytes to turn into a ByteBuffer.
-   * @return the ByteBuffer.
-   */
-  public static ByteBuffer bytesToByteBuffer(byte[] bytes) {
-    return ByteBuffer.wrap(bytes);
-  }
-}
+package org.kiji.schema.cassandra;

@@ -19,13 +19,31 @@
 
 package org.kiji.schema.impl.cassandra;
 
+import java.io.IOException;
+import java.io.PrintStream;
+import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
+
 import com.google.common.base.Objects;
 import com.google.common.base.Preconditions;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.zookeeper.KeeperException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import org.kiji.annotations.ApiAudience;
-import org.kiji.schema.*;
+import org.kiji.schema.Kiji;
+import org.kiji.schema.KijiAlreadyExistsException;
+import org.kiji.schema.KijiMetaTable;
+import org.kiji.schema.KijiNotInstalledException;
+import org.kiji.schema.KijiRowKeySplitter;
+import org.kiji.schema.KijiSchemaTable;
+import org.kiji.schema.KijiSystemTable;
+import org.kiji.schema.KijiTable;
+import org.kiji.schema.KijiURI;
 import org.kiji.schema.avro.RowKeyEncoding;
 import org.kiji.schema.avro.RowKeyFormat;
 import org.kiji.schema.avro.TableLayoutDesc;
@@ -40,16 +58,12 @@ import org.kiji.schema.layout.impl.ZooKeeperMonitor;
 import org.kiji.schema.security.CassandraKijiSecurityManager;
 import org.kiji.schema.security.KijiSecurityException;
 import org.kiji.schema.security.KijiSecurityManager;
-import org.kiji.schema.util.*;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import java.io.IOException;
-import java.io.PrintStream;
-import java.util.List;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicLong;
-import java.util.concurrent.atomic.AtomicReference;
+import org.kiji.schema.util.Debug;
+import org.kiji.schema.util.JvmId;
+import org.kiji.schema.util.LockFactory;
+import org.kiji.schema.util.ProtocolVersion;
+import org.kiji.schema.util.ResourceUtils;
+import org.kiji.schema.util.VersionInfo;
 
 /**
  * Kiji instance class that contains configuration and table information.
@@ -186,22 +200,21 @@ public final class CassandraKiji implements Kiji {
     mSchemaTable = null;
     mMetaTable = null;
     mSecurityManager = null;
-
-    // System table should have already been installed - here were are just getting a pointer to it.
-    mSystemTable = CassandraSystemTable.createAssumingTableExists(mURI, mConf, mAdmin);
-
-    mRetainCount.set(1);
     final State oldState = mState.getAndSet(State.OPEN);
-    Preconditions.checkState(oldState == State.UNINITIALIZED,
-        "Cannot open Kiji instance in state %s.", oldState);
-    LOG.debug("Kiji instance '{}' is now opened.", mURI);
-
-    mSystemVersion = mSystemTable.getDataVersion();
-    LOG.debug("Kiji instance '{}' has data version '{}'.", mURI, mSystemVersion);
-
-    // Make sure the data version for the client matches the cluster.
-    LOG.debug("Validating version for Kiji instance '{}'.", mURI);
     try {
+      // System table should have already been installed - here were are getting a pointer to it.
+      mSystemTable = CassandraSystemTable.createAssumingTableExists(mURI, mConf, mAdmin);
+
+      mRetainCount.set(1);
+      Preconditions.checkState(oldState == State.UNINITIALIZED,
+          "Cannot open Kiji instance in state %s.", oldState);
+      LOG.debug("Kiji instance '{}' is now opened.", mURI);
+
+      mSystemVersion = mSystemTable.getDataVersion();
+      LOG.debug("Kiji instance '{}' has data version '{}'.", mURI, mSystemVersion);
+
+      // Make sure the data version for the client matches the cluster.
+      LOG.debug("Validating version for Kiji instance '{}'.", mURI);
       VersionInfo.validateVersion(this);
     } catch (IOException ioe) {
       // If an IOException occurred the object will not be constructed so need to clean it up.
@@ -257,7 +270,8 @@ public final class CassandraKiji implements Kiji {
    *
    * @param layout the table layout for which to ensure compatibility.
    * @throws java.io.IOException in case of an error reading from the system table.
-   * @throws org.kiji.schema.layout.InvalidLayoutException if the layout and system versions are incompatible.
+   * @throws org.kiji.schema.layout.InvalidLayoutException if the layout and system versions are
+   * incompatible.
    */
   private void ensureValidationCompatibility(TableLayoutDesc layout) throws IOException {
     final ProtocolVersion layoutVersion = ProtocolVersion.parse(layout.getVersion());
@@ -811,7 +825,8 @@ public final class CassandraKiji implements Kiji {
     String counterTableName =
         KijiManagedCassandraTableName.getKijiCounterTableName(mURI, kijiTableName).toString();
 
-    String createCounterTableStatement = CQLUtils.getCreateCounterTableStatement(counterTableName, layout);
+    String createCounterTableStatement =
+        CQLUtils.getCreateCounterTableStatement(counterTableName, layout);
 
     // Create the table!
     mAdmin.createTable(counterTableName, createCounterTableStatement);

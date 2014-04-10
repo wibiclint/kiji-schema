@@ -1,3 +1,22 @@
+/**
+ * (c) Copyright 2014 WibiData, Inc.
+ *
+ * See the NOTICE file distributed with this work for additional
+ * information regarding copyright ownership.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package org.kiji.schema.impl.cassandra;
 
 import java.io.IOException;
@@ -5,7 +24,6 @@ import java.nio.ByteBuffer;
 
 import com.datastax.driver.core.Statement;
 import com.google.common.base.Preconditions;
-import org.kiji.schema.layout.impl.CellEncoderProvider;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -15,6 +33,7 @@ import org.kiji.schema.NoSuchColumnException;
 import org.kiji.schema.cassandra.KijiManagedCassandraTableName;
 import org.kiji.schema.layout.KijiTableLayout;
 import org.kiji.schema.layout.impl.CassandraColumnNameTranslator;
+import org.kiji.schema.layout.impl.CellEncoderProvider;
 
 /**
  * Contains code common to a TableWriter and BufferedWriter.
@@ -30,6 +49,11 @@ class CassandraKijiWriterCommon {
 
   private final String mCounterTableName;
 
+  /**
+   * Create an object for performing common write operations for a given table.
+   *
+   * @param table to which to write.
+   */
   public CassandraKijiWriterCommon(CassandraKijiTable table) {
     mTable = table;
     mAdmin = mTable.getAdmin();
@@ -39,6 +63,14 @@ class CassandraKijiWriterCommon {
         .getKijiCounterTableName(mTable.getURI(), mTable.getName()).toString();
   }
 
+  /**
+   * Check whether a given table contains a counter.
+   *
+   * @param family of the column to check.
+   * @param qualifier of the column to check.
+   * @return whether the column contains a counter.
+   * @throws IOException if there is a problem reading the table layout.
+   */
   public boolean isCounterColumn(String family, String qualifier) throws IOException {
     return mTable.getLayoutCapsule()
         .getLayout()
@@ -46,6 +78,13 @@ class CassandraKijiWriterCommon {
         .isCounter();
   }
 
+  /**
+   * Get the TTL for a column family.
+   *
+   * @param layout of the table.
+   * @param family for which to get the TTL.
+   * @return the TTL.
+   */
   private static int getTTL(KijiTableLayout layout, String family) {
     // Get the locality group name from the column name.
     return layout
@@ -99,6 +138,16 @@ class CassandraKijiWriterCommon {
         ttl);
   }
 
+  /**
+   * Create a delete statement for a fully-qualified cell.
+   *
+   * @param entityId of the cell to delete.
+   * @param family of the cell to delete.
+   * @param qualifier of the cell to delete.
+   * @param version of the cell to delete.
+   * @return a statement that will delete the cell.
+   * @throws IOException if there is a problem creating the delete statement.
+   */
   public Statement getDeleteCellStatement(
       EntityId entityId,
       String family,
@@ -122,6 +171,15 @@ class CassandraKijiWriterCommon {
         version);
   }
 
+  /**
+   * Create a delete statement for the latest version of a cell.
+   *
+   * @param entityId of the cell to delete.
+   * @param family of the cell to delete.
+   * @param qualifier of the cell to delete.
+   * @return a statement that will delete the cell.
+   * @throws IOException if there is a problem creating the delete statement.
+   */
   public Statement getDeleteColumnStatement(EntityId entityId, String family, String qualifier)
       throws IOException {
     checkFamily(family);
@@ -140,6 +198,15 @@ class CassandraKijiWriterCommon {
         translator.toCassandraColumnQualifier(kijiColumnName));
   }
 
+  /**
+   * Create a delete statement for a cell containing a counter.
+   *
+   * @param entityId of the cell to delete.
+   * @param family of the cell to delete.
+   * @param qualifier of the cell to delete.
+   * @return a statement that will delete the cell.
+   * @throws IOException if there is a problem creating the delete statement.
+   */
   public Statement getDeleteCounterStatement(
       EntityId entityId,
       String family,
@@ -161,6 +228,14 @@ class CassandraKijiWriterCommon {
         translator.toCassandraColumnQualifier(kijiColumnName));
   }
 
+  /**
+   * Create a delete statement for a column family.
+   *
+   * @param entityId to delete.
+   * @param family to delete.
+   * @return a statement that will delete the family.
+   * @throws IOException if there is a problem creating the delete statement.
+   */
   public Statement getDeleteFamilyStatement(EntityId entityId, String family) throws IOException {
     checkFamily(family);
 
@@ -178,6 +253,14 @@ class CassandraKijiWriterCommon {
   }
 
 
+  /**
+   * Create a delete statement for a column family containing counters.
+   *
+   * @param entityId to delete.
+   * @param family to delete.
+   * @return a statement that will delete the family.
+   * @throws IOException if there is a problem creating the delete statement.
+   */
   public Statement getDeleteCounterFamilyStatement(EntityId entityId, String family)
       throws IOException {
     checkFamily(family);
@@ -195,10 +278,24 @@ class CassandraKijiWriterCommon {
         translator.toCassandraColumnFamily(kijiColumnName));
   }
 
+  /**
+   * Create a delete statement for an entire row.
+   *
+   * @param entityId of the row to delete.
+   * @return a statement that will delete the row.
+   * @throws IOException if there is a problem creating the delete statement.
+   */
   public Statement getDeleteRowStatement(EntityId entityId) throws IOException {
     return CQLUtils.getDeleteRowStatement(mAdmin, mTable.getLayout(), mTableName, entityId);
   }
 
+  /**
+   * Create a delete statement for the counters within a row.
+   *
+   * @param entityId of the row to delete.
+   * @return a statement that will delete the row.
+   * @throws IOException if there is a problem creating the delete statement.
+   */
   public Statement getDeleteCounterRowStatement(EntityId entityId) throws IOException {
     return CQLUtils.getDeleteRowStatement(mAdmin, mTable.getLayout(), mCounterTableName, entityId);
   }

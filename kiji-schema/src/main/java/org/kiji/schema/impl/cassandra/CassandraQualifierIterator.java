@@ -18,19 +18,18 @@
  */
 package org.kiji.schema.impl.cassandra;
 
+import java.io.IOException;
+import java.util.Iterator;
+import java.util.NoSuchElementException;
+
 import com.google.common.collect.Iterators;
+
 import org.kiji.annotations.ApiAudience;
 import org.kiji.schema.EntityId;
 import org.kiji.schema.KijiColumnName;
 import org.kiji.schema.KijiColumnPagingNotEnabledException;
 import org.kiji.schema.KijiDataRequest;
-import org.kiji.schema.impl.hbase.HBaseKijiTable;
-import org.kiji.schema.impl.hbase.HBaseQualifierPager;
 import org.kiji.schema.util.CloseableIterable;
-
-import java.io.IOException;
-import java.util.Iterator;
-import java.util.NoSuchElementException;
 
 /**
  * Iterates over all the qualifiers in a map-type family.
@@ -52,7 +51,8 @@ public class CassandraQualifierIterator implements CloseableIterable<String>, It
    * @param dataRequest Data request for the map-type family to page through.
    * @param table HBase kiji table containing the row.
    * @param family Family column name.
-   * @throws org.kiji.schema.KijiColumnPagingNotEnabledException if paging is not configured for the family.
+   * @throws org.kiji.schema.KijiColumnPagingNotEnabledException if paging is not configured for the
+   *     family.
    */
   public CassandraQualifierIterator(
       EntityId entityId,

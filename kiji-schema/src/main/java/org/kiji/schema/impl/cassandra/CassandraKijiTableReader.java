@@ -34,7 +34,6 @@ import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Multimap;
 import com.google.common.collect.Sets;
-import org.kiji.schema.layout.KijiColumnNameTranslator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -51,13 +50,14 @@ import org.kiji.schema.KijiTableReaderBuilder.OnDecoderCacheMiss;
 import org.kiji.schema.NoSuchColumnException;
 import org.kiji.schema.SpecificCellDecoderFactory;
 import org.kiji.schema.impl.BoundColumnReaderSpec;
-import org.kiji.schema.impl.LayoutConsumer;
 import org.kiji.schema.impl.LayoutCapsule;
+import org.kiji.schema.impl.LayoutConsumer;
 import org.kiji.schema.layout.CellSpec;
 import org.kiji.schema.layout.ColumnReaderSpec;
+import org.kiji.schema.layout.KijiColumnNameTranslator;
 import org.kiji.schema.layout.KijiTableLayout;
-import org.kiji.schema.layout.impl.CellDecoderProvider;
 import org.kiji.schema.layout.impl.CassandraColumnNameTranslator;
+import org.kiji.schema.layout.impl.CellDecoderProvider;
 
 /**
  * Reads from a kiji table by sending the requests directly to the C* tables.
@@ -208,8 +208,7 @@ public final class CassandraKijiTableReader implements KijiTableReader {
   }
 
   /**
-   * Creates a new <code>HbaseKijiTableReader</code> instance that sends read requests directly to
-   * HBase.
+   * Creates a new CassandraKijiTableReader instance that sends read requests directly to Cassandra.
    *
    * @param table Kiji table from which to read.
    * @param overrides layout overrides to modify read behavior.
@@ -224,13 +223,12 @@ public final class CassandraKijiTableReader implements KijiTableReader {
   }
 
   /**
-   * Create a new <code>CassandraKijiTableReader</code> instance that sends read requests directly to
-   * HBase.
+   * Creates a new CassandraKijiTableReader instance that sends read requests directly to Cassandra.
    *
    * @param table Kiji table from which to read.
-   * @param onDecoderCacheMiss behavior to use when a {@link org.kiji.schema.layout.ColumnReaderSpec} override
-   *     specified in a {@link org.kiji.schema.KijiDataRequest} cannot be found in the prebuilt cache of cell
-   *     decoders.
+   * @param onDecoderCacheMiss behavior to use when a {@link
+   *     org.kiji.schema.layout.ColumnReaderSpec} override specified in a {@link
+   *     org.kiji.schema.KijiDataRequest} cannot be found in the prebuilt cache of cell decoders.
    * @param overrides mapping from columns to overriding read behavior for those columns.
    * @param alternatives mapping from columns to reader spec alternatives which the
    *     KijiTableReader will accept as overrides in data requests.
@@ -275,13 +273,12 @@ public final class CassandraKijiTableReader implements KijiTableReader {
   }
 
   /**
-   * Creates a new <code>CassandraKijiTableReader</code> instance that sends read requests directly to
-   * HBase.
+   * Creates a new CassandraKijiTableReader instance that sends read requests directly to Cassandra.
    *
    * @param table Kiji table from which to read.
-   * @param onDecoderCacheMiss behavior to use when a {@link org.kiji.schema.layout.ColumnReaderSpec} override
-   *     specified in a {@link org.kiji.schema.KijiDataRequest} cannot be found in the prebuilt cache of cell
-   *     decoders.
+   * @param onDecoderCacheMiss behavior to use when a {@link
+   *     org.kiji.schema.layout.ColumnReaderSpec} override specified in a {@link
+   *     org.kiji.schema.KijiDataRequest} cannot be found in the prebuilt cache of cell decoders.
    * @param overrides mapping from columns to overriding read behavior for those columns.
    * @param alternatives mapping from columns to reader spec alternatives which the
    *     KijiTableReader will accept as overrides in data requests.
@@ -454,7 +451,8 @@ public final class CassandraKijiTableReader implements KijiTableReader {
 
     // Now we create a KijiRowData from all of these results.
     // Parse the result.
-    return new CassandraKijiRowScanner(mTable, dataRequest, capsule.getCellDecoderProvider(), results);
+    return new CassandraKijiRowScanner(
+        mTable, dataRequest, capsule.getCellDecoderProvider(), results);
   }
 
   /** {@inheritDoc} */

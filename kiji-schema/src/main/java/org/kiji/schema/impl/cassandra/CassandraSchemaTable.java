@@ -19,23 +19,41 @@
 
 package org.kiji.schema.impl.cassandra;
 
+import java.io.ByteArrayInputStream;
+import java.io.File;
+import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.atomic.AtomicReference;
+
 import com.datastax.driver.core.PreparedStatement;
 import com.datastax.driver.core.ResultSet;
 import com.datastax.driver.core.Row;
-import com.datastax.driver.core.Session;
 import com.datastax.driver.core.exceptions.InvalidTypeException;
 import com.google.common.base.Objects;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Lists;
 import org.apache.avro.AvroRuntimeException;
 import org.apache.avro.Schema;
-import org.apache.avro.io.*;
+import org.apache.avro.io.DatumReader;
+import org.apache.avro.io.DatumWriter;
+import org.apache.avro.io.Decoder;
+import org.apache.avro.io.DecoderFactory;
+import org.apache.avro.io.Encoder;
+import org.apache.avro.io.EncoderFactory;
 import org.apache.avro.specific.SpecificDatumReader;
 import org.apache.avro.specific.SpecificDatumWriter;
 import org.apache.commons.io.output.ByteArrayOutputStream;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hbase.HConstants;
-import org.jruby.ext.ffi.Type$i$0$0$alignment;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import org.kiji.annotations.ApiAudience;
 import org.kiji.schema.KijiSchemaTable;
 import org.kiji.schema.KijiURI;
@@ -43,16 +61,11 @@ import org.kiji.schema.avro.MD5Hash;
 import org.kiji.schema.avro.SchemaTableBackup;
 import org.kiji.schema.avro.SchemaTableEntry;
 import org.kiji.schema.cassandra.KijiManagedCassandraTableName;
-import org.kiji.schema.util.*;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import java.io.ByteArrayInputStream;
-import java.io.File;
-import java.io.IOException;
-import java.nio.ByteBuffer;
-import java.util.*;
-import java.util.concurrent.atomic.AtomicReference;
+import org.kiji.schema.util.BytesKey;
+import org.kiji.schema.util.Debug;
+import org.kiji.schema.util.Lock;
+import org.kiji.schema.util.LockFactory;
+import org.kiji.schema.util.ResourceUtils;
 
 /**
  * <p>
@@ -70,7 +83,7 @@ import java.util.concurrent.atomic.AtomicReference;
  * </p>
  */
 @ApiAudience.Private
-public class CassandraSchemaTable implements KijiSchemaTable {
+public final class CassandraSchemaTable implements KijiSchemaTable {
   private static final Logger LOG = LoggerFactory.getLogger(CassandraSchemaTable.class);
   private static final Logger CLEANUP_LOG =
       LoggerFactory.getLogger("cleanup." + CassandraSchemaTable.class.getName());
@@ -93,7 +106,10 @@ public class CassandraSchemaTable implements KijiSchemaTable {
   /** We should have only one row ever in this table... */
   public static final String SCHEMA_COUNTER_ONLY_KEY_VALUE = "THE_ONLY_COUNTER";
 
-  /** The column name of the C* counter used to store schema IDs.  In C*, counters go into their own tables. */
+  /**
+   * The column name of the C* counter used to store schema IDs.  In C*, counters go into their
+   * own tables.
+   */
   public static final String SCHEMA_COUNTER_COLUMN_VALUE = "counter";
 
   /** C* table used to map schema hash to schema entries. */
@@ -161,13 +177,13 @@ public class CassandraSchemaTable implements KijiSchemaTable {
       new SpecificDatumWriter<SchemaTableEntry>(SchemaTableEntry.SCHEMA$);
 
   /** Prepared statement for reading from the hash table. */
-  private PreparedStatement preparedStatementReadHashTable = null;
+  private PreparedStatement mPreparedStatementReadHashTable = null;
 
   /** Prepared statement for writing to the hash table. */
-  private PreparedStatement preparedStatementWriteHashTable = null;
+  private PreparedStatement mPreparedStatementWriteHashTable = null;
 
   /** Prepared statement for writing to the ID table. */
-  private PreparedStatement preparedStatementWriteIdTable = null;
+  private PreparedStatement mPreparedStatementWriteIdTable = null;
 
   /** {@inheritDoc} */
   @Override
@@ -175,6 +191,11 @@ public class CassandraSchemaTable implements KijiSchemaTable {
     return mHashCache.getHash(schema);
   }
 
+  /**
+   * Prepare the statement for writing to the hash table.
+   *
+   * @throws IOException if there is a problem preparing the statement.
+   */
   private void prepareQueryWriteHashTable() throws IOException {
     String hashQueryText = String.format(
         "INSERT INTO %s(%s, %s, %s) VALUES(?, ?, ?);",
@@ -183,9 +204,15 @@ public class CassandraSchemaTable implements KijiSchemaTable {
         SCHEMA_COLUMN_TIME,
         SCHEMA_COLUMN_VALUE);
 
-    preparedStatementWriteHashTable = mSchemaHashTable.getAdmin().getPreparedStatement(hashQueryText);
+    mPreparedStatementWriteHashTable =
+        mSchemaHashTable.getAdmin().getPreparedStatement(hashQueryText);
   }
 
+  /**
+   * Prepare the statement for writing to the ID table.
+   *
+   * @throws IOException if there is a problem preparing the statement.
+   */
   private void prepareQueryWriteIdTable() throws IOException {
     String idQueryText = String.format(
         "INSERT INTO %s(%s, %s, %s) VALUES(?, ?, ?);",
@@ -194,9 +221,14 @@ public class CassandraSchemaTable implements KijiSchemaTable {
         SCHEMA_COLUMN_TIME,
         SCHEMA_COLUMN_VALUE);
 
-    preparedStatementWriteIdTable =  mSchemaIdTable.getAdmin().getPreparedStatement(idQueryText);
+    mPreparedStatementWriteIdTable =  mSchemaIdTable.getAdmin().getPreparedStatement(idQueryText);
   }
 
+  /**
+   * Prepare the statement for reading from the hash table.
+   *
+   * @throws IOException if there is a problem preparing the statement.
+   */
   private void prepareQueryReadHashTable() throws IOException {
     String queryText = String.format(
         "SELECT %s FROM %s WHERE %s=? ORDER BY %s DESC LIMIT 1",
@@ -205,7 +237,7 @@ public class CassandraSchemaTable implements KijiSchemaTable {
         SCHEMA_COLUMN_HASH_KEY,
         SCHEMA_COLUMN_TIME
     );
-    preparedStatementReadHashTable = mSchemaHashTable.getAdmin().getPreparedStatement(queryText);
+    mPreparedStatementReadHashTable = mSchemaHashTable.getAdmin().getPreparedStatement(queryText);
   }
 
   /**
@@ -501,7 +533,7 @@ public class CassandraSchemaTable implements KijiSchemaTable {
     // The hash table write must not happen before the ID table write has been persisted.
     // Otherwise, another client may see the hash entry, write cells with the schema ID that cannot
     // be decoded (since the ID mapping has not been written yet).
-    ResultSet resultSet = mSchemaIdTable.getAdmin().execute(preparedStatementWriteIdTable.bind(
+    ResultSet resultSet = mSchemaIdTable.getAdmin().execute(mPreparedStatementWriteIdTable.bind(
         avroEntry.getId(),
         new Date(timestamp),
         CassandraByteUtil.bytesToByteBuffer(entryBytes)));
@@ -510,7 +542,7 @@ public class CassandraSchemaTable implements KijiSchemaTable {
     //if (flush) { mSchemaIdTable.flushCommits(); }
 
     ResultSet hashResultSet =
-        mSchemaHashTable.getAdmin().execute(preparedStatementWriteHashTable.bind(
+        mSchemaHashTable.getAdmin().execute(mPreparedStatementWriteHashTable.bind(
             CassandraByteUtil.bytesToByteBuffer(avroEntry.getHash().bytes()),
             new Date(timestamp),
             CassandraByteUtil.bytesToByteBuffer(entryBytes)));
@@ -546,7 +578,8 @@ public class CassandraSchemaTable implements KijiSchemaTable {
     }
 
     assert(rows.size() == 1);
-    byte[] schemaAsBytes = CassandraByteUtil.byteBuffertoBytes(rows.get(0).getBytes(SCHEMA_COLUMN_VALUE));
+    byte[] schemaAsBytes =
+        CassandraByteUtil.byteBuffertoBytes(rows.get(0).getBytes(SCHEMA_COLUMN_VALUE));
     return decodeSchemaEntry(schemaAsBytes);
   }
 
@@ -564,7 +597,7 @@ public class CassandraSchemaTable implements KijiSchemaTable {
 
     ResultSet resultSet = mSchemaHashTable
         .getAdmin()
-        .execute(preparedStatementReadHashTable.bind(tableKey));
+        .execute(mPreparedStatementReadHashTable.bind(tableKey));
 
     List<Row> rows = resultSet.all();
 
@@ -573,7 +606,8 @@ public class CassandraSchemaTable implements KijiSchemaTable {
     }
 
     assert(rows.size() == 1);
-    byte[] schemaAsBytes = CassandraByteUtil.byteBuffertoBytes(rows.get(0).getBytes(SCHEMA_COLUMN_VALUE));
+    byte[] schemaAsBytes =
+        CassandraByteUtil.byteBuffertoBytes(rows.get(0).getBytes(SCHEMA_COLUMN_VALUE));
     return decodeSchemaEntry(schemaAsBytes);
   }
 
@@ -907,7 +941,6 @@ public class CassandraSchemaTable implements KijiSchemaTable {
     final State state = mState.get();
     Preconditions.checkState(state == State.OPEN,
         "Cannot backup SchemaTable instance in state %s.", state);
-    // TODO: Figure out how to implement this lock in C*. (This is not as simple as using a batch operation most likely...)
     mZKLock.lock();
     List<SchemaTableEntry> entries = Lists.newArrayList();
     try {
@@ -943,7 +976,6 @@ public class CassandraSchemaTable implements KijiSchemaTable {
     final State state = mState.get();
     Preconditions.checkState(state == State.OPEN,
         "Cannot restore backup to SchemaTable instance in state %s.", state);
-    // TODO: Figure out how to implement this lock in C*. (This is not as simple as using a batch operation most likely...)
     mZKLock.lock();
     try {
       /** Entries from the schema hash table. */
@@ -980,8 +1012,6 @@ public class CassandraSchemaTable implements KijiSchemaTable {
       final long nextSchemaId = maxSchemaId + 1;
 
       flush();
-      //SchemaPlatformBridge.get().setWriteBufferSize(mSchemaIdTable, schemaTableEntries.size() + 1);
-      //SchemaPlatformBridge.get().setWriteBufferSize(mSchemaHashTable, schemaTableEntries.size());
 
       // Restored schema entries share the same timestamp:
       final long timestamp = System.currentTimeMillis();
@@ -1093,7 +1123,8 @@ public class CassandraSchemaTable implements KijiSchemaTable {
    * @return the set of schema entries from the schema hash table.
    * @throws java.io.IOException on I/O error.
    */
-  private Set<SchemaEntry> loadSchemaHashTable(CassandraTableInterface hashTable) throws IOException {
+  private Set<SchemaEntry> loadSchemaHashTable(
+      CassandraTableInterface hashTable) throws IOException {
     LOG.info("Loading entries from schema hash table.");
     final Set<SchemaEntry> entries = new HashSet<SchemaEntry>();
     int hashTableRowCounter = 0;
@@ -1115,9 +1146,11 @@ public class CassandraSchemaTable implements KijiSchemaTable {
       */
 
       // Get the row key, timestamp, and schema for this row
-      final BytesKey rowKey = new BytesKey(CassandraByteUtil.byteBuffertoBytes(row.getBytes(SCHEMA_COLUMN_HASH_KEY)));
+      final BytesKey rowKey =
+          new BytesKey(CassandraByteUtil.byteBuffertoBytes(row.getBytes(SCHEMA_COLUMN_HASH_KEY)));
       final long timestamp = row.getDate(SCHEMA_COLUMN_TIME).getTime();
-      final byte[] schemaAsBytes = CassandraByteUtil.byteBuffertoBytes(row.getBytes(SCHEMA_COLUMN_VALUE));
+      final byte[] schemaAsBytes =
+          CassandraByteUtil.byteBuffertoBytes(row.getBytes(SCHEMA_COLUMN_VALUE));
 
       try {
         final SchemaEntry entry = fromAvroEntry(decodeSchemaEntry(schemaAsBytes));
@@ -1168,9 +1201,10 @@ public class CassandraSchemaTable implements KijiSchemaTable {
     for (Row row : resultSet) {
       idTableRowCounter += 1;
 
-      // Get the row key, timestamp, and schema for this row
-      // Use "Unsafe" version of method here to get raw bytes no matter what format the field is in the C* table.
-      final BytesKey rowKey = new BytesKey(CassandraByteUtil.byteBuffertoBytes(row.getBytesUnsafe(SCHEMA_COLUMN_ID_KEY)));
+      // Get the row key, timestamp, and schema for this row.  Use "Unsafe" version of method here
+      // to get raw bytes no matter what format the field is in the C* table.
+      final BytesKey rowKey = new BytesKey(
+          CassandraByteUtil.byteBuffertoBytes(row.getBytesUnsafe(SCHEMA_COLUMN_ID_KEY)));
 
       long schemaId = -1;
       try {
@@ -1181,7 +1215,8 @@ public class CassandraSchemaTable implements KijiSchemaTable {
       }
 
       final long timestamp = row.getDate(SCHEMA_COLUMN_TIME).getTime();
-      final byte[] schemaAsBytes = CassandraByteUtil.byteBuffertoBytes(row.getBytes(SCHEMA_COLUMN_VALUE));
+      final byte[] schemaAsBytes =
+          CassandraByteUtil.byteBuffertoBytes(row.getBytes(SCHEMA_COLUMN_VALUE));
       try {
         final SchemaEntry entry = fromAvroEntry(decodeSchemaEntry(schemaAsBytes));
         entries.add(entry);

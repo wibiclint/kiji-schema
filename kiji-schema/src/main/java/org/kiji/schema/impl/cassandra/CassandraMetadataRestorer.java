@@ -19,36 +19,41 @@
 
 package org.kiji.schema.impl.cassandra;
 
-import com.google.common.base.Preconditions;
-import org.apache.avro.file.DataFileWriter;
-import org.apache.avro.io.DatumWriter;
-import org.apache.avro.specific.SpecificDatumWriter;
-import org.apache.hadoop.hbase.client.HBaseAdmin;
-import org.kiji.annotations.ApiAudience;
-import org.kiji.schema.*;
-import org.kiji.schema.avro.MetadataBackup;
-import org.kiji.schema.avro.TableBackup;
-import org.kiji.schema.avro.TableLayoutBackupEntry;
-import org.kiji.schema.cassandra.CassandraFactory;
-import org.kiji.schema.hbase.HBaseFactory;
-import org.kiji.schema.impl.hbase.HBaseMetaTable;
-import org.kiji.schema.util.ResourceUtils;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import java.io.File;
 import java.io.IOException;
 import java.util.List;
 import java.util.Map;
+
+import com.google.common.base.Preconditions;
+import org.apache.avro.file.DataFileWriter;
+import org.apache.avro.io.DatumWriter;
+import org.apache.avro.specific.SpecificDatumWriter;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import org.kiji.annotations.ApiAudience;
+import org.kiji.schema.KConstants;
+import org.kiji.schema.Kiji;
+import org.kiji.schema.KijiAlreadyExistsException;
+import org.kiji.schema.KijiMetaTable;
+import org.kiji.schema.KijiSchemaTable;
+import org.kiji.schema.KijiSystemTable;
+import org.kiji.schema.avro.MetadataBackup;
+import org.kiji.schema.avro.TableBackup;
+import org.kiji.schema.avro.TableLayoutBackupEntry;
+import org.kiji.schema.cassandra.CassandraFactory;
+import org.kiji.schema.util.ResourceUtils;
 
 /**
  * The MetadataRestorer is responsible for backing up and restoring the metadata stored in Kiji's
  * Meta, System, and Schema tables, including information about table layouts, schemas, and system
  * variables.
  *
- * <p>To create a backup file, use {@link org.kiji.schema.impl.cassandra.CassandraMetadataRestorer#exportMetadata(String, org.kiji.schema.Kiji)} a filename
- * and a Kiji instance. Backups are stored as {@link org.kiji.schema.avro.MetadataBackup} records. To restore a Kiji
- * instance from a MetadataBackup record, use the various public restore methods.</p>
+ * <p>To create a backup file, use {@link
+ * org.kiji.schema.impl.cassandra.CassandraMetadataRestorer#exportMetadata(String,
+ * org.kiji.schema.Kiji)} a filename and a Kiji instance. Backups are stored as {@link
+ * org.kiji.schema.avro.MetadataBackup} records. To restore a Kiji instance from a MetadataBackup
+ * record, use the various public restore methods.</p>
  */
 @ApiAudience.Private
 public class CassandraMetadataRestorer {
