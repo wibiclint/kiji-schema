@@ -19,6 +19,12 @@
 
 package org.kiji.schema.cassandra;
 
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
+
 import java.io.IOException;
 import java.util.Iterator;
 import java.util.List;
@@ -54,8 +60,6 @@ import org.kiji.schema.impl.cassandra.CassandraKijiTable;
 import org.kiji.schema.layout.KijiTableLayouts;
 import org.kiji.schema.layout.impl.CassandraColumnNameTranslator;
 
-import static org.junit.Assert.*;
-
 public class TestCassandraKijiRowData2 extends CassandraKijiClientTest {
   private static final Logger LOG = LoggerFactory.getLogger(TestCassandraKijiRowData2.class);
 
@@ -65,19 +69,19 @@ public class TestCassandraKijiRowData2 extends CassandraKijiClientTest {
 
   private static final String TABLE_NAME = "row_data_test_table";
 
-  private static String FAMILY = "family";
-  private static String EMPTY = "empty";
-  private static String QUAL0 = "qual0";
-  private static String QUAL1 = "qual1";
-  private static String QUAL3 = "qual3";
-  private static String NODEQUAL0 = "nodequal0";
-  private static String NODEQUAL1 = "nodequal1";
-  private static String MAP = "map";
-  private static String KEY0 = "key0";
-  private static String KEY1 = "key1";
+  private static final String FAMILY = "family";
+  private static final String EMPTY = "empty";
+  private static final String QUAL0 = "qual0";
+  private static final String QUAL1 = "qual1";
+  private static final String QUAL3 = "qual3";
+  private static final String NODEQUAL0 = "nodequal0";
+  private static final String NODEQUAL1 = "nodequal1";
+  private static final String MAP = "map";
+  private static final String KEY0 = "key0";
+  private static final String KEY1 = "key1";
 
-  private final static int KEY0_VAL = 100;
-  private final static int KEY1_VAL = 101;
+  private static final int KEY0_VAL = 100;
+  private static final int KEY1_VAL = 101;
 
   private static EntityIdFactory mEntityIdFactory;
 
@@ -86,8 +90,8 @@ public class TestCassandraKijiRowData2 extends CassandraKijiClientTest {
   // use unless you use a pager (which we do not in these tests).
   private static CassandraKijiTable mSharedTable;
 
-  private static final Node mNode0 = Node.newBuilder().setLabel("node0").build();
-  private static final Node mNode1 = Node.newBuilder().setLabel("node1").build();
+  private static final Node NODE0 = Node.newBuilder().setLabel("node0").build();
+  private static final Node NODE1 = Node.newBuilder().setLabel("node1").build();
 
   private static Set<Row> mAllRows;
 
@@ -121,9 +125,9 @@ public class TestCassandraKijiRowData2 extends CassandraKijiClientTest {
       writer.put(eid, MAP, KEY1, 0L, KEY1_VAL);
 
       // And the node values.
-      writer.put(eid, FAMILY, NODEQUAL0, 0L, mNode0);
-      writer.put(eid, FAMILY, NODEQUAL1, 100L, mNode0);
-      writer.put(eid, FAMILY, NODEQUAL1, 200L, mNode1);
+      writer.put(eid, FAMILY, NODEQUAL0, 0L, NODE0);
+      writer.put(eid, FAMILY, NODEQUAL1, 100L, NODE0);
+      writer.put(eid, FAMILY, NODEQUAL1, 200L, NODE1);
 
       writer.close();
 
@@ -143,9 +147,10 @@ public class TestCassandraKijiRowData2 extends CassandraKijiClientTest {
       List<ResultSet> results = adapter.doGet(mSharedTable, eid);
       Set<Row> allRows = Sets.newHashSet();
 
-      // Note that we do not order the results there, since the other classes in Kiji do not preserve
-      // row ordering in results from Cassandra either.  We could modify that behavior to retain row
-      // ordering (and in doing so, possibly improve performance for some client-side filtering).
+      // Note that we do not order the results there, since the other classes in Kiji do not
+      // preserve row ordering in results from Cassandra either.  We could modify that behavior to
+      // retain row ordering (and in doing so, possibly improve performance for some client-side
+      // filtering).
       for (ResultSet res : results) {
         for (Row row : res.all()) {
           allRows.add(row);
@@ -180,7 +185,8 @@ public class TestCassandraKijiRowData2 extends CassandraKijiClientTest {
         .addColumns(ColumnsDef.create().withMaxVersions(2).add("family", "qual1"))
         .build();
 
-    final KijiRowData input = new CassandraKijiRowData(mSharedTable, dataRequest, eid, allRows, null);
+    final KijiRowData input =
+        new CassandraKijiRowData(mSharedTable, dataRequest, eid, allRows, null);
 
     assertEquals(1, input.getValues("family", "qual0").size());
     assertEquals("apple", input.getMostRecentValue("family",  "qual0").toString());
@@ -201,7 +207,8 @@ public class TestCassandraKijiRowData2 extends CassandraKijiClientTest {
         .addColumns(ColumnsDef.create().withMaxVersions(2).add("family", "qual1"))
         .build();
 
-    final KijiRowData input = new CassandraKijiRowData(mSharedTable, dataRequest, eid, allRows, null);
+    final KijiRowData input =
+        new CassandraKijiRowData(mSharedTable, dataRequest, eid, allRows, null);
     assertEquals(1, input.getValues("family", "qual0").size());
     final NavigableMap<Long, CharSequence> typedValues = input.getValues("family", "qual0");
     assertEquals("apple", typedValues.get(3L).toString());
@@ -218,7 +225,8 @@ public class TestCassandraKijiRowData2 extends CassandraKijiClientTest {
         .addColumns(ColumnsDef.create().withMaxVersions(1).add("family", "qual0"))
         .addColumns(ColumnsDef.create().withMaxVersions(2).add("family", "qual1"))
         .build();
-    final KijiRowData input = new CassandraKijiRowData(mSharedTable, dataRequest, eid, allRows, null);
+    final KijiRowData input =
+        new CassandraKijiRowData(mSharedTable, dataRequest, eid, allRows, null);
     assertEquals(1, input.getTimestamps("family", "qual0").size());
     assertEquals("apple", input.getMostRecentValue("family", "qual0").toString());
     assertEquals(2, input.getTimestamps("family", "qual1").size());
@@ -253,7 +261,8 @@ public class TestCassandraKijiRowData2 extends CassandraKijiClientTest {
     final KijiDataRequest dataRequest = KijiDataRequest.builder()
         .addColumns(ColumnsDef.create().withMaxVersions(1).add("family", "qual0"))
         .build();
-    final CassandraKijiRowData input = new CassandraKijiRowData(mSharedTable, dataRequest, eid, allRows, null);
+    final CassandraKijiRowData input =
+        new CassandraKijiRowData(mSharedTable, dataRequest, eid, allRows, null);
     logDebugRow(input);
 
     assertFalse(input.containsColumn("not-a-family"));
@@ -272,7 +281,8 @@ public class TestCassandraKijiRowData2 extends CassandraKijiClientTest {
         .addColumns(ColumnsDef.create().add(FAMILY, QUAL1))
         .build();
 
-    final KijiRowData input = new CassandraKijiRowData(mSharedTable, dataRequest, eid, allRows, null);
+    final KijiRowData input =
+        new CassandraKijiRowData(mSharedTable, dataRequest, eid, allRows, null);
     assertTrue(input.containsColumn(FAMILY, QUAL0));
     assertEquals("apple", input.getMostRecentValue(FAMILY, QUAL0).toString());
     assertTrue(input.containsColumn(FAMILY, QUAL1));
@@ -288,7 +298,8 @@ public class TestCassandraKijiRowData2 extends CassandraKijiClientTest {
         .addColumns(ColumnsDef.create().addFamily(MAP))
         .build();
 
-    final KijiRowData input = new CassandraKijiRowData(mSharedTable, dataRequest, eid, allRows, null);
+    final KijiRowData input =
+        new CassandraKijiRowData(mSharedTable, dataRequest, eid, allRows, null);
     final NavigableMap<String, NavigableMap<Long, Integer>> stringsByTime =
         input.getValues(MAP);
 
@@ -317,7 +328,8 @@ public class TestCassandraKijiRowData2 extends CassandraKijiClientTest {
     final KijiDataRequest dataRequest = KijiDataRequest.builder()
         .addColumns(ColumnsDef.create().withMaxVersions(1).addFamily("family"))
         .build();
-    final KijiRowData input = new CassandraKijiRowData(mSharedTable, dataRequest, eid, allRows, null);
+    final KijiRowData input =
+        new CassandraKijiRowData(mSharedTable, dataRequest, eid, allRows, null);
     assertTrue(input.containsColumn(FAMILY, NODEQUAL0));
     assertTrue(input.containsColumn(FAMILY, NODEQUAL1));
 
@@ -336,7 +348,8 @@ public class TestCassandraKijiRowData2 extends CassandraKijiClientTest {
         .addColumns(
             ColumnsDef.create().withMaxVersions(Integer.MAX_VALUE).add(FAMILY, NODEQUAL1))
         .build();
-    final KijiRowData input = new CassandraKijiRowData(mSharedTable, dataRequest, eid, allRows, null);
+    final KijiRowData input =
+        new CassandraKijiRowData(mSharedTable, dataRequest, eid, allRows, null);
 
     assertTrue(input.containsColumn(FAMILY, NODEQUAL1));
     final NavigableMap<Long, Node> values = input.getValues(FAMILY, NODEQUAL1);
@@ -363,7 +376,8 @@ public class TestCassandraKijiRowData2 extends CassandraKijiClientTest {
             ColumnsDef.create().withMaxVersions(Integer.MAX_VALUE).add(FAMILY, NODEQUAL1))
         .build();
 
-    final KijiRowData input = new CassandraKijiRowData(mSharedTable, dataRequest, eid, allRows, null);
+    final KijiRowData input =
+        new CassandraKijiRowData(mSharedTable, dataRequest, eid, allRows, null);
     assertTrue(input.containsColumn(FAMILY, NODEQUAL1));
     assertEquals(
         "node0",
@@ -382,7 +396,8 @@ public class TestCassandraKijiRowData2 extends CassandraKijiClientTest {
         .addColumns(ColumnsDef.create().add(FAMILY, NODEQUAL0))
         .build();
 
-    final KijiRowData input = new CassandraKijiRowData(mSharedTable, dataRequest, eid, allRows, null);
+    final KijiRowData input =
+        new CassandraKijiRowData(mSharedTable, dataRequest, eid, allRows, null);
 
     assertTrue(input.containsColumn(FAMILY, NODEQUAL0));
     final Node actual = input.getMostRecentValue(FAMILY, NODEQUAL0);
@@ -398,7 +413,8 @@ public class TestCassandraKijiRowData2 extends CassandraKijiClientTest {
         .addColumns(ColumnsDef.create().withMaxVersions(3).add(FAMILY, QUAL0))
         .build();
 
-    final CassandraKijiRowData input = new CassandraKijiRowData(mSharedTable, dataRequest, eid, allRows, null);
+    final CassandraKijiRowData input =
+        new CassandraKijiRowData(mSharedTable, dataRequest, eid, allRows, null);
     logDebugRow(input);
 
     assertFalse(input.containsColumn("not-a-family"));
@@ -438,7 +454,8 @@ public class TestCassandraKijiRowData2 extends CassandraKijiClientTest {
     final KijiDataRequest dataRequest = KijiDataRequest.builder()
         .addColumns(ColumnsDef.create().withMaxVersions(2).add("family", "qual0"))
         .build();
-    final KijiRowData input = new CassandraKijiRowData(mSharedTable, dataRequest, eid, allRows, null);
+    final KijiRowData input =
+        new CassandraKijiRowData(mSharedTable, dataRequest, eid, allRows, null);
 
     assertFalse(input.containsColumn("not-a-family"));
     assertTrue(input.containsColumn("family"));
@@ -460,7 +477,8 @@ public class TestCassandraKijiRowData2 extends CassandraKijiClientTest {
         .addColumns(ColumnsDef.create().withMaxVersions(3).add("family", "qual0"))
         .build();
 
-    final CassandraKijiRowData input = new CassandraKijiRowData(mSharedTable, dataRequest, eid, allRows, null);
+    final CassandraKijiRowData input =
+        new CassandraKijiRowData(mSharedTable, dataRequest, eid, allRows, null);
     logDebugRow(input);
 
     assertFalse(input.containsColumn("not-a-family"));

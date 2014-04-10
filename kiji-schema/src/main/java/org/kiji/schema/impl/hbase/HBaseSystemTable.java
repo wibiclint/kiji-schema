@@ -44,7 +44,6 @@ import org.apache.hadoop.hbase.client.Put;
 import org.apache.hadoop.hbase.client.Result;
 import org.apache.hadoop.hbase.client.ResultScanner;
 import org.apache.hadoop.hbase.util.Bytes;
-import org.kiji.schema.impl.HTableInterfaceFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -63,7 +62,6 @@ import org.kiji.schema.util.CloseableIterable;
 import org.kiji.schema.util.Debug;
 import org.kiji.schema.util.ProtocolVersion;
 import org.kiji.schema.util.ResourceUtils;
-import org.kiji.schema.impl.Versions;
 
 /**
  * <p>The Kiji system table that is stored in HBase.</p>

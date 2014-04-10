@@ -19,13 +19,14 @@
 
 package org.kiji.schema.layout.impl;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import org.kiji.annotations.ApiAudience;
 import org.kiji.schema.KijiColumnName;
 import org.kiji.schema.NoSuchColumnException;
 import org.kiji.schema.layout.KijiTableLayout;
 import org.kiji.schema.layout.KijiTableLayout.LocalityGroupLayout.FamilyLayout;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 /**
  * Translates Kiji column names into shorter families and qualifiers.
@@ -46,7 +47,15 @@ public final class CassandraColumnNameTranslator extends ShortColumnNameTranslat
     super(tableLayout);
   }
 
-  public String toCassandraLocalityGroup(KijiColumnName kijiColumnName) throws NoSuchColumnException {
+  /**
+   * Get the translated name of the locality group of a column for Cassandra.
+   *
+   * @param kijiColumnName to translate.
+   * @return the locality group name (translated for Cassandra).
+   * @throws NoSuchColumnException if the column does not exist.
+   */
+  public String toCassandraLocalityGroup(
+      KijiColumnName kijiColumnName) throws NoSuchColumnException {
     final String familyName = kijiColumnName.getFamily();
     final FamilyLayout familyLayout = mTableLayout.getFamilyMap().get(familyName);
     if (null == familyLayout) {
@@ -56,7 +65,15 @@ public final class CassandraColumnNameTranslator extends ShortColumnNameTranslat
     return localityGroupId.toString();
   }
 
-  public String toCassandraColumnFamily(KijiColumnName kijiColumnName) throws NoSuchColumnException {
+  /**
+   * Get name of column family (for Cassandra) for this column.
+   *
+   * @param kijiColumnName to translate.
+   * @return the column family name (translated for Cassandra).
+   * @throws NoSuchColumnException if the column does not exist.
+   */
+  public String toCassandraColumnFamily(
+      KijiColumnName kijiColumnName) throws NoSuchColumnException {
     final String familyName = kijiColumnName.getFamily();
     final FamilyLayout familyLayout = mTableLayout.getFamilyMap().get(familyName);
     if (null == familyLayout) {
@@ -68,7 +85,15 @@ public final class CassandraColumnNameTranslator extends ShortColumnNameTranslat
     return familyId.toString();
   }
 
-  public String toCassandraColumnQualifier(KijiColumnName kijiColumnName) throws NoSuchColumnException {
+  /**
+   * Get the name of the column qualifier, translated for Cassandra, for this column.
+   *
+   * @param kijiColumnName to translate.
+   * @return the name of the column qualifier, translated for Cassandra.
+   * @throws NoSuchColumnException if the column does not exist.
+   */
+  public String toCassandraColumnQualifier(
+      KijiColumnName kijiColumnName) throws NoSuchColumnException {
     // Check that the family exists before getting to the qualifier!
     final String familyName = kijiColumnName.getFamily();
     final FamilyLayout familyLayout = mTableLayout.getFamilyMap().get(familyName);
@@ -102,6 +127,16 @@ public final class CassandraColumnNameTranslator extends ShortColumnNameTranslat
     }
   }
 
+  /**
+   * Create the Kiji column name, given the Cassandra versions of the locality group, family, and
+   * qualifier.
+   *
+   * @param cassandraLocalityGroup for the column.
+   * @param cassandraColumnFamily for the column.
+   * @param cassandraColumnQualifier for the column.
+   * @return The Kiji column name.
+   * @throws NoSuchColumnException if the column does not exist.
+   */
   public KijiColumnName toKijiColumnName(
       String cassandraLocalityGroup,
       String cassandraColumnFamily,
@@ -146,7 +181,8 @@ public final class CassandraColumnNameTranslator extends ShortColumnNameTranslat
 
       // Map type family.
       assert kijiFamily.isMapType();
-      final KijiColumnName result = new KijiColumnName(kijiFamily.getDesc().getName(), cassandraColumnQualifier);
+      final KijiColumnName result =
+          new KijiColumnName(kijiFamily.getDesc().getName(), cassandraColumnQualifier);
       LOG.debug(String.format("Translated to Kiji map column '%s'.", result));
       return result;
   }

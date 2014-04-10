@@ -126,6 +126,9 @@ public final class CassandraQualifierPager implements Iterator<String[]>, Closea
     mTable.retain();
   }
 
+  /**
+   * Initialize the row iterator.
+   */
   private void initializeRowIterator() {
     // Issue a paged SELECT statement to get all of the qualifiers for this map family from C*.
     // Get the Cassandra table name for this column family
@@ -184,14 +187,25 @@ public final class CassandraQualifierPager implements Iterator<String[]>, Closea
 
     } else {
       throw new UnsupportedOperationException(
-          "CassandraQualifierPager supports only column ranger filters, not " +
-              columnFilter.getClass()
+          "CassandraQualifierPager supports only column ranger filters, not "
+              + columnFilter.getClass()
       );
     }
     boundStatement.setFetchSize(mColumnRequest.getPageSize());
     mRowIterator = Iterators.peekingIterator(admin.execute(boundStatement).iterator());
   }
 
+  /**
+   * Create a bound version of a `SELECT` statement that includes additional `WHERE` clauses for
+   * the qualifier.
+   *
+   * @param admin for this Kiji instance.
+   * @param rangeFilter for the qualifiers.
+   * @param queryString for the SELECT statement.
+   * @param translatedLocalityGroup translated name for the locality group.
+   * @param translatedFamily translated name for the column family.
+   * @return A bound version of the statement with the column qualifier limits.
+   */
   private BoundStatement createBoundStatementForFilter(
       CassandraAdmin admin,
       KijiColumnRangeFilter rangeFilter,
@@ -295,8 +309,8 @@ public final class CassandraQualifierPager implements Iterator<String[]>, Closea
 
     // Verify that we properly finished off all of the repeated qualifier values during the last
     // call to this method.
-    assert(null == mMinQualifier ||
-        !mMinQualifier.equals(mRowIterator.peek().getString(CQLUtils.QUALIFIER_COL)));
+    assert(null == mMinQualifier
+        || !mMinQualifier.equals(mRowIterator.peek().getString(CQLUtils.QUALIFIER_COL)));
 
     LinkedHashSet<String> qualifiers = new LinkedHashSet<String>();
 

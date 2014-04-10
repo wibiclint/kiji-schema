@@ -18,6 +18,16 @@
  */
 package org.kiji.schema.impl.cassandra;
 
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
+
+import java.io.IOException;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
@@ -26,19 +36,13 @@ import org.apache.hadoop.hbase.util.Bytes;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
+
 import org.kiji.schema.Kiji;
 import org.kiji.schema.KijiColumnName;
 import org.kiji.schema.KijiTableAnnotator;
 import org.kiji.schema.cassandra.CassandraKijiClientTest;
 import org.kiji.schema.layout.KijiTableLayouts;
 import org.kiji.schema.util.InstanceBuilder;
-
-import java.io.IOException;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-
-import static org.junit.Assert.*;
 
 public class TestCassandraKijiTableAnnotator extends CassandraKijiClientTest {
 
@@ -138,7 +142,8 @@ public class TestCassandraKijiTableAnnotator extends CassandraKijiClientTest {
     mAnnotator.setTableAnnotation(KEY, VALUE);
     mAnnotator.removeTableAnnotation(KEY);
     try {
-      mKiji.getMetaTable().getValue(mTable.getName(), CassandraKijiTableAnnotator.getMetaTableKey(KEY));
+      mKiji.getMetaTable().getValue(
+          mTable.getName(), CassandraKijiTableAnnotator.getMetaTableKey(KEY));
       fail("Should have thrown IOException for missing key.");
     } catch (IOException ioe) {
       assertEquals(String.format("Could not find any values associated with table %s and key %s",

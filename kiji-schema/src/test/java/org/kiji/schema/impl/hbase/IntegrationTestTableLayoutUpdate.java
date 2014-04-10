@@ -29,7 +29,6 @@ import com.google.common.collect.Multimap;
 import com.google.common.collect.Queues;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.junit.Test;
-import org.kiji.schema.impl.Versions;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

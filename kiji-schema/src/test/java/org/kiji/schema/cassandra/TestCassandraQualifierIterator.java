@@ -19,25 +19,32 @@
 
 package org.kiji.schema.cassandra;
 
+import static org.junit.Assert.assertEquals;
+
+import java.io.IOException;
+import java.util.Iterator;
+import java.util.List;
+
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
 import org.apache.hadoop.hbase.HConstants;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
-import org.kiji.schema.*;
-import org.kiji.schema.KijiDataRequestBuilder.ColumnsDef;
-import org.kiji.schema.impl.cassandra.CassandraKijiTable;
-import org.kiji.schema.impl.cassandra.CassandraQualifierIterator;
-import org.kiji.schema.layout.KijiTableLayouts;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.IOException;
-import java.util.Iterator;
-import java.util.List;
-
-import static org.junit.Assert.assertEquals;
+import org.kiji.schema.EntityId;
+import org.kiji.schema.Kiji;
+import org.kiji.schema.KijiColumnName;
+import org.kiji.schema.KijiDataRequest;
+import org.kiji.schema.KijiDataRequestBuilder.ColumnsDef;
+import org.kiji.schema.KijiTable;
+import org.kiji.schema.KijiTableReader;
+import org.kiji.schema.KijiTableWriter;
+import org.kiji.schema.impl.cassandra.CassandraKijiTable;
+import org.kiji.schema.impl.cassandra.CassandraQualifierIterator;
+import org.kiji.schema.layout.KijiTableLayouts;
 
 public class TestCassandraQualifierIterator extends CassandraKijiClientTest {
   private static final Logger LOG = LoggerFactory.getLogger(TestCassandraQualifierIterator.class);

@@ -19,6 +19,10 @@
 
 package org.kiji.schema.cassandra;
 
+import static org.junit.Assert.assertArrayEquals;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
+
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -47,8 +51,6 @@ import org.kiji.schema.avro.TableLayoutDesc;
 import org.kiji.schema.impl.cassandra.CassandraMetadataRestorer;
 import org.kiji.schema.layout.KijiTableLayout;
 import org.kiji.schema.layout.KijiTableLayouts;
-
-import static org.junit.Assert.*;
 
 /** Tests backing up and restoring Kiji meta tables. */
 public class TestCassandraMetaTable extends CassandraKijiClientTest {

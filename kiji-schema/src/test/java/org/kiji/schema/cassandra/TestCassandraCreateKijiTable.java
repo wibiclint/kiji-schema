@@ -19,6 +19,10 @@
 
 package org.kiji.schema.cassandra;
 
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertTrue;
+
 import org.junit.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -34,8 +38,6 @@ import org.kiji.schema.KijiTableReader;
 import org.kiji.schema.KijiTableWriter;
 import org.kiji.schema.layout.KijiTableLayouts;
 import org.kiji.schema.util.VersionInfo;
-
-import static org.junit.Assert.*;
 
 /** Basic test for creating a simple Kiji table in Cassandra. */
 public class TestCassandraCreateKijiTable extends CassandraKijiClientTest {
@@ -92,8 +94,10 @@ public class TestCassandraCreateKijiTable extends CassandraKijiClientTest {
           for (KijiRowData kijiRowData : rowScanner) {
             LOG.info("Read from scanner! " + kijiRowData.toString());
             // Should see two versions for qualifier "column".
-            assertEquals("Value at timestamp 0.", kijiRowData.getValue("family", "column", 0L).toString());
-            assertEquals("Value at timestamp 1.", kijiRowData.getValue("family", "column", 1L).toString());
+            assertEquals(
+                "Value at timestamp 0.", kijiRowData.getValue("family", "column", 0L).toString());
+            assertEquals(
+                "Value at timestamp 1.", kijiRowData.getValue("family", "column", 1L).toString());
             rowCounter++;
           }
         } finally {

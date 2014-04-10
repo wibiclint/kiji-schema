@@ -76,6 +76,7 @@ public class CassandraDataRequestAdapter {
    * @param table The table to scan.
    * @param kijiScannerOptions Options for the scan.
    * @return A list of `ResultSet`s from executing the scan.
+   * @throws java.io.IOException if there is a problem talking to Cassandra.
    */
   public List<ResultSet> doScan(
       CassandraKijiTable table,
@@ -121,11 +122,12 @@ public class CassandraDataRequestAdapter {
    * Query a Cassandra table for a get or for a scan.
    *
    * @param table The Cassandra Kiji table to scan.
-   * @param entityId Make null if this is a scan over all entity IDs (not currently supporting entity ID ranges).
+   * @param entityId Make null if this is a scan over all entity IDs (not currently supporting
+   *     entity ID ranges).
    * @param pagingEnabled If true, all columns in the data request should be paged.  If false, skip
    *                      any paged columns in the data request.
    * @return A list of results for the Cassandra query.
-   * @throws IOException
+   * @throws IOException if there is a problem executing the scan.
    */
   private List<ResultSet> queryCassandraTables(
       CassandraKijiTable table,

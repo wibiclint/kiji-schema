@@ -19,20 +19,10 @@
 
 package org.kiji.schema.cassandra;
 
-import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.hbase.client.HBaseAdmin;
-import org.apache.hadoop.hbase.client.HTableInterface;
-import org.apache.hadoop.hbase.util.Bytes;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Test;
-import org.kiji.schema.Kiji;
-import org.kiji.schema.KijiTableKeyValueDatabase;
-import org.kiji.schema.KijiURI;
-import org.kiji.schema.impl.cassandra.CassandraAdmin;
-import org.kiji.schema.impl.cassandra.CassandraTableInterface;
-import org.kiji.schema.impl.cassandra.CassandraTableKeyValueDatabase;
-import org.kiji.schema.impl.hbase.HBaseTableKeyValueDatabase;
+import static org.junit.Assert.assertArrayEquals;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
 import java.io.IOException;
 import java.util.Collections;
@@ -40,7 +30,15 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
 
-import static org.junit.Assert.*;
+import org.apache.hadoop.hbase.util.Bytes;
+import org.junit.After;
+import org.junit.Before;
+import org.junit.Test;
+
+import org.kiji.schema.Kiji;
+import org.kiji.schema.KijiTableKeyValueDatabase;
+import org.kiji.schema.KijiURI;
+import org.kiji.schema.impl.cassandra.CassandraAdmin;
 
 /**
  * This class tests that HBaseTableLayoutDatabase is correctly writing and reading from HBase

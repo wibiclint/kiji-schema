@@ -17,24 +17,12 @@
  * limitations under the License.
  */
 
-package org.kiji.schema.platform;
-
-import static org.junit.Assert.assertNotNull;
-
-import org.junit.Test;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-public class TestSchemaPlatformBridge {
-  private static final Logger LOG = LoggerFactory.getLogger(TestSchemaPlatformBridge.class);
-
-  @Test
-  public void testGetBridge() {
-    LOG.info("Hadoop version: " + org.apache.hadoop.util.VersionInfo.getVersion());
-    LOG.info("HBase version: " + org.apache.hadoop.hbase.util.VersionInfo.getVersion());
-
-    SchemaPlatformBridge bridge = SchemaPlatformBridge.get();
-    assertNotNull(bridge);
-    LOG.info("Got platform bridge: " + bridge.getClass().getName());
-  }
-}
+/**
+ * Cassandra-specific implementation for Kiji table layout management.
+ *
+ * <p>
+ * Users generally shouldn't need to reference any of these classes directly, but rather use the
+ * classes presented by the {@link org.kiji.schema} package.
+ * </p>
+ */
+package org.kiji.schema.layout.impl.cassandra;

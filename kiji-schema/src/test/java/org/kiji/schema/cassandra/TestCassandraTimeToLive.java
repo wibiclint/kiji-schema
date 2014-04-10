@@ -19,6 +19,9 @@
 
 package org.kiji.schema.cassandra;
 
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+
 import java.io.IOException;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -40,8 +43,6 @@ import org.kiji.schema.KijiTableReader;
 import org.kiji.schema.KijiTableWriter;
 import org.kiji.schema.layout.KijiTableLayouts;
 
-import static org.junit.Assert.*;
-
 /** Simple read/write tests. */
 public class TestCassandraTimeToLive extends CassandraKijiClientTest {
   private static final Logger LOG = LoggerFactory.getLogger(TestCassandraTimeToLive.class);
@@ -52,10 +53,10 @@ public class TestCassandraTimeToLive extends CassandraKijiClientTest {
   private EntityId mEntityId;
 
   // This is the family in this table layout with
-  private final static String FAMILY = "info";
-  private final static String QUALIFIER = "name";
-  private final static String VALUE = "Mr Bonkers";
-  private final static Long TIMESTAMP = 0L;
+  private static final String FAMILY = "info";
+  private static final String QUALIFIER = "name";
+  private static final String VALUE = "Mr Bonkers";
+  private static final Long TIMESTAMP = 0L;
 
   /** Use to create unique entity IDs for each test case. */
   private static AtomicInteger testIdCounter;
@@ -108,7 +109,7 @@ public class TestCassandraTimeToLive extends CassandraKijiClientTest {
     assertEquals(s, VALUE);
 
     // Wait for ten seconds.
-    Thread.sleep(10*1000);
+    Thread.sleep(10 * 1000);
 
     rowData = mReader.get(mEntityId, dataRequest);
     assertFalse(rowData.containsCell(FAMILY, QUALIFIER, TIMESTAMP));

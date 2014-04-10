@@ -19,7 +19,18 @@
 
 package org.kiji.schema.layout.impl.cassandra;
 
-import com.datastax.driver.core.*;
+import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.util.ArrayList;
+import java.util.Date;
+import java.util.HashSet;
+import java.util.List;
+import java.util.NavigableMap;
+import java.util.Set;
+
+import com.datastax.driver.core.PreparedStatement;
+import com.datastax.driver.core.ResultSet;
+import com.datastax.driver.core.Row;
 import com.google.common.base.Objects;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Lists;
@@ -27,28 +38,36 @@ import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
 import org.apache.hadoop.hbase.HColumnDescriptor;
 import org.apache.hadoop.hbase.HConstants;
-import org.apache.hadoop.hbase.io.hfile.Compression;
 import org.apache.hadoop.hbase.util.Bytes;
-import org.apache.hadoop.hbase.regionserver.StoreFile.BloomType;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import org.kiji.annotations.ApiAudience;
-import org.kiji.schema.*;
-import org.kiji.schema.avro.*;
+import org.kiji.schema.KijiCellDecoder;
+import org.kiji.schema.KijiCellEncoder;
+import org.kiji.schema.KijiSchemaTable;
+import org.kiji.schema.KijiTableNotFoundException;
+import org.kiji.schema.KijiURI;
+import org.kiji.schema.SpecificCellDecoderFactory;
+import org.kiji.schema.avro.CellSchema;
+import org.kiji.schema.avro.SchemaStorage;
+import org.kiji.schema.avro.SchemaType;
+import org.kiji.schema.avro.TableLayoutBackupEntry;
+import org.kiji.schema.avro.TableLayoutDesc;
+import org.kiji.schema.avro.TableLayoutsBackup;
 import org.kiji.schema.cassandra.KijiManagedCassandraTableName;
 import org.kiji.schema.impl.AvroCellEncoder;
 import org.kiji.schema.impl.cassandra.CassandraAdmin;
 import org.kiji.schema.impl.cassandra.CassandraByteUtil;
 import org.kiji.schema.impl.cassandra.CassandraTableInterface;
-import org.kiji.schema.layout.*;
+import org.kiji.schema.layout.CellSpec;
+import org.kiji.schema.layout.InvalidLayoutException;
+import org.kiji.schema.layout.KijiTableLayout;
+import org.kiji.schema.layout.KijiTableLayoutDatabase;
+import org.kiji.schema.layout.TableLayoutBuilder;
 import org.kiji.schema.layout.TableLayoutBuilder.LayoutOptions;
 import org.kiji.schema.layout.TableLayoutBuilder.LayoutOptions.SchemaFormat;
 import org.kiji.schema.platform.SchemaPlatformBridge;
-import org.kiji.schema.util.ResourceUtils;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import java.io.IOException;
-import java.nio.ByteBuffer;
-import java.util.*;
 
 /**
  * <p>Manages Kiji table layouts using a Cassandra table as a backing store.</p>
@@ -125,6 +144,7 @@ public final class CassandraTableLayoutDatabase implements KijiTableLayoutDataba
       .build();
 
   // TODO: Don't need to separate statement preparation after adding separate statement cache.
+  /** Prepare statement. */
   private void setPreparedStatementGetRows() {
     String metaTableName = mTable.getTableName();
 
@@ -138,6 +158,7 @@ public final class CassandraTableLayoutDatabase implements KijiTableLayoutDataba
   }
 
   // TODO: Don't need to separate statement preparation after adding separate statement cache.
+  /** Prepare statement. */
   private void setPreparedStatementUpdateTableLayout() {
     String metaTableName = mTable.getTableName();
 
@@ -153,6 +174,7 @@ public final class CassandraTableLayoutDatabase implements KijiTableLayoutDataba
   }
 
   // TODO: Don't need to separate statement preparation after adding separate statement cache.
+  /** Prepare statement. */
   private void setPreparedStatementRemoveAllTableLayoutVersions() {
     String metaTableName = mTable.getTableName();
     String queryText = String.format(
@@ -164,6 +186,7 @@ public final class CassandraTableLayoutDatabase implements KijiTableLayoutDataba
   }
 
   // TODO: Don't need to separate statement preparation after adding separate statement cache.
+  /** Prepare statement. */
   private void setPreparedStatementRemoveRecentTableLayoutVersions() {
     String metaTableName = mTable.getTableName();
     String queryText = String.format(
@@ -176,6 +199,7 @@ public final class CassandraTableLayoutDatabase implements KijiTableLayoutDataba
   }
 
   // TODO: Don't need to separate statement preparation after adding separate statement cache.
+  /** Prepare statement. */
   private void setPreparedStatementListTables() {
     String queryText = String.format(
         "SELECT %s FROM %s",
@@ -192,13 +216,16 @@ public final class CassandraTableLayoutDatabase implements KijiTableLayoutDataba
   public static void install(CassandraAdmin admin, KijiURI uri) {
     String tableName = KijiManagedCassandraTableName.getMetaLayoutTableName(uri).toString();
 
-    // Standard C* table layout.  Use text key + timestamp as composite primary key to allow selection by timestamp.
+    // Standard C* table layout.  Use text key + timestamp as composite primary key to allow
+    // selection by timestamp.
 
     // I did not use timeuuid here because we need to be able to write timestamps sometimes.
 
-    // For the rest of the table, the layout ID is a string, then we store the actual layout and update as blobs.
+    // For the rest of the table, the layout ID is a string, then we store the actual layout and
+    // update as blobs.
     String tableDescription = String.format(
-        "CREATE TABLE %s (%s text, %s timestamp, %s text, %s blob, %s blob, PRIMARY KEY (%s, %s)) WITH CLUSTERING ORDER BY (%s DESC);",
+        "CREATE TABLE %s (%s text, %s timestamp, %s text, %s blob, %s blob, PRIMARY KEY (%s, %s)) "
+            + "WITH CLUSTERING ORDER BY (%s DESC);",
         tableName,
         QUALIFIER_TABLE,
         QUALIFIER_TIME,
@@ -319,7 +346,8 @@ public final class CassandraTableLayoutDatabase implements KijiTableLayoutDataba
 
   /**
    * Internal helper method containing common code for ready values for a given key from the table.
-   * @param table Name of the table for which to fetch the values (part of the key-value database key).
+   * @param table Name of the table for which to fetch the values (part of the key-value database
+   *              key).
    * @param numVersions Number of versions to fetch for the given table, key combination.
    * @return A list of C* rows for the query.
    */
@@ -390,7 +418,8 @@ public final class CassandraTableLayoutDatabase implements KijiTableLayoutDataba
     Preconditions.checkNotNull(mPreparedStatementRemoveRecentTableLayoutVersions);
     for (Row row: rows) {
       Long timestamp = row.getDate(QUALIFIER_TIME).getTime();
-      mAdmin.execute(mPreparedStatementRemoveRecentTableLayoutVersions.bind(table, new Date(timestamp)));
+      mAdmin.execute(
+          mPreparedStatementRemoveRecentTableLayoutVersions.bind(table, new Date(timestamp)));
     }
   }
 
@@ -446,7 +475,8 @@ public final class CassandraTableLayoutDatabase implements KijiTableLayoutDataba
 
     List<Row> rows = getRows(table, Integer.MAX_VALUE);
     if (rows.isEmpty()) {
-      LOG.info(String.format("There is no row in the MetaTable named '%s' or the row is empty.", table));
+      LOG.info(String.format(
+          "There is no row in the MetaTable named '%s' or the row is empty.", table));
       return backup;
     }
 
@@ -502,7 +532,8 @@ public final class CassandraTableLayoutDatabase implements KijiTableLayoutDataba
         QUALIFIER_TABLE,
         QUALIFIER_TIME,
         QUALIFIER_LAYOUT);
-    PreparedStatement preparedStatementInsertLayout = mAdmin.getPreparedStatement(queryTextInsertLayout);
+    PreparedStatement preparedStatementInsertLayout =
+        mAdmin.getPreparedStatement(queryTextInsertLayout);
 
     // TODO: Unclear what happens to layout IDs here...
     for (TableLayoutBackupEntry lbe : layoutBackup.getLayouts()) {

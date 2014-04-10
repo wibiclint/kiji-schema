@@ -24,9 +24,6 @@ import java.util.List;
 import java.util.Map;
 
 import com.google.common.base.Preconditions;
-import org.kiji.schema.cassandra.CassandraFactory;
-import org.kiji.schema.cassandra.CassandraKijiInstaller;
-import org.kiji.schema.impl.cassandra.CassandraSystemTable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -36,7 +33,10 @@ import org.kiji.schema.KConstants;
 import org.kiji.schema.KijiAlreadyExistsException;
 import org.kiji.schema.KijiInstaller;
 import org.kiji.schema.KijiURI;
+import org.kiji.schema.cassandra.CassandraFactory;
+import org.kiji.schema.cassandra.CassandraKijiInstaller;
 import org.kiji.schema.hbase.HBaseFactory;
+import org.kiji.schema.impl.cassandra.CassandraSystemTable;
 import org.kiji.schema.impl.hbase.HBaseSystemTable;
 
 /**

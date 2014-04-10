@@ -46,8 +46,6 @@ import org.apache.hadoop.hbase.client.HTableInterface;
 import org.apache.hadoop.hbase.mapreduce.LoadIncrementalHFiles;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.zookeeper.KeeperException;
-import org.kiji.schema.impl.HTableInterfaceFactory;
-import org.kiji.schema.impl.LayoutCapsule;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -71,6 +69,7 @@ import org.kiji.schema.avro.RowKeyFormat;
 import org.kiji.schema.avro.RowKeyFormat2;
 import org.kiji.schema.hbase.KijiManagedHBaseTableName;
 import org.kiji.schema.impl.HTableInterfaceFactory;
+import org.kiji.schema.impl.LayoutCapsule;
 import org.kiji.schema.impl.LayoutConsumer;
 import org.kiji.schema.impl.Versions;
 import org.kiji.schema.layout.KijiColumnNameTranslator;
@@ -84,8 +83,6 @@ import org.kiji.schema.util.DebugResourceTracker;
 import org.kiji.schema.util.JvmId;
 import org.kiji.schema.util.ResourceUtils;
 import org.kiji.schema.util.VersionInfo;
-import org.kiji.schema.impl.LayoutConsumer;
-import org.kiji.schema.impl.Versions;
 
 /**
  * <p>A KijiTable that exposes the underlying HBase implementation.</p>
@@ -392,7 +389,8 @@ public final class HBaseKijiTable implements KijiTable {
             .setSchemaTable(mKiji.getSchemaTable());
         mLayoutMonitor = null;
         mLayoutTracker = null;
-        mLayoutCapsule = new HBaseLayoutCapsule(layout, KijiColumnNameTranslator.from(layout), this);
+        mLayoutCapsule =
+            new HBaseLayoutCapsule(layout, KijiColumnNameTranslator.from(layout), this);
 
       } catch (KijiTableNotFoundException ktnfe) {
         closeResources();

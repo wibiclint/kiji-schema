@@ -19,12 +19,12 @@
 
 package org.kiji.schema.cassandra;
 
-import org.junit.*;
-import org.kiji.schema.*;
-import org.kiji.schema.KijiDataRequestBuilder.ColumnsDef;
-import org.kiji.schema.layout.KijiTableLayouts;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -32,7 +32,25 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import static org.junit.Assert.*;
+import org.junit.After;
+import org.junit.AfterClass;
+import org.junit.Before;
+import org.junit.BeforeClass;
+import org.junit.Test;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import org.kiji.schema.EntityId;
+import org.kiji.schema.Kiji;
+import org.kiji.schema.KijiDataRequest;
+import org.kiji.schema.KijiDataRequestBuilder.ColumnsDef;
+import org.kiji.schema.KijiIOException;
+import org.kiji.schema.KijiRowData;
+import org.kiji.schema.KijiRowScanner;
+import org.kiji.schema.KijiTable;
+import org.kiji.schema.KijiTableReader;
+import org.kiji.schema.KijiTableWriter;
+import org.kiji.schema.layout.KijiTableLayouts;
 
 /** Simple read/write tests. */
 public class TestCassandraReadAndWrite extends CassandraKijiClientTest {
@@ -128,7 +146,8 @@ public class TestCassandraReadAndWrite extends CassandraKijiClientTest {
     assertTrue(rowData.containsCell("family", "column", 1L));
 
     // The most-recent value should be the one with the highest timestamp!
-    assertEquals("Value at timestamp 1.", rowData.getMostRecentValue("family", "column").toString());
+    assertEquals(
+        "Value at timestamp 1.", rowData.getMostRecentValue("family", "column").toString());
   }
 
   /**
@@ -179,7 +198,7 @@ public class TestCassandraReadAndWrite extends CassandraKijiClientTest {
     rowData = mReader.get(mEntityId, dataRequest);
 
     // Should not get any data back!
-    assertFalse( rowData.containsColumn("family", "column") );
+    assertFalse(rowData.containsColumn("family", "column"));
   }
 
   /**
@@ -201,39 +220,39 @@ public class TestCassandraReadAndWrite extends CassandraKijiClientTest {
     final KijiTableWriter writer = table.openTableWriter();
 
     // Reuse these entity IDs for puts and for gets.
-    EntityId ALICE = table.getEntityId("Alice");
-    EntityId BOB = table.getEntityId("Bob");
-    EntityId CATHY = table.getEntityId("Cathy");
-    EntityId DAVID = table.getEntityId("David");
+    final EntityId alice = table.getEntityId("Alice");
+    final EntityId bob = table.getEntityId("Bob");
+    final EntityId cathy = table.getEntityId("Cathy");
+    final EntityId david = table.getEntityId("David");
 
-    final String PETS = "pets";
-    final String CAT = "cat";
-    final String DOG = "dog";
-    final String RABBIT = "rabbit";
-    final String FISH = "fish";
-    final String BIRD = "bird";
+    final String pets = "pets";
+    final String cat = "cat";
+    final String dog = "dog";
+    final String rabbit = "rabbit";
+    final String fish = "fish";
+    final String bird = "bird";
 
     // Insert some data into the table.  Give various users different pets.
-    writer.put(ALICE, PETS, CAT, 0L, "Alister");
-    writer.put(BOB, PETS, CAT, 0L, "Buffy");
-    writer.put(CATHY, PETS, CAT, 0L, "Mr Cat");
-    writer.put(DAVID, PETS, CAT, 0L, "Dash");
+    writer.put(alice, pets, cat, 0L, "Alister");
+    writer.put(bob, pets, cat, 0L, "Buffy");
+    writer.put(cathy, pets, cat, 0L, "Mr Cat");
+    writer.put(david, pets, cat, 0L, "Dash");
 
-    writer.put(ALICE, PETS, DOG, 0L, "Amour");
-    writer.put(BOB, PETS, RABBIT, 0L, "Bounce");
-    writer.put(CATHY, PETS, FISH, 0L, "Catfish");
-    writer.put(DAVID, PETS, BIRD, 0L, "Da Bird");
+    writer.put(alice, pets, dog, 0L, "Amour");
+    writer.put(bob, pets, rabbit, 0L, "Bounce");
+    writer.put(cathy, pets, fish, 0L, "Catfish");
+    writer.put(david, pets, bird, 0L, "Da Bird");
 
     final KijiDataRequest dataRequest = KijiDataRequest.builder()
         .addColumns(
             ColumnsDef
                 .create()
                 .withMaxVersions(100)
-                .add(PETS, CAT)
-                .add(PETS, DOG)
-                .add(PETS, RABBIT)
-                .add(PETS, FISH)
-                .add(PETS, BIRD)
+                .add(pets, cat)
+                .add(pets, dog)
+                .add(pets, rabbit)
+                .add(pets, fish)
+                .add(pets, bird)
         ).build();
 
     // Fire up a row scanner!
@@ -249,34 +268,34 @@ public class TestCassandraReadAndWrite extends CassandraKijiClientTest {
       allData.put(eid, row);
     }
 
-    assertTrue(allData.containsKey(ALICE));
-    assertTrue(allData.containsKey(BOB));
-    assertTrue(allData.containsKey(CATHY));
-    assertTrue(allData.containsKey(DAVID));
+    assertTrue(allData.containsKey(alice));
+    assertTrue(allData.containsKey(bob));
+    assertTrue(allData.containsKey(cathy));
+    assertTrue(allData.containsKey(david));
 
-    assertTrue(allData.get(ALICE).containsColumn(PETS, CAT));
-    assertTrue(allData.get(ALICE).containsColumn(PETS, DOG));
-    assertFalse(allData.get(ALICE).containsColumn(PETS, RABBIT));
-    assertFalse(allData.get(ALICE).containsColumn(PETS, FISH));
-    assertFalse(allData.get(ALICE).containsColumn(PETS, BIRD));
+    assertTrue(allData.get(alice).containsColumn(pets, cat));
+    assertTrue(allData.get(alice).containsColumn(pets, dog));
+    assertFalse(allData.get(alice).containsColumn(pets, rabbit));
+    assertFalse(allData.get(alice).containsColumn(pets, fish));
+    assertFalse(allData.get(alice).containsColumn(pets, bird));
 
-    assertTrue(allData.get(BOB).containsColumn(PETS, CAT));
-    assertTrue(allData.get(BOB).containsColumn(PETS, RABBIT));
-    assertFalse(allData.get(BOB).containsColumn(PETS, DOG));
-    assertFalse(allData.get(BOB).containsColumn(PETS, FISH));
-    assertFalse(allData.get(BOB).containsColumn(PETS, BIRD));
+    assertTrue(allData.get(bob).containsColumn(pets, cat));
+    assertTrue(allData.get(bob).containsColumn(pets, rabbit));
+    assertFalse(allData.get(bob).containsColumn(pets, dog));
+    assertFalse(allData.get(bob).containsColumn(pets, fish));
+    assertFalse(allData.get(bob).containsColumn(pets, bird));
 
-    assertTrue(allData.get(CATHY).containsColumn(PETS, CAT));
-    assertTrue(allData.get(CATHY).containsColumn(PETS, FISH));
-    assertFalse(allData.get(CATHY).containsColumn(PETS, DOG));
-    assertFalse(allData.get(CATHY).containsColumn(PETS, RABBIT));
-    assertFalse(allData.get(CATHY).containsColumn(PETS, BIRD));
+    assertTrue(allData.get(cathy).containsColumn(pets, cat));
+    assertTrue(allData.get(cathy).containsColumn(pets, fish));
+    assertFalse(allData.get(cathy).containsColumn(pets, dog));
+    assertFalse(allData.get(cathy).containsColumn(pets, rabbit));
+    assertFalse(allData.get(cathy).containsColumn(pets, bird));
 
-    assertTrue(allData.get(DAVID).containsColumn(PETS, CAT));
-    assertTrue(allData.get(DAVID).containsColumn(PETS, BIRD));
-    assertFalse(allData.get(DAVID).containsColumn(PETS, DOG));
-    assertFalse(allData.get(DAVID).containsColumn(PETS, RABBIT));
-    assertFalse(allData.get(DAVID).containsColumn(PETS, FISH));
+    assertTrue(allData.get(david).containsColumn(pets, cat));
+    assertTrue(allData.get(david).containsColumn(pets, bird));
+    assertFalse(allData.get(david).containsColumn(pets, dog));
+    assertFalse(allData.get(david).containsColumn(pets, rabbit));
+    assertFalse(allData.get(david).containsColumn(pets, fish));
 
     scanner.close();
   }
@@ -312,7 +331,7 @@ public class TestCassandraReadAndWrite extends CassandraKijiClientTest {
     rowData = mReader.get(mEntityId, dataRequest);
 
     // Should not get any data back!
-    assertFalse( rowData.containsColumn("family", "column") );
+    assertFalse(rowData.containsColumn("family", "column"));
   }
 
   @Test
@@ -357,7 +376,7 @@ public class TestCassandraReadAndWrite extends CassandraKijiClientTest {
     rowData = mReader.get(mEntityId, dataRequest);
 
     // Should not get any data back!
-    assertFalse( rowData.containsColumn("family", "column") );
+    assertFalse(rowData.containsColumn("family", "column"));
   }
 
   @Test
@@ -373,9 +392,9 @@ public class TestCassandraReadAndWrite extends CassandraKijiClientTest {
   @Test
   public void testBulkGet() throws Exception {
     // Write data for a bunch of rows.
-    final int NUM_ROWS = 10;
+    final int numRows = 10;
     ArrayList<EntityId> entityIds = new ArrayList<EntityId>();
-    for (int rowNum = 0; rowNum < NUM_ROWS; rowNum++) {
+    for (int rowNum = 0; rowNum < numRows; rowNum++) {
       EntityId eid = mTable.getEntityId("row#" + rowNum);
       mWriter.put(eid, "family", "column", "This is row " + rowNum + ".");
       entityIds.add(eid);
@@ -385,9 +404,9 @@ public class TestCassandraReadAndWrite extends CassandraKijiClientTest {
 
     List<KijiRowData> dataList = mReader.bulkGet(entityIds, request);
 
-    assertEquals(NUM_ROWS, dataList.size());
+    assertEquals(numRows, dataList.size());
 
-    for (int rowNum = 0; rowNum < NUM_ROWS; rowNum++) {
+    for (int rowNum = 0; rowNum < numRows; rowNum++) {
       KijiRowData data = dataList.get(rowNum);
       EntityId eid = mTable.getEntityId("row#" + rowNum);
       assertEquals(eid, data.getEntityId());

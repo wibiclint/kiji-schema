@@ -31,7 +31,6 @@ import org.kiji.annotations.Inheritance;
 import org.kiji.delegation.Lookups;
 import org.kiji.schema.avro.TableLayoutDesc;
 import org.kiji.schema.impl.cassandra.CassandraKijiFactory;
-import org.kiji.schema.impl.hbase.HBaseKijiFactory;
 import org.kiji.schema.layout.KijiTableLayout;
 import org.kiji.schema.security.KijiSecurityManager;
 import org.kiji.schema.util.ReferenceCountable;

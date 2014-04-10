@@ -19,16 +19,18 @@
 
 package org.kiji.schema.cassandra;
 
-import org.apache.hadoop.hbase.util.Bytes;
-import org.junit.Test;
-import org.kiji.schema.Kiji;
-import org.kiji.schema.KijiClientTest;
-import org.kiji.schema.KijiSystemTable;
-import org.kiji.schema.util.ProtocolVersion;
+import static org.junit.Assert.assertArrayEquals;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNull;
 
 import java.io.IOException;
 
-import static org.junit.Assert.*;
+import org.apache.hadoop.hbase.util.Bytes;
+import org.junit.Test;
+
+import org.kiji.schema.Kiji;
+import org.kiji.schema.KijiSystemTable;
+import org.kiji.schema.util.ProtocolVersion;
 
 /** Tests for KijiSystemTable. */
 public class TestCassandraSystemTable extends CassandraKijiClientTest {

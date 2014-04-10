@@ -303,6 +303,7 @@ public final class CassandraKijiTableWriter implements KijiTableWriter {
    * @param family of the column containing the counter.
    * @param qualifier of the column containing the counter.
    * @param counterIncrement by which to increment the counter.
+   * @param <T> The type of the increment value (should be long).
    * @throws IOException if there is a problem incrementing the counter value.
    */
   private <T> void incrementCounterValue(

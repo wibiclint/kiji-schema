@@ -19,16 +19,25 @@
 
 package org.kiji.schema.cassandra;
 
+import java.io.File;
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Map;
+
 import com.datastax.driver.core.Cluster;
+import com.datastax.driver.core.Session;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Maps;
 import org.apache.cassandra.config.DatabaseDescriptor;
-import org.apache.cassandra.service.CassandraDaemon;
 import org.apache.cassandra.service.EmbeddedCassandraService;
 import org.apache.commons.io.FileUtils;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hbase.zookeeper.MiniZooKeeperCluster;
 import org.apache.zookeeper.KeeperException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import org.kiji.delegation.Priority;
 import org.kiji.schema.KijiIOException;
 import org.kiji.schema.KijiURI;
@@ -39,18 +48,6 @@ import org.kiji.schema.impl.cassandra.TestingCassandraAdminFactory;
 import org.kiji.schema.layout.impl.ZooKeeperClient;
 import org.kiji.schema.util.LocalLockFactory;
 import org.kiji.schema.util.LockFactory;
-import org.mortbay.log.Log;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import com.datastax.driver.core.Session;
-
-import java.io.File;
-import java.io.IOException;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Map;
-import java.util.concurrent.ExecutorService;
 
 /** Factory for Cassandra instances based on URIs. */
 public final class TestingCassandraFactory implements CassandraFactory {
@@ -62,7 +59,7 @@ public final class TestingCassandraFactory implements CassandraFactory {
   /** Lock object to protect MINI_ZOOKEEPER_CLUSTER and MINIZK_CLIENT. */
   private static final Object MINIZK_CLUSTER_LOCK = new Object();
 
-  /** ZooKeeper session timeout, in milliseconds. */
+  /** ZooKeeper mSession timeout, in milliseconds. */
   private static final int ZKCLIENT_SESSION_TIMEOUT = 60 * 1000;  // 1 second
 
   /**
@@ -75,9 +72,9 @@ public final class TestingCassandraFactory implements CassandraFactory {
   private static MiniZooKeeperCluster mMiniZkCluster;
 
   /**
-   * Singleton Cassandra session for testing.
+   * Singleton Cassandra mSession for testing.
    *
-   * Lazily instantiated when the first test requests a C* session for a .fake Kiji instance.
+   * Lazily instantiated when the first test requests a C* mSession for a .fake Kiji instance.
    *
    * Once started, will remain alive until the JVM shuts down.
    */
@@ -109,7 +106,8 @@ public final class TestingCassandraFactory implements CassandraFactory {
    * Public constructor. This should not be directly invoked by users; you should
    * use CassandraFactory.get(), which retains a singleton instance.
    *
-   * This constructor needs to be public because the Java service loader must be able to instantiate it.
+   * This constructor needs to be public because the Java service loader must be able to
+   * instantiate it.
    */
   public TestingCassandraFactory() {
   }
@@ -131,7 +129,7 @@ public final class TestingCassandraFactory implements CassandraFactory {
       try {
         startEmbeddedCassandraServiceIfNotRunningAndOpenSession();
       } catch (Exception e) {
-        throw new KijiIOException("Problem with embedded Cassandra session!" + e);
+        throw new KijiIOException("Problem with embedded Cassandra mSession!" + e);
       }
 
       // Get an admin factory that will work with the embedded service
@@ -182,7 +180,8 @@ public final class TestingCassandraFactory implements CassandraFactory {
   /**
    * Return a fake C* admin factory for testing.
    * @param fakeCassandraID
-   * @return A C* admin factory that will produce C* admins that will all use the shared EmbeddedCassandraService.
+   * @return A C* admin factory that will produce C* admins that will all use the shared
+   *     EmbeddedCassandraService.
    */
   private CassandraAdminFactory createFakeCassandraAdminFactory(String fakeCassandraID) {
     Preconditions.checkNotNull(mCassandraSession);
@@ -190,7 +189,8 @@ public final class TestingCassandraFactory implements CassandraFactory {
   }
 
   /**
-   * Ensure that the EmbeddedCassandraService for unit tests is running.  If it is not, then start it.
+   * Ensure that the EmbeddedCassandraService for unit tests is running.  If it is not, then start
+   * it.
    */
   private void startEmbeddedCassandraServiceIfNotRunningAndOpenSession() throws Exception {
     LOG.debug("Ready to start a C* service if necessary...");
@@ -211,7 +211,8 @@ public final class TestingCassandraFactory implements CassandraFactory {
       System.setProperty("cassandra-foreground", "true");
 
       // Make sure that all of the directories for the commit log, data, and caches are empty.
-      // Thank goodness there are methods to get this information (versus parsing the YAML directly).
+      // Thank goodness there are methods to get this information (versus parsing the YAML
+      // directly).
       ArrayList<String> directoriesToDelete = new ArrayList<String>(Arrays.asList(
           DatabaseDescriptor.getAllDataFileLocations()
       ));

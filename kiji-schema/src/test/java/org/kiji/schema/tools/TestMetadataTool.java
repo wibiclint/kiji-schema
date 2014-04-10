@@ -27,7 +27,6 @@ import java.io.File;
 import java.util.List;
 
 import com.google.common.collect.Lists;
-
 import org.junit.Test;
 
 import org.kiji.schema.Kiji;

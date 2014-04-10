@@ -381,7 +381,7 @@ public final class CassandraKijiTableReader implements KijiTableReader {
    * @param entityId The entity ID to use for this row.
    * @param allRows The raw Rows to assemble into KijiRowData.
    * @return A KijiRowData object formed form these raw Rows.
-   * @throws IOException
+   * @throws IOException if there is a problem talking to Cassandra.
    */
   public KijiRowData getRowDataFromCassandraRows(
       KijiDataRequest dataRequest,

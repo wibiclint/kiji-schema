@@ -327,9 +327,7 @@ public final class CassandraKijiRowData implements KijiRowData {
     KijiColumnFilter filter = columnRequest.getFilter();
 
     long maxTimestamp = mDataRequest.getMaxTimestamp();
-    if (timestamp < mDataRequest.getMinTimestamp() ||
-        //timestamp >= maxTimestamp && maxTimestamp != HConstants.LATEST_TIMESTAMP) {
-        timestamp >= maxTimestamp) {
+    if (timestamp < mDataRequest.getMinTimestamp() || timestamp >= maxTimestamp) {
       return;
     }
 

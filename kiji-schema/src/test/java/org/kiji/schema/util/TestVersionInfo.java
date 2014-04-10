@@ -19,8 +19,6 @@
 
 package org.kiji.schema.util;
 
-import java.util.regex.Pattern;
-
 import static org.easymock.EasyMock.createMock;
 import static org.easymock.EasyMock.expect;
 import static org.easymock.EasyMock.replay;
@@ -29,6 +27,8 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
+
+import java.util.regex.Pattern;
 
 import org.junit.Test;
 

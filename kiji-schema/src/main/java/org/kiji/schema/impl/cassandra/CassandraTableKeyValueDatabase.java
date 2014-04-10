@@ -1,5 +1,5 @@
 /**
- * (c) Copyright 2012 WibiData, Inc.
+ * (c) Copyright 2014 WibiData, Inc.
  *
  * See the NOTICE file distributed with this work for additional
  * information regarding copyright ownership.
@@ -70,7 +70,9 @@ public class CassandraTableKeyValueDatabase
   private PreparedStatement mPreparedStatementGetRows = null;
   private PreparedStatement mPreparedStatementRemoveValues = null;
 
-  // TODO: Don't need statement preparation factored out like this after adding statement cache.
+  // TODO (SCHEMA-748): Don't need statement preparation after adding statement cache.
+
+  /** Prepare statement to reuse many times. */
   private void setPreparedStatementPutValue() {
     String queryText = String.format(
         "INSERT INTO %s (%s, %s, %s, %s) VALUES (?, ?, ?, ?)",
@@ -79,11 +81,11 @@ public class CassandraTableKeyValueDatabase
         KV_COLUMN_KEY,
         KV_COLUMN_TIME,
         KV_COLUMN_VALUE);
-    //LOG.info("What is wrong with this? " + queryText);
     mPreparedStatementPutValue = mTable.getAdmin().getPreparedStatement(queryText);
   }
 
-  // TODO: Don't need statement preparation factored out like this after adding statement cache.
+  // TODO (SCHEMA-748): Don't need statement preparation after adding statement cache.
+  /** Prepare statement to reuse many times. */
   private void setPreparedStatementKeySet() {
     String queryText = String.format(
         "SELECT %s FROM %s WHERE %s=?",
@@ -94,7 +96,8 @@ public class CassandraTableKeyValueDatabase
     mPreparedStatementKeySet = mTable.getAdmin().getPreparedStatement(queryText);
   }
 
-  // TODO: Don't need statement preparation factored out like this after adding statement cache.
+  // TODO (SCHEMA-748): Don't need statement preparation after adding statement cache.
+  /** Prepare statement to reuse many times. */
   private void setPreparedStatementRestoreKeyValuesFromBackup() {
     // TODO: Make this query a member of the class and prepare in the constructor
     String queryText = String.format(
@@ -104,10 +107,12 @@ public class CassandraTableKeyValueDatabase
         KV_COLUMN_KEY,
         KV_COLUMN_TIME,
         KV_COLUMN_VALUE);
-    mPreparedStatementRestoreKeyValuesFromBackup = mTable.getAdmin().getPreparedStatement(queryText);
+    mPreparedStatementRestoreKeyValuesFromBackup =
+        mTable.getAdmin().getPreparedStatement(queryText);
   }
 
-  // TODO: Don't need statement preparation factored out like this after adding statement cache.
+  // TODO (SCHEMA-748): Don't need statement preparation after adding statement cache.
+  /** Prepare statement to reuse many times. */
   private void setPreparedStatementGetRows() {
     String queryText = String.format(
         "SELECT * FROM %s WHERE %s=? AND %s=? LIMIT ?",
@@ -118,7 +123,8 @@ public class CassandraTableKeyValueDatabase
     mPreparedStatementGetRows = mTable.getAdmin().getPreparedStatement(queryText);
   }
 
-  // TODO: Don't need statement preparation factored out like this after adding statement cache.
+  // TODO (SCHEMA-748): Don't need statement preparation after adding statement cache.
+  /** Prepare statement to reuse many times. */
   private void setPreparedStatementRemoveValues() {
     String queryText = String.format(
         "DELETE FROM %s WHERE %s=? AND %s=?",
@@ -153,9 +159,11 @@ public class CassandraTableKeyValueDatabase
   public static void install(CassandraAdmin admin, KijiURI uri) {
     String tableName = KijiManagedCassandraTableName.getMetaKeyValueTableName(uri).toString();
 
-    // Standard C* table layout.  Use text key + timestamp as composite primary key to allow selection by timestamp.
+    // Standard C* table layout.  Use text key + timestamp as composite primary key to allow
+    // selection by timestamp.
     String tableDescription = String.format(
-        "CREATE TABLE %s (%s text, %s text, %s timestamp, %s blob, PRIMARY KEY (%s, %s, %s)) WITH CLUSTERING ORDER BY (%s ASC, %s DESC);",
+        "CREATE TABLE %s (%s text, %s text, %s timestamp, %s blob, PRIMARY KEY (%s, %s, %s)) "
+            + "WITH CLUSTERING ORDER BY (%s ASC, %s DESC);",
         tableName,
         KV_COLUMN_TABLE,
         KV_COLUMN_KEY,
@@ -186,14 +194,17 @@ public class CassandraTableKeyValueDatabase
 
   /**
    * Internal helper method containing common code for ready values for a given key from the table.
-   * @param table Name of the table for which to fetch the values (part of the key-value database key).
-   * @param key Name of the key for the KV store for the given table (part of the key-value database key).
+   * @param table Name of the table for which to fetch the values
+   *              (part of the key-value database key).
+   * @param key Name of the key for the KV store for the given table
+   *            (part of the key-value database key).
    * @param numVersions Number of versions to fetch for the given table, key combination.
    * @return A list of C* rows for the query.
    */
   private List<Row> getRows(String table, String key, int numVersions) {
     Preconditions.checkArgument(numVersions >= 1,  "numVersions must be positive");
-    ResultSet resultSet = mTable.getAdmin().execute(mPreparedStatementGetRows.bind(table, key, numVersions));
+    ResultSet resultSet =
+        mTable.getAdmin().execute(mPreparedStatementGetRows.bind(table, key, numVersions));
     List<Row> rows = resultSet.all();
     return rows;
   }
@@ -244,10 +255,16 @@ public class CassandraTableKeyValueDatabase
     Preconditions.checkNotNull(mPreparedStatementPutValue);
     ByteBuffer valAsByteBuffer = CassandraByteUtil.bytesToByteBuffer(value);
     // TODO: Check for success?
-    mTable.getAdmin().execute(mPreparedStatementPutValue.bind(table, key, new Date(), valAsByteBuffer));
+    mTable.getAdmin().execute(mPreparedStatementPutValue.bind(
+        table, key, new Date(), valAsByteBuffer));
     return this;
   }
 
+  /**
+   * Use logger to log all rows in the table.
+   *
+   * @param tableName the name of the table from which to fetch all rows to log.
+   */
   private void logRowsForTable(String tableName) {
     String metaTableName = mTable.getTableName();
 
@@ -361,7 +378,8 @@ public class CassandraTableKeyValueDatabase
      final long timestamp = kvRecord.getTimestamp();
 
      LOG.debug(String.format(
-         "For the table '%s' we are writing key '%s', timestamp '%s', and value '%s' to the metatable named '%s'.",
+         "For the table '%s' we are writing key '%s', timestamp '%s', "
+             + "and value '%s' to the metatable named '%s'.",
          tableName,
          key,
          "" + timestamp,

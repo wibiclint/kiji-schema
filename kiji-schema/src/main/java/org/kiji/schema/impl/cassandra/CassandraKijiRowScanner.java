@@ -212,8 +212,8 @@ public class CassandraKijiRowScanner implements KijiRowScanner {
       // Get a big set of Row objects for the given entity ID.
       Set<Row> rows = Sets.newHashSet(firstRow);
 
-      while (mRowsIterator.hasNext() &&
-          entityIDComponents.equals(CQLUtils.getRowKeyComponents(mLayout, mRowsIterator.peek()))) {
+      while (mRowsIterator.hasNext() && entityIDComponents.equals(
+          CQLUtils.getRowKeyComponents(mLayout, mRowsIterator.peek()))) {
         rows.add(mRowsIterator.next());
       }
 
@@ -241,7 +241,7 @@ public class CassandraKijiRowScanner implements KijiRowScanner {
    * must be from the same table.  The Rows are first compared by their partion key token, and then
    * by the entity ID components they contain.
    */
-  private final static class RowComparator implements Comparator<Row> {
+  private static final class RowComparator implements Comparator<Row> {
     private final String mTokenColumn;
     private final KijiTableLayout mLayout;
 

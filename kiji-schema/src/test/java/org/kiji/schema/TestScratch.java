@@ -1,8 +1,8 @@
 package org.kiji.schema;
 
 import org.junit.Test;
+
 import org.kiji.schema.avro.TableLayoutDesc;
-import org.kiji.schema.layout.KijiTableLayout;
 import org.kiji.schema.layout.KijiTableLayouts;
 
 public class TestScratch {

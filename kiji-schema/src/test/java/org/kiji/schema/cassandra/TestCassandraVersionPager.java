@@ -19,22 +19,46 @@
 
 package org.kiji.schema.cassandra;
 
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
+
+import java.io.IOException;
+import java.util.Iterator;
+import java.util.List;
+import java.util.NavigableMap;
+import java.util.NoSuchElementException;
+
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
 import org.apache.hadoop.hbase.util.Bytes;
-import org.junit.*;
-import org.kiji.schema.*;
-import org.kiji.schema.KijiDataRequestBuilder.ColumnsDef;
-import org.kiji.schema.impl.cassandra.CassandraVersionPager;
-import org.kiji.schema.layout.KijiTableLayouts;
-import org.kiji.schema.util.ResourceUtils;
+import org.junit.After;
+import org.junit.AfterClass;
+import org.junit.Assert;
+import org.junit.Before;
+import org.junit.BeforeClass;
+import org.junit.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.IOException;
-import java.util.*;
-
-import static org.junit.Assert.*;
+import org.kiji.schema.EntityId;
+import org.kiji.schema.Kiji;
+import org.kiji.schema.KijiCell;
+import org.kiji.schema.KijiColumnPagingNotEnabledException;
+import org.kiji.schema.KijiDataRequest;
+import org.kiji.schema.KijiDataRequestBuilder.ColumnsDef;
+import org.kiji.schema.KijiIOException;
+import org.kiji.schema.KijiPager;
+import org.kiji.schema.KijiRowData;
+import org.kiji.schema.KijiRowScanner;
+import org.kiji.schema.KijiTable;
+import org.kiji.schema.KijiTableReader;
+import org.kiji.schema.KijiTableWriter;
+import org.kiji.schema.impl.cassandra.CassandraVersionPager;
+import org.kiji.schema.layout.KijiTableLayouts;
+import org.kiji.schema.util.ResourceUtils;
 
 public class TestCassandraVersionPager extends CassandraKijiClientTest {
   private static final Logger LOG = LoggerFactory.getLogger(TestCassandraVersionPager.class);
@@ -65,7 +89,8 @@ public class TestCassandraVersionPager extends CassandraKijiClientTest {
 
         for (int job = 0; job < NJOBS; ++job) {
           for (long ts = 1; ts <= NTIMESTAMPS; ++ts) {
-            writer.put(eid, "jobs", String.format("j%d", job), ts, String.format("j%d-t%d", job, ts));
+            writer.put(
+                eid, "jobs", String.format("j%d", job), ts, String.format("j%d-t%d", job, ts));
           }
         }
 

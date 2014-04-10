@@ -327,11 +327,12 @@ public final class CassandraSchemaTable implements KijiSchemaTable {
    *
    * Assumes that the table already exists in Cassandra.
    *
-   * @param kijiURI
-   * @param conf
-   * @param admin
-   * @param lockFactory
-   * @throws IOException
+   * @param kijiURI The KijiURI for the instance.
+   * @param conf The Hadoop configuration.
+   * @param admin for this instance.
+   * @param lockFactory for creating ZooKeeper locks.
+   * @return a reference to an already-existing schema table.
+   * @throws IOException if there is a problem creating the table.
    */
   public static CassandraSchemaTable createAssumingTableExists(
       KijiURI kijiURI,
@@ -351,8 +352,10 @@ public final class CassandraSchemaTable implements KijiSchemaTable {
   /**
    * Wrap an existing HBase table assumed to be where the schema data is stored.
    *
-   * @param hashTable The HTable that maps schema hashes to schema entries.
-   * @param idTable The HTable that maps schema IDs to schema entries.
+   * @param hashTable The table that maps schema hashes to schema entries.
+   * @param idTable The table that maps schema IDs to schema entries.
+   * @param counterTable The table that contains counters for schema IDs.
+   * @param zkLock The ZooKeeper lock to use for this table.
    * @param uri URI of the Kiji instance this schema table belongs to.
    * @throws java.io.IOException on I/O error.
    */
@@ -386,7 +389,7 @@ public final class CassandraSchemaTable implements KijiSchemaTable {
   /**
    * Looks up a schema entry given an Avro schema object.
    *
-   * Looks first in-memory. If the schema is not known in-memory, looks in the HTables.
+   * Looks first in-memory. If the schema is not known in-memory, looks in the Cassandra tables.
    *
    * @param schema Avro schema to look up.
    * @return Either the pre-existing entry for the specified schema, or a newly created entry.
@@ -776,8 +779,10 @@ public final class CassandraSchemaTable implements KijiSchemaTable {
 
   /**
    * Install the schema hash table.
-   * @param admin
-   * @param tableName
+   *
+   * @param admin for the Kiji instance.
+   * @param tableName name of the schema hash table to create.
+   * @return a reference to the created schema hash table.
    */
   private static CassandraTableInterface installHashTable(CassandraAdmin admin, String tableName) {
     // Let's try to make this somewhat readable...
@@ -796,8 +801,10 @@ public final class CassandraSchemaTable implements KijiSchemaTable {
 
   /**
    * Install the schema ID table.
-   * @param admin
-   * @param tableName
+   *
+   * @param admin for the Kiji instance.
+   * @param tableName name of the schema ID table to create.
+   * @return a reference to the created schema ID table.
    */
   private static CassandraTableInterface installIdTable(CassandraAdmin admin, String tableName) {
     // TODO: Table should order by DESC for time
@@ -815,8 +822,11 @@ public final class CassandraSchemaTable implements KijiSchemaTable {
 
   /**
    * Install the schema ID counter table.
-   * @param admin
-   * @param tableName
+   *
+   * @param admin for the Kiji instance.
+   * @param tableName name of the schema ID counter table to create.
+   * @return a reference to the created schema ID counter table.
+   * @throws java.io.IOException if there is a problem creating the Cassandra table.
    */
   private static CassandraTableInterface installCounterTable(
       CassandraAdmin admin,
@@ -858,6 +868,7 @@ public final class CassandraSchemaTable implements KijiSchemaTable {
    * @param admin The C* Admin interface for the HBase cluster to install into.
    * @param kijiURI the KijiURI.
    * @param conf The Hadoop configuration.
+   * @param lockFactory for creating ZooKeeper locks.
    * @throws java.io.IOException on I/O error.
    */
   public static void install(
@@ -1119,7 +1130,7 @@ public final class CassandraSchemaTable implements KijiSchemaTable {
   /**
    * Loads and check the consistency of the schema hash table.
    *
-   * @param hashTable schema hash HTable.
+   * @param hashTable schema hash table.
    * @return the set of schema entries from the schema hash table.
    * @throws java.io.IOException on I/O error.
    */
@@ -1185,7 +1196,7 @@ public final class CassandraSchemaTable implements KijiSchemaTable {
   /**
    * Loads and check the consistency of the schema ID table.
    *
-   * @param idTable schema ID HTable.
+   * @param idTable schema ID table.
    * @return the set of schema entries from the schema ID table.
    * @throws java.io.IOException on I/O error.
    */

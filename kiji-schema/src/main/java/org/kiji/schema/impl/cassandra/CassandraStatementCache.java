@@ -25,6 +25,10 @@ import java.util.Map;
 import com.datastax.driver.core.PreparedStatement;
 import com.datastax.driver.core.Session;
 
+/**
+ * Caches prepared statement corresponding to Cassandra query strings.
+ *
+ */
 public class CassandraStatementCache {
 
   // TODO: this class is a serious memory leak, as well as pretty slow due to the synchronization.
@@ -32,6 +36,7 @@ public class CassandraStatementCache {
 
   private final Session mSession;
 
+  // TODO (SCHEMA-747): Use a concurrent map, with entries that expire.
   private final Map<String, PreparedStatement> mStatementCache;
 
   /**

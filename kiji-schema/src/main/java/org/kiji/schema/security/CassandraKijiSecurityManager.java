@@ -19,6 +19,12 @@
 
 package org.kiji.schema.security;
 
+import java.io.IOException;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.Set;
+
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Sets;
 import org.apache.hadoop.conf.Configuration;
@@ -26,6 +32,9 @@ import org.apache.hadoop.hbase.security.access.AccessControllerProtocol;
 import org.apache.hadoop.hbase.security.access.Permission.Action;
 import org.apache.hadoop.hbase.security.access.UserPermission;
 import org.apache.hadoop.hbase.util.Bytes;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import org.kiji.annotations.ApiAudience;
 import org.kiji.schema.Kiji;
 import org.kiji.schema.KijiSystemTable;
@@ -38,14 +47,6 @@ import org.kiji.schema.impl.cassandra.CassandraKiji;
 import org.kiji.schema.layout.impl.ZooKeeperClient;
 import org.kiji.schema.layout.impl.ZooKeeperMonitor;
 import org.kiji.schema.util.Lock;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import java.io.IOException;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.HashSet;
-import java.util.Set;
 
 /**
  * The default implementation of KijiSecurityManager.
@@ -84,18 +85,18 @@ public final class CassandraKijiSecurityManager implements KijiSecurityManager {
   /**
    * Factory method.
    *
-   * @param uri
-   * @param conf
-   * @param admin
-   * @return
-   * @throws IOException
+   * @param uri of the Kiji instance.
+   * @param conf is the Hadoop configuration to use.
+   * @param admin for the Kiji instance.
+   * @return a new security manager.
+   * @throws IOException if there is a problem talking to Cassandra.
    */
-  // TODO: Put into a static class.
   public static CassandraKijiSecurityManager create(
       KijiURI uri,
       Configuration conf,
       CassandraAdmin admin)
     throws IOException {
+    // TODO: Put into a static class.
     return new CassandraKijiSecurityManager(uri, conf, admin);
 
   }
@@ -124,8 +125,8 @@ public final class CassandraKijiSecurityManager implements KijiSecurityManager {
    * @param conf is the Hadoop configuration to use.
    * @param admin is a wrapper around an open C* session, used to access the HBase ACL table.
    * @throws java.io.IOException on I/O error.
-   * @throws org.kiji.schema.security.KijiSecurityException if the Kiji security version is not compatible with
-   *     KijiSecurityManager.
+   * @throws org.kiji.schema.security.KijiSecurityException if the Kiji security version is not
+   *   compatible with KijiSecurityManager.
    */
   CassandraKijiSecurityManager(
       KijiURI instanceUri,
@@ -364,9 +365,11 @@ public final class CassandraKijiSecurityManager implements KijiSecurityManager {
   /**
    * Updates the permissions in the Kiji system table for a user on this Kiji instance.
    *
-   * <p>Use {@link #grantInstancePermissions(org.kiji.schema.security.KijiUser, org.kiji.schema.security.KijiPermissions)}
-   * or {@link #revokeInstancePermissions(org.kiji.schema.security.KijiUser, org.kiji.schema.security.KijiPermissions)}instead for updating the
-   * permissions in HBase as well as in the Kiji system table.</p>
+   * <p>Use {@link #grantInstancePermissions(org.kiji.schema.security.KijiUser,
+   * org.kiji.schema.security.KijiPermissions)} or {@link
+   * #revokeInstancePermissions(org.kiji.schema.security.KijiUser,
+   * org.kiji.schema.security.KijiPermissions)}instead for updating the permissions in HBase as well
+   * as in the Kiji system table.</p>
    *
    * @param user whose permissions to update.
    * @param permissions to be applied to this user.
@@ -553,7 +556,9 @@ public final class CassandraKijiSecurityManager implements KijiSecurityManager {
         hActions);
 
     // Grant the permissions.
-    LOG.debug("TODO: Update C* for: 'Changing user permissions for user {} on table {} to HBase Actions {}.'",
+    LOG.debug(
+        "TODO: Update C* for: 'Changing user permissions for user {} on table {} to HBase Actions "
+          + "{}.'",
         Bytes.toString(hUser),
         Bytes.toString(hTableName),
         Arrays.toString(hActions));
@@ -589,7 +594,8 @@ public final class CassandraKijiSecurityManager implements KijiSecurityManager {
         hActions);
 
     // Revoke the permissions.
-    LOG.debug("TODO: Update C* for: 'Revoking user permissions for user {} on table {} to HBase Actions {}.'",
+    LOG.debug("TODO: Update C* for: 'Revoking user permissions for user {} on table {} to HBase "
+          + "Actions {}.'",
         Bytes.toString(hUser),
         Bytes.toString(hTableName),
         Arrays.toString(hActions));

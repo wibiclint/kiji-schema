@@ -19,24 +19,38 @@
 
 package org.kiji.schema.cassandra;
 
-import com.google.common.collect.Lists;
-import org.apache.hadoop.hbase.HConstants;
-import org.junit.*;
-import org.kiji.schema.*;
-import org.kiji.schema.KijiDataRequestBuilder.ColumnsDef;
-import org.kiji.schema.filter.KijiColumnRangeFilter;
-import org.kiji.schema.impl.cassandra.CassandraKijiTable;
-import org.kiji.schema.impl.cassandra.CassandraQualifierPager;
-import org.kiji.schema.layout.KijiTableLayouts;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import static org.junit.Assert.assertArrayEquals;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 
 import java.io.IOException;
 import java.util.List;
 import java.util.NoSuchElementException;
-import java.util.concurrent.atomic.AtomicInteger;
 
-import static org.junit.Assert.*;
+import com.google.common.collect.Lists;
+import org.apache.hadoop.hbase.HConstants;
+import org.junit.After;
+import org.junit.AfterClass;
+import org.junit.Assert;
+import org.junit.Before;
+import org.junit.BeforeClass;
+import org.junit.Test;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import org.kiji.schema.EntityId;
+import org.kiji.schema.Kiji;
+import org.kiji.schema.KijiColumnName;
+import org.kiji.schema.KijiDataRequest;
+import org.kiji.schema.KijiDataRequestBuilder.ColumnsDef;
+import org.kiji.schema.KijiTable;
+import org.kiji.schema.KijiTableReader;
+import org.kiji.schema.KijiTableWriter;
+import org.kiji.schema.filter.KijiColumnRangeFilter;
+import org.kiji.schema.impl.cassandra.CassandraKijiTable;
+import org.kiji.schema.impl.cassandra.CassandraQualifierPager;
+import org.kiji.schema.layout.KijiTableLayouts;
 
 public class TestCassandraQualifierPager extends CassandraKijiClientTest {
   private static final Logger LOG = LoggerFactory.getLogger(TestCassandraQualifierPager.class);
@@ -62,7 +76,8 @@ public class TestCassandraQualifierPager extends CassandraKijiClientTest {
     try {
       for (int job = 0; job < NJOBS; ++job) {
         for (long ts = 1; ts <= NTIMESTAMPS; ++ts) {
-          writer.put(mEntityId, "jobs", String.format("j%d", job), ts, String.format("j%d-t%d", job, ts));
+          writer.put(
+              mEntityId, "jobs", String.format("j%d", job), ts, String.format("j%d-t%d", job, ts));
         }
       }
     } finally {
@@ -104,7 +119,8 @@ public class TestCassandraQualifierPager extends CassandraKijiClientTest {
       final List<String> qualifiers = Lists.newArrayList();
       int npage = 0;
       while (pager.hasNext()) {
-        // Note: we cannot validate individual pages as their boundaries depend on Cassandra version.
+        // Note: we cannot validate individual pages as their boundaries depend on Cassandra
+        // version.
         final List<String> page = Lists.newArrayList(pager.next());
         LOG.info("Page #{}: {}", npage, page);
         assertTrue(page.size() <= pageSize);
@@ -177,7 +193,8 @@ public class TestCassandraQualifierPager extends CassandraKijiClientTest {
       final List<String> qualifiers = Lists.newArrayList();
       int npage = 0;
       while (pager.hasNext()) {
-        // Note: we cannot validate individual pages as their boundaries depend on Cassandra version.
+        // Note: we cannot validate individual pages as their boundaries depend on Cassandra
+        // version.
         final List<String> page = Lists.newArrayList(pager.next());
         LOG.info("Page #{}: {}", npage, page);
         assertTrue(page.size() <= pageSize);
@@ -221,7 +238,8 @@ public class TestCassandraQualifierPager extends CassandraKijiClientTest {
       final List<String> qualifiers = Lists.newArrayList();
       int npage = 0;
       while (pager.hasNext()) {
-        // Note: we cannot validate individual pages as their boundaries depend on Cassandra version.
+        // Note: we cannot validate individual pages as their boundaries depend on Cassandra
+        // version.
         final List<String> page = Lists.newArrayList(pager.next());
         LOG.info("Page #{}: {}", npage, page);
         assertTrue(page.size() <= pageSize);

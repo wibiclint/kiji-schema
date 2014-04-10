@@ -19,6 +19,11 @@
 
 package org.kiji.schema.cassandra;
 
+import java.io.File;
+import java.io.IOException;
+import java.util.List;
+import java.util.concurrent.atomic.AtomicLong;
+
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Lists;
 import org.apache.commons.io.FileUtils;
@@ -28,18 +33,14 @@ import org.junit.After;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.rules.TestName;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import org.kiji.checkin.CheckinUtils;
 import org.kiji.schema.CassandraKijiURI;
 import org.kiji.schema.Kiji;
 import org.kiji.schema.impl.cassandra.CassandraKijiFactory;
 import org.kiji.schema.util.TestingFileUtils;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import java.io.File;
-import java.io.IOException;
-import java.util.List;
-import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Base class for Cassandra tests that interact with kiji as a client.
@@ -50,9 +51,9 @@ public class CassandraKijiClientTest {
   /*
    * <p>
    *   // TODO: Implement ability to connect to a real Cassandra service in tests.
-   *   By default, this base class connects to an EmbeddedCassandraService.
-   *   By setting a JVM system property, this class may be configured to use a real Cassandra instance.
-   *   For example, to use an C* node running on <code>localhost:2181</code>, you may use:
+   *   By default, this base class connects to an EmbeddedCassandraService. By setting a JVM
+   *   system property, this class may be configured to use a real Cassandra instance. For example,
+   *   to use an C* node running on <code>localhost:2181</code>, you may use:
    *   <pre>
    *     mvn clean test \
    *         -DargLine="-Dorg.kiji.schema.CassandraKijiClientTest.CASSANDRA_ADDRESS=localhost:2181"
@@ -78,10 +79,10 @@ public class CassandraKijiClientTest {
   // CSON: VisibilityModifierCheck
 
   /** Counter for fake C* instances. */
-  private final static AtomicLong mFakeCassandraInstanceCounter = new AtomicLong();
+  private static final AtomicLong FAKE_CASSANDRA_INSTANCE_COUNTER = new AtomicLong();
 
   /** Counter for test Kiji instances. */
-  private final static AtomicLong mKijiInstanceCounter = new AtomicLong();
+  private static final AtomicLong KIJI_INSTANCE_COUNTER = new AtomicLong();
 
   /** Test identifier, eg. "org_package_ClassName_testMethodName". */
   private String mTestId;
@@ -133,7 +134,7 @@ public class CassandraKijiClientTest {
    * @return the KijiURI of a test HBase instance.
    */
   public CassandraKijiURI createTestCassandraURI() {
-    final long fakeCassandraCounter = mFakeCassandraInstanceCounter.getAndIncrement();
+    final long fakeCassandraCounter = FAKE_CASSANDRA_INSTANCE_COUNTER.getAndIncrement();
     final String testName = String.format(
         "%s_%s",
         getClass().getSimpleName(),
@@ -164,21 +165,18 @@ public class CassandraKijiClientTest {
    */
   public Kiji createTestKiji() throws Exception {
     Preconditions.checkNotNull(mConf);
-    // Note: The C* keyspace for the instance has to be less than 48 characters long.
-    // Every C* Kiji keyspace starts with "kiji_", so we have a total of 43 characters to work with - yikes!
+    // Note: The C* keyspace for the instance has to be less than 48 characters long. Every C*
+    // Kiji keyspace starts with "kiji_", so we have a total of 43 characters to work with - yikes!
     // Hopefully dropping off the class name is good enough to make this short enough.
 
-    final String instanceName = String.format("%s_%d",  mTestName.getMethodName(), mKijiInstanceCounter.getAndIncrement());
+    final String instanceName =
+        String.format("%s_%d", mTestName.getMethodName(), KIJI_INSTANCE_COUNTER.getAndIncrement());
 
     LOG.info("Creating a test Kiji instance.  Calling Kiji instance " + instanceName);
 
-    //final String instanceName = String.format("%s_%s_%d",
-        //getClass().getSimpleName(),
-        //mTestName.getMethodName(),
-        //mKijiInstanceCounter.getAndIncrement());
-
     final CassandraKijiURI kijiURI = createTestCassandraURI();
-    final CassandraKijiURI instanceURI = CassandraKijiURI.newBuilder(kijiURI).withInstanceName(instanceName).build();
+    final CassandraKijiURI instanceURI =
+        CassandraKijiURI.newBuilder(kijiURI).withInstanceName(instanceName).build();
     LOG.info("Installing fake C* instance " + instanceURI);
     CassandraKijiInstaller.get().install(instanceURI, mConf);
     final Kiji kiji = CassandraKijiFactory.get().open(instanceURI, mConf);
@@ -216,7 +214,8 @@ public class CassandraKijiClientTest {
    *
    * @return the default Kiji instance to use for testing.
    *     Automatically released by KijiClientTest.
-   * @throws java.io.IOException on I/O error.  Should be Exception, but breaks too many tests for now.
+   * @throws java.io.IOException on I/O error.  Should be Exception, but breaks too many tests for
+   *     now.
    */
   public synchronized Kiji getKiji() throws IOException {
     if (null == mKiji) {

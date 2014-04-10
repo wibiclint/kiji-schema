@@ -217,7 +217,7 @@ public final class KijiRowKeyComponents implements Comparable<KijiRowKeyComponen
       return ((Integer) a).compareTo((Integer) b);
     } else if (a instanceof Long) {
       return ((Long) a).compareTo((Long) b);
-    } else if (a instanceof byte[]){
+    } else if (a instanceof byte[]) {
       return UnsignedBytes.lexicographicalComparator().compare((byte[]) a, (byte[]) b);
     } else {
       throw new IllegalArgumentException(

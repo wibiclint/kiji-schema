@@ -24,7 +24,7 @@ import java.nio.ByteBuffer;
 /**
  * Useful static classes for converting between ByteBuffers and byte arrays.
  */
-public class CassandraByteUtil {
+public final class CassandraByteUtil {
   /**
    * Turn a ByteBuffer into a byte[].
    *
@@ -46,4 +46,9 @@ public class CassandraByteUtil {
   public static ByteBuffer bytesToByteBuffer(byte[] bytes) {
     return ByteBuffer.wrap(bytes);
   }
+
+  /**
+   * Private constructor.
+   */
+  private CassandraByteUtil() {}
 }

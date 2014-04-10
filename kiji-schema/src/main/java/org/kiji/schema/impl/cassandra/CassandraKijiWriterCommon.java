@@ -103,6 +103,8 @@ class CassandraKijiWriterCommon {
    * @param qualifier The column qualifier of the destination cell.
    * @param timestamp The timestamp of the destination cell.
    * @param value The bytes to be written to the destination cell.
+   * @param <T> the type of the value to put.
+   * @param encoderProvider for the value to put.
    * @return A CQL `Statement` that implements the put.
    * @throws IOException If something goes wrong (e.g., the column does not exist).
    */

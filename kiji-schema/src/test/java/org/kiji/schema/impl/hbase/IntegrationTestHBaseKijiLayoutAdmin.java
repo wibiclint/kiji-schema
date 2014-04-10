@@ -26,7 +26,6 @@ import com.google.common.collect.Lists;
 import org.apache.hadoop.hbase.HColumnDescriptor;
 import org.apache.hadoop.hbase.HTableDescriptor;
 import org.apache.hadoop.hbase.regionserver.StoreFile;
-
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;

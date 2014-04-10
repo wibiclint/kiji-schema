@@ -19,16 +19,20 @@
 
 package org.kiji.schema.cassandra;
 
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
+
+import java.io.IOException;
+
 import org.junit.Before;
 import org.junit.Test;
+
 import org.kiji.schema.KijiTableNotFoundException;
 import org.kiji.schema.avro.TableLayoutDesc;
 import org.kiji.schema.layout.KijiTableLayout;
 import org.kiji.schema.layout.KijiTableLayouts;
-
-import java.io.IOException;
-
-import static org.junit.Assert.*;
 
 public class TestCassandraKijiAdmin extends CassandraKijiClientTest {
   private static final String LAYOUT_V1 = KijiTableLayouts.SIMPLE_FORMATTED_EID;

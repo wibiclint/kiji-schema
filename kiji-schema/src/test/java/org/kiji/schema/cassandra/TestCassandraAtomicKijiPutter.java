@@ -19,18 +19,33 @@
 
 package org.kiji.schema.cassandra;
 
-import org.junit.*;
-import org.kiji.schema.*;
-import org.kiji.schema.layout.KijiTableLayout;
-import org.kiji.schema.layout.KijiTableLayouts;
-import org.kiji.schema.util.InstanceBuilder;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
+import static org.junit.Assert.fail;
 
 import java.io.IOException;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import static org.junit.Assert.*;
+import org.junit.After;
+import org.junit.AfterClass;
+import org.junit.Before;
+import org.junit.BeforeClass;
+import org.junit.Test;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import org.kiji.schema.AtomicKijiPutter;
+import org.kiji.schema.EntityId;
+import org.kiji.schema.Kiji;
+import org.kiji.schema.KijiDataRequest;
+import org.kiji.schema.KijiDataRequestBuilder;
+import org.kiji.schema.KijiIOException;
+import org.kiji.schema.KijiRowData;
+import org.kiji.schema.KijiTable;
+import org.kiji.schema.KijiTableReader;
+import org.kiji.schema.KijiTableWriter;
+import org.kiji.schema.layout.KijiTableLayouts;
 
 public class TestCassandraAtomicKijiPutter extends CassandraKijiClientTest {
   private static final Logger LOG = LoggerFactory.getLogger(TestCassandraAtomicKijiPutter.class);
@@ -124,13 +139,13 @@ public class TestCassandraAtomicKijiPutter extends CassandraKijiClientTest {
         KijiDataRequestBuilder.ColumnsDef.create().withMaxVersions(100).add(INFO, NAME)).build();
 
     mWriter.put(mEntityId, INFO, NAME, 5L, MR_BONKERS);
-    assertEquals( MR_BONKERS, mReader.get(mEntityId, request).getValue(INFO, NAME, 5L).toString() );
+    assertEquals(MR_BONKERS, mReader.get(mEntityId, request).getValue(INFO, NAME, 5L).toString());
 
     mPutter.begin(mEntityId);
     mPutter.put(INFO, NAME, 0L, BIRDHEAD);
     mPutter.put(INFO, NAME, 10L, AMINO_MAN);
 
-    assertEquals( MR_BONKERS, mReader.get(mEntityId, request).getValue(INFO, NAME, 5L).toString() );
+    assertEquals(MR_BONKERS, mReader.get(mEntityId, request).getValue(INFO, NAME, 5L).toString());
 
     mPutter.commit();
 

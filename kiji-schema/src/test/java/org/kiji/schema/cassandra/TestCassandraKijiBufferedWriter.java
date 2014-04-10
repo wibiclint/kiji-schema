@@ -19,19 +19,34 @@
 
 package org.kiji.schema.cassandra;
 
-import org.junit.*;
-import org.kiji.schema.*;
-import org.kiji.schema.KijiDataRequestBuilder.ColumnsDef;
-import org.kiji.schema.layout.KijiTableLayout;
-import org.kiji.schema.layout.KijiTableLayouts;
-import org.kiji.schema.util.InstanceBuilder;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
 import java.io.IOException;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import static org.junit.Assert.*;
+import org.junit.After;
+import org.junit.AfterClass;
+import org.junit.Before;
+import org.junit.BeforeClass;
+import org.junit.Test;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import org.kiji.schema.EntityId;
+import org.kiji.schema.Kiji;
+import org.kiji.schema.KijiBufferedWriter;
+import org.kiji.schema.KijiDataRequest;
+import org.kiji.schema.KijiDataRequestBuilder.ColumnsDef;
+import org.kiji.schema.KijiIOException;
+import org.kiji.schema.KijiRowData;
+import org.kiji.schema.KijiTable;
+import org.kiji.schema.KijiTableReader;
+import org.kiji.schema.KijiTableWriter;
+import org.kiji.schema.layout.KijiTableLayouts;
 
 /** Simple read/write tests. */
 public class TestCassandraKijiBufferedWriter extends CassandraKijiClientTest {
@@ -88,7 +103,8 @@ public class TestCassandraKijiBufferedWriter extends CassandraKijiClientTest {
 
         for (int job = 0; job < NJOBS; ++job) {
           for (long ts = 1; ts <= NTIMESTAMPS; ++ts) {
-            writer.put(eid, "jobs", String.format("j%d", job), ts, String.format("j%d-t%d", job, ts));
+            writer.put(
+            eid, "jobs", String.format("j%d", job), ts, String.format("j%d-t%d", job, ts));
           }
         }
 
@@ -147,7 +163,8 @@ public class TestCassandraKijiBufferedWriter extends CassandraKijiClientTest {
 
     // Flush the buffer and confirm the new value has been written.
     mBufferedWriter.flush();
-    final String actual2 = mReader.get(mEntityId, request).getValue("info", "name", 123L).toString();
+    final String actual2 =
+        mReader.get(mEntityId, request).getValue("info", "name", 123L).toString();
     assertEquals("baz", actual2);
   }
 
@@ -238,7 +255,8 @@ public class TestCassandraKijiBufferedWriter extends CassandraKijiClientTest {
     // Add a put which should commit immediately.
     mBufferedWriter.put(mEntityId, "info", "name", 234L, "new");
     mBufferedWriter.put(mEntityId, "info", "name", 234L, "new");
-    final String actual2 = mReader.get(mEntityId, request).getValue("info", "name", 234L).toString();
+    final String actual2 =
+        mReader.get(mEntityId, request).getValue("info", "name", 234L).toString();
     assertEquals("new", actual2);
   }
 

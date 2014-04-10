@@ -19,22 +19,7 @@
 
 package org.kiji.schema.cassandra;
 
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Test;
-import org.kiji.schema.*;
-import org.kiji.schema.KijiDataRequestBuilder.ColumnsDef;
-import org.kiji.schema.layout.KijiTableLayouts;
-import org.kiji.schema.util.ByteArrayFormatter;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import java.io.IOException;
-import java.util.ArrayList;
-import java.util.Iterator;
-import java.util.List;
-
-import static org.junit.Assert.*;
+import org.kiji.schema.KijiClientTest;
 
 /** Tests for formatted row keys. */
 public class TestCassandraFormattedRowKeys extends KijiClientTest {

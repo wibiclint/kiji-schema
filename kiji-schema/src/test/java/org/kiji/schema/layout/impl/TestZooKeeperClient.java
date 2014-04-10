@@ -96,7 +96,7 @@ public class TestZooKeeperClient extends ZooKeeperTest {
   @Test
   public void testZooKeeperClientGetZKClientBlocksWhileNotConnected() throws Exception {
     final ZooKeeperClient client = ZooKeeperClient.getZooKeeperClient(getZKAddress());
-    stopZKCluster(); // Kill session
+    stopZKCluster(); // Kill mSession
     Assert.assertNull(client.getZKClient(0.5));
     startZKCluster();
     Assert.assertNotNull(client.getZKClient(5.0)); // Don't try forever

@@ -34,8 +34,14 @@ import com.google.common.collect.Multimap;
 import org.junit.Before;
 import org.junit.Test;
 
-import org.kiji.schema.*;
+import org.kiji.schema.DecoderNotFoundException;
+import org.kiji.schema.EntityId;
+import org.kiji.schema.KijiColumnName;
+import org.kiji.schema.KijiDataRequest;
 import org.kiji.schema.KijiDataRequestBuilder.ColumnsDef;
+import org.kiji.schema.KijiRowData;
+import org.kiji.schema.KijiTable;
+import org.kiji.schema.KijiTableReader;
 import org.kiji.schema.KijiTableReaderBuilder.OnDecoderCacheMiss;
 import org.kiji.schema.avro.EmptyRecord;
 import org.kiji.schema.avro.TestRecord1;

@@ -19,23 +19,43 @@
 
 package org.kiji.schema.cassandra;
 
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
+
+import java.io.IOException;
+import java.util.Iterator;
+import java.util.List;
+import java.util.NavigableMap;
+import java.util.concurrent.atomic.AtomicInteger;
+
 import com.google.common.collect.Lists;
 import org.apache.avro.Schema;
 import org.apache.hadoop.hbase.util.Bytes;
-import org.junit.*;
-import org.kiji.schema.*;
-import org.kiji.schema.KijiDataRequestBuilder.ColumnsDef;
-import org.kiji.schema.avro.*;
-import org.kiji.schema.impl.cassandra.CassandraKijiRowData;
-import org.kiji.schema.layout.KijiTableLayouts;
+import org.junit.After;
+import org.junit.AfterClass;
+import org.junit.Before;
+import org.junit.BeforeClass;
+import org.junit.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.IOException;
-import java.util.*;
-import java.util.concurrent.atomic.AtomicInteger;
-
-import static org.junit.Assert.*;
+import org.kiji.schema.EntityId;
+import org.kiji.schema.Kiji;
+import org.kiji.schema.KijiCell;
+import org.kiji.schema.KijiDataRequest;
+import org.kiji.schema.KijiDataRequestBuilder;
+import org.kiji.schema.KijiDataRequestBuilder.ColumnsDef;
+import org.kiji.schema.KijiIOException;
+import org.kiji.schema.KijiRowData;
+import org.kiji.schema.KijiTable;
+import org.kiji.schema.KijiTableReader;
+import org.kiji.schema.KijiTableWriter;
+import org.kiji.schema.NoSuchColumnException;
+import org.kiji.schema.impl.cassandra.CassandraKijiRowData;
+import org.kiji.schema.layout.KijiTableLayouts;
 
 public class TestCassandraKijiRowData extends CassandraKijiClientTest {
   private static final Logger LOG = LoggerFactory.getLogger(TestCassandraKijiRowData.class);
@@ -44,43 +64,19 @@ public class TestCassandraKijiRowData extends CassandraKijiClientTest {
   public static final String TEST_LAYOUT_V1 =
       "org/kiji/schema/layout/TestHBaseKijiRowData.test-layout-v1.json";
 
-  /** Update for TEST_LAYOUT, with Test layout with column "family:qual0" removed. */
-  public static final String TEST_LAYOUT_V2 =
-      "org/kiji/schema/layout/TestHBaseKijiRowData.test-layout-v2.json";
-
-  /** Layout for table 'writer_schema' to test when a column class is not found. */
-  public static final String WRITER_SCHEMA_TEST =
-      "org/kiji/schema/layout/TestHBaseKijiRowData.writer-schema.json";
-
-  /** Test layout with version layout-1.3. */
-  public static final String TEST_LAYOUT_V1_3 =
-      "org/kiji/schema/layout/TestHBaseKijiRowData.layout-v1.3.json";
-
   private static final String TABLE_NAME = "row_data_test_table";
 
-  private static String FAMILY = "family";
-  private static String EMPTY = "empty";
-  private static String QUAL0 = "qual0";
-  private static String QUAL1 = "qual1";
-  private static String QUAL2 = "qual2";
-  private static String QUAL3 = "qual3";
-  private static String NODEQUAL0 = "nodequal0";
-  private static String NODEQUAL1 = "nodequal1";
-  private static String MAP = "map";
-  private static String KEY0 = "key0";
-  private static String KEY1 = "key1";
-  private static String KEY2 = "key2";
-
-  private final static int KEY0_VAL = 100;
-  private final static int KEY1_VAL = 101;
-
-  private EntityIdFactory mEntityIdFactory;
+  private static final String FAMILY = "family";
+  private static final String EMPTY = "empty";
+  private static final String QUAL0 = "qual0";
+  private static final String QUAL3 = "qual3";
+  private static final String MAP = "map";
+  private static final String KEY0 = "key0";
+  private static final String KEY1 = "key1";
+  private static final String KEY2 = "key2";
 
   /** KijiTable used for some tests (named TABLE_NAME). */
   private static KijiTable mTable;
-
-  private static final Node mNode0 = Node.newBuilder().setLabel("node0").build();
-  private static final Node mNode1 = Node.newBuilder().setLabel("node1").build();
 
   /** Use to create unique entity IDs for each test case. */
   private static AtomicInteger testIdCounter;
@@ -100,26 +96,6 @@ public class TestCassandraKijiRowData extends CassandraKijiClientTest {
       kiji.createTable(KijiTableLayouts.getLayout(TEST_LAYOUT_V1));
 
       mTable = kiji.openTable(TABLE_NAME);
-      /*
-      final EntityId eid = mTable.getEntityId("me");
-      final KijiTableWriter writer = mTable.openTableWriter();
-      try {
-        writer.put(eid, "info", "name", 1L, "me-one");
-        writer.put(eid, "info", "name", 2L, "me-two");
-        writer.put(eid, "info", "name", 3L, "me-three");
-        writer.put(eid, "info", "name", 4L, "me-four");
-        writer.put(eid, "info", "name", 5L, "me-five");
-
-        for (int job = 0; job < NJOBS; ++job) {
-          for (long ts = 1; ts <= NTIMESTAMPS; ++ts) {
-            writer.put(eid, "jobs", String.format("j%d", job), ts, String.format("j%d-t%d", job, ts));
-          }
-        }
-
-      } finally {
-        writer.close();
-      }
-        */
     } catch (Exception e) {
       throw new KijiIOException(e);
     }
@@ -316,14 +292,14 @@ public class TestCassandraKijiRowData extends CassandraKijiClientTest {
 
   @Test
   public void testContainsColumn() throws Exception {
-    final long TIME = 1L;
-    mWriter.put(mEntityId, FAMILY, QUAL0, TIME, "foo");
+    final long myTime = 1L;
+    mWriter.put(mEntityId, FAMILY, QUAL0, myTime, "foo");
 
     KijiRowData row1 = mReader.get(mEntityId, KijiDataRequest.create(FAMILY, QUAL0));
-    assertTrue(row1.containsCell(FAMILY, QUAL0, TIME));
-    assertFalse(row1.containsCell(FAMILY, QUAL0, TIME+1L));
-    assertFalse(row1.containsCell("fake", QUAL0, TIME));
-    assertFalse(row1.containsCell(FAMILY, "fake", TIME));
+    assertTrue(row1.containsCell(FAMILY, QUAL0, myTime));
+    assertFalse(row1.containsCell(FAMILY, QUAL0, myTime + 1L));
+    assertFalse(row1.containsCell("fake", QUAL0, myTime));
+    assertFalse(row1.containsCell(FAMILY, "fake", myTime));
   }
 
   @Test

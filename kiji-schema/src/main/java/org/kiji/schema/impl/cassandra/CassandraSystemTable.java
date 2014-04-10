@@ -470,7 +470,7 @@ public final class CassandraSystemTable implements KijiSystemTable {
     }
   }
 
-  /** Private calss for providing an Iterator to HBaseSystemTableIterable. */
+  /** Private class for providing an Iterator to HBaseSystemTableIterable. */
   private static class CassandraSystemTableIterator
       implements Iterator<SimpleEntry<String, byte[]>> {
 
@@ -521,6 +521,7 @@ public final class CassandraSystemTable implements KijiSystemTable {
   }
 
   /** {@inheritDoc} */
+  @Override
   public KijiURI getKijiURI() {
     return mURI;
   }

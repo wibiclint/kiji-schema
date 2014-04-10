@@ -1,5 +1,5 @@
 /**
- * (c) Copyright 2013 WibiData, Inc.
+ * (c) Copyright 2014 WibiData, Inc.
  *
  * See the NOTICE file distributed with this work for additional
  * information regarding copyright ownership.
@@ -93,7 +93,8 @@ public final class CassandraVersionPager implements KijiPager {
    * @param table The Kiji table that this row belongs to.
    * @param colName Name of the paged column.
    * @param cellDecoderProvider Provider for cell decoders.
-   * @throws org.kiji.schema.KijiColumnPagingNotEnabledException If paging is not enabled for the specified column.
+   * @throws org.kiji.schema.KijiColumnPagingNotEnabledException If paging is not enabled for the
+   *     specified column.
    */
   protected CassandraVersionPager(
       EntityId entityId,
