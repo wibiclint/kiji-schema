@@ -20,6 +20,7 @@
 package org.kiji.schema.filter;
 
 import static org.junit.Assert.assertEquals;
+
 import static org.kiji.schema.avro.ComponentType.INTEGER;
 import static org.kiji.schema.avro.ComponentType.LONG;
 import static org.kiji.schema.avro.ComponentType.STRING;

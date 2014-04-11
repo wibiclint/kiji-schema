@@ -189,9 +189,6 @@ public class CassandraKijiRowScanner implements KijiRowScanner {
       LOG.info("Getting next row for CassandraKijiRowScanner.");
 
       // In this section of the code, we create a new KijiRowData instance by looking at the
-      // Cassandra Rows which
-
-
       // Cassandra row data at the head of all of the various Row iterators that we have.
       // Creating the KijiRowData is tricky only because every Cassandra Row object may not contain
       // an entry for every Kiji entity ID.  We can use the backing Cassandra table's "token"
