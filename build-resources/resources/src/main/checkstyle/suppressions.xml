@@ -39,4 +39,7 @@
 
   <!-- Don't worry about checkstyle on protocol buffer code. -->
   <suppress checks=".*" files="src/test/java/org/kiji/proto/"/>
+
+  <!-- Internal helper methods. -->
+  <suppress checks="ParameterNumber" files="src/main/java/org/kiji/schema/impl/cassandra/CQLUtils.java"/>
 </suppressions>

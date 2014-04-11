@@ -1,3 +1,22 @@
+/**
+ * (c) Copyright 2014 WibiData, Inc.
+ *
+ * See the NOTICE file distributed with this work for additional
+ * information regarding copyright ownership.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package org.kiji.schema.impl.cassandra;
 
 import java.nio.ByteBuffer;
@@ -74,7 +93,7 @@ import org.kiji.schema.layout.KijiTableLayout;
  *      corresponds to the partition key of the CQL primary key. There are no clustering columns
  *      in the CQL primary key. The name of the single primary key column will be a constant.
  */
-public class CQLUtils {
+public final class CQLUtils {
   private static final Logger LOG = LoggerFactory.getLogger(CQLUtils.class);
 
   // Useful static members for referring to different fields in the C* tables.
@@ -92,6 +111,12 @@ public class CQLUtils {
   private static final String COUNTER_TYPE = "counter";
 
   private static final Joiner COMMA_JOINER = Joiner.on(", ");
+
+  /**
+   * Private constructor for utility class.
+   */
+  private CQLUtils() {
+  }
 
   /**
    * Return the columns and their associated types of the primary key for the associated table
@@ -164,7 +189,7 @@ public class CQLUtils {
   }
 
   /**
-   * Return the ordered list of columns in the primary key for the table layout in order.
+   * Return the ordered list of columns in the primary key for the table layout.
    *
    * @param layout to return primary key columns for.
    * @return the primary key columns for the layout.
@@ -178,6 +203,12 @@ public class CQLUtils {
     return columns;
   }
 
+  /**
+   * Return the ordered list of columns in the Kiji entity ID for the table layout.
+   *
+   * @param layout to return entity ID columns for
+   * @return the entity ID columns of the table.
+   */
   private static List<String> getEntityIDColumns(KijiTableLayout layout) {
     RowKeyFormat2 keyFormat = (RowKeyFormat2) layout.getDesc().getKeysFormat();
     switch (keyFormat.getEncoding()) {
@@ -317,15 +348,42 @@ public class CQLUtils {
     return list;
   }
 
+  /**
+   * Returns a 'CREATE TABLE' statement for the provided table name and table layout.
+   *
+   * @param tableName of table to be created.
+   * @param layout of kiji table.
+   * @return a CQL 'CREATE TABLE' statement which will create the provided table.
+   */
   public static String getCreateTableStatement(String tableName, KijiTableLayout layout) {
     return getCreateTableStatement(tableName, layout, BYTES_TYPE);
   }
 
+  /**
+   * Returns a 'CREATE TABLE' statement for the counter table for the provided table name and table
+   * layout.
+   *
+   * @param tableName of table to be created.
+   * @param layout of kiji table.
+   * @return a CQL 'CREATE TABLE' statement which will create the provided table's counter table.
+   */
   public static String getCreateCounterTableStatement(String tableName, KijiTableLayout layout) {
     return getCreateTableStatement(tableName, layout, COUNTER_TYPE);
   }
 
-  private static String getCreateTableStatement(String tableName, KijiTableLayout layout, String valueType) {
+  /**
+   * Creates a 'CREATE TABLE' statement for the provided table and layout with the provided value
+   * column type.
+   *
+   * @param tableName of table to be created.
+   * @param layout of kiji table.
+   * @param valueType type to assign to the value column.
+   * @return a CQL 'CREATE TABLE' statement for the table.
+   */
+  private static String getCreateTableStatement(
+      String tableName,
+      KijiTableLayout layout,
+      String valueType) {
     LinkedHashMap<String, String> columns = getPrimaryKeyColumnTypes(layout);
     columns.put(VALUE_COL, valueType);
 
@@ -349,7 +407,9 @@ public class CQLUtils {
     sb.append(")");
 
     List<String> clusterColumns = getClusterColumns(layout);
-    if (clusterColumns.size() > 0) sb.append(", ");
+    if (clusterColumns.size() > 0) {
+      sb.append(", ");
+    }
     COMMA_JOINER.appendTo(sb, clusterColumns);
 
     sb.append(")) WITH CLUSTERING ORDER BY (");
@@ -364,6 +424,13 @@ public class CQLUtils {
     return query;
   }
 
+  /**
+   * Returns a CQL statement which will create a secondary index on the provided table and column.
+   *
+   * @param tableName of table to create index on.
+   * @param columnName of column to create index on.
+   * @return a CQL statement to create a secondary index on the provided table and column.
+   */
   public static String getCreateIndexStatement(String tableName, String columnName) {
     return String.format("CREATE INDEX ON %s (%s)", tableName, columnName);
   }
@@ -419,8 +486,12 @@ public class CQLUtils {
     List<String> columns = getEntityIDColumns(layout);
     columns.add(LOCALITY_GROUP_COL);
     columns.add(FAMILY_COL);
-    if (qualifier != null) columns.add(QUALIFIER_COL);
-    if (version   != null) columns.add(VERSION_COL);
+    if (qualifier != null) {
+      columns.add(QUALIFIER_COL);
+    }
+    if (version != null) {
+      columns.add(VERSION_COL);
+    }
 
     StringBuilder sb = new StringBuilder()
         .append("SELECT * FROM ")
@@ -430,9 +501,15 @@ public class CQLUtils {
     Joiner.on("=? AND ").appendTo(sb, columns);
     sb.append("=?");
 
-    if (minVersion  != null) sb.append(" AND ").append(VERSION_COL).append(">=?");
-    if (maxVersion  != null) sb.append(" AND ").append(VERSION_COL).append("<?");
-    if (numVersions != null) sb.append(" LIMIT ?");
+    if (minVersion != null) {
+      sb.append(" AND ").append(VERSION_COL).append(">=?");
+    }
+    if (maxVersion != null) {
+      sb.append(" AND ").append(VERSION_COL).append("<?");
+    }
+    if (numVersions != null) {
+      sb.append(" LIMIT ?");
+    }
 
     String query = sb.toString();
 
@@ -442,11 +519,21 @@ public class CQLUtils {
     bindValues.addAll(getEntityIDComponentValues(layout, entityId));
     bindValues.add(localityGroup);
     bindValues.add(family);
-    if (qualifier   != null) bindValues.add(qualifier);
-    if (version     != null) bindValues.add(version);
-    if (minVersion  != null) bindValues.add(minVersion);
-    if (maxVersion  != null) bindValues.add(maxVersion);
-    if (numVersions != null) bindValues.add(numVersions);
+    if (qualifier != null) {
+      bindValues.add(qualifier);
+    }
+    if (version != null) {
+      bindValues.add(version);
+    }
+    if (minVersion != null) {
+      bindValues.add(minVersion);
+    }
+    if (maxVersion != null) {
+      bindValues.add(maxVersion);
+    }
+    if (numVersions != null) {
+      bindValues.add(numVersions);
+    }
 
     return admin.getPreparedStatement(query).bind(bindValues.toArray());
   }
@@ -478,7 +565,9 @@ public class CQLUtils {
     //   ALLOW FILTERING"
 
     List<String> whereColumns = Lists.newArrayList(LOCALITY_GROUP_COL, FAMILY_COL);
-    if (qualifier != null) whereColumns.add(QUALIFIER_COL);
+    if (qualifier != null) {
+      whereColumns.add(QUALIFIER_COL);
+    }
 
     List<String> tokenColumns = getPartitionKeyColumns(layout);
     List<String> fromColumns = getPrimaryKeyColumns(layout);
@@ -513,7 +602,9 @@ public class CQLUtils {
     List<Object> bindValues = Lists.newArrayList();
     bindValues.add(localityGroup);
     bindValues.add(family);
-    if (qualifier != null) bindValues.add(qualifier);
+    if (qualifier != null) {
+      bindValues.add(qualifier);
+    }
 
     return admin.getPreparedStatement(query).bind(bindValues.toArray());
   }
@@ -552,6 +643,19 @@ public class CQLUtils {
     return admin.getPreparedStatement(query).bind();
   }
 
+  /**
+   * Create a CQL statement to increment the counter in a column.
+   *
+   * @param admin Cassandra context object.
+   * @param layout of table.
+   * @param tableName of table.
+   * @param entityID of row.
+   * @param localityGroup of column.
+   * @param family of column.
+   * @param qualifier of column.
+   * @param amount to increment value.
+   * @return a CQL statement to increment a counter column.
+   */
   public static Statement getIncrementCounterStatement(
       CassandraAdmin admin,
       KijiTableLayout layout,
@@ -656,16 +760,31 @@ public class CQLUtils {
     bindValues.add(version);
     bindValues.add(value);
 
-    if (ttl != null && ttl != HConstants.FOREVER) bindValues.add(ttl);
+    if (ttl != null && ttl != HConstants.FOREVER) {
+      bindValues.add(ttl);
+    }
 
     return admin.getPreparedStatement(query).bind(bindValues.toArray());
   }
 
+  /**
+   * Create a CQL statement to delete a cell.
+   *
+   * @param admin Cassandra context object.
+   * @param layout of table.
+   * @param tableName of table.
+   * @param entityID of row.
+   * @param localityGroup of column.
+   * @param family of column.
+   * @param qualifier of column.
+   * @param version of cell.
+   * @return a CQL statement to delete a cell.
+   */
   public static Statement getDeleteCellStatement(
       CassandraAdmin admin,
       KijiTableLayout layout,
       String tableName,
-      EntityId entityId,
+      EntityId entityID,
       String localityGroup,
       String family,
       String qualifier,
@@ -675,14 +794,26 @@ public class CQLUtils {
     Preconditions.checkNotNull(family);
     Preconditions.checkNotNull(localityGroup);
     return getDeleteStatement(
-        admin, layout, tableName, entityId, localityGroup, family, qualifier, version);
+        admin, layout, tableName, entityID, localityGroup, family, qualifier, version);
   }
 
+  /**
+   * Create a CQL statement to delete a column.
+   *
+   * @param admin Cassandra context object.
+   * @param layout of table.
+   * @param tableName of table.
+   * @param entityID of row.
+   * @param localityGroup of column.
+   * @param family of column.
+   * @param qualifier of column.
+   * @return a CQL statement to delete a column.
+   */
   public static Statement getDeleteColumnStatement(
       CassandraAdmin admin,
       KijiTableLayout layout,
       String tableName,
-      EntityId entityId,
+      EntityId entityID,
       String localityGroup,
       String family,
       String qualifier
@@ -691,31 +822,51 @@ public class CQLUtils {
     Preconditions.checkNotNull(family);
     Preconditions.checkNotNull(localityGroup);
     return getDeleteStatement(
-        admin, layout, tableName, entityId, localityGroup, family, qualifier, null);
+        admin, layout, tableName, entityID, localityGroup, family, qualifier, null);
   }
 
+  /**
+   * Create a CQL statement to delete a family.
+   *
+   * @param admin Cassandra context object.
+   * @param layout of table.
+   * @param tableName of table.
+   * @param entityID of row.
+   * @param localityGroup of family.
+   * @param family to delete.
+   * @return a CQL statement to delete a family.
+   */
   public static Statement getDeleteFamilyStatement(
       CassandraAdmin admin,
       KijiTableLayout layout,
       String tableName,
-      EntityId entityId,
+      EntityId entityID,
       String localityGroup,
       String family
   ) {
     Preconditions.checkNotNull(family);
     Preconditions.checkNotNull(localityGroup);
     return getDeleteStatement(
-        admin, layout, tableName, entityId, localityGroup, family, null, null);
+        admin, layout, tableName, entityID, localityGroup, family, null, null);
   }
 
+  /**
+   * Create a CQL statement to delete a row.
+   *
+   * @param admin Cassandra context object.
+   * @param layout of table.
+   * @param tableName of table.
+   * @param entityID of row.
+   * @return a CQL statement to delete a row.
+   */
   public static Statement getDeleteRowStatement(
       CassandraAdmin admin,
       KijiTableLayout layout,
       String tableName,
-      EntityId entityId
+      EntityId entityID
   ) {
     return getDeleteStatement(
-        admin, layout, tableName, entityId, null, null, null, null);
+        admin, layout, tableName, entityID, null, null, null, null);
   }
 
   /**
@@ -750,10 +901,18 @@ public class CQLUtils {
 
     List<String> columns = getEntityIDColumns(layout);
 
-    if (localityGroup != null) columns.add(LOCALITY_GROUP_COL);
-    if (family        != null) columns.add(FAMILY_COL);
-    if (qualifier     != null) columns.add(QUALIFIER_COL);
-    if (version       != null) columns.add(VERSION_COL);
+    if (localityGroup != null) {
+      columns.add(LOCALITY_GROUP_COL);
+    }
+    if (family != null) {
+      columns.add(FAMILY_COL);
+    }
+    if (qualifier != null) {
+      columns.add(QUALIFIER_COL);
+    }
+    if (version != null) {
+      columns.add(VERSION_COL);
+    }
 
     StringBuilder sb = new StringBuilder()
       .append("DELETE FROM ")
@@ -769,10 +928,18 @@ public class CQLUtils {
 
     List<Object> bindValues = Lists.newArrayList();
     bindValues.addAll(getEntityIDComponentValues(layout, entityId));
-    if (localityGroup != null) bindValues.add(localityGroup);
-    if (family        != null) bindValues.add(family);
-    if (qualifier     != null) bindValues.add(qualifier);
-    if (version       != null) bindValues.add(version);
+    if (localityGroup != null) {
+      bindValues.add(localityGroup);
+    }
+    if (family != null) {
+      bindValues.add(family);
+    }
+    if (qualifier != null) {
+      bindValues.add(qualifier);
+    }
+    if (version != null) {
+      bindValues.add(version);
+    }
 
     return admin.getPreparedStatement(query).bind(bindValues.toArray());
   }
