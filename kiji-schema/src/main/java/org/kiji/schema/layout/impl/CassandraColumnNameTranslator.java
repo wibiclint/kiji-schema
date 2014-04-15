@@ -79,7 +79,7 @@ public final class CassandraColumnNameTranslator extends ShortColumnNameTranslat
     if (null == familyLayout) {
       throw new NoSuchColumnException(kijiColumnName.toString());
     }
-    final ColumnId localityGroupId = familyLayout.getLocalityGroup().getId();
+    //final ColumnId localityGroupId = familyLayout.getLocalityGroup().getId();
     final ColumnId familyId = familyLayout.getId();
 
     return familyId.toString();
@@ -114,7 +114,7 @@ public final class CassandraColumnNameTranslator extends ShortColumnNameTranslat
       }
 
       // Group-type, but qualifier is null.
-      assert(familyLayout.isGroupType() && null == qualifier);
+      //assert(familyLayout.isGroupType() && null == qualifier);
 
       // The caller is attempting to translate a Kiji column name that has only a family,
       // no qualifier.  This is okay.  We'll just return an HBaseColumnName with an empty

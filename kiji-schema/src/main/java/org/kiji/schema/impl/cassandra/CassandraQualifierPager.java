@@ -351,7 +351,7 @@ public final class CassandraQualifierPager implements Iterator<String[]>, Closea
       assert(qualifiers.size() == pageSize);
     }
 
-    return qualifiers.toArray(new String[0]);
+    return qualifiers.toArray(new String[qualifiers.size()]);
   }
 
   /** {@inheritDoc} */

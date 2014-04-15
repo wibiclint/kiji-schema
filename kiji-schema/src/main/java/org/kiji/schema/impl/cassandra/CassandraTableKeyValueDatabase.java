@@ -284,7 +284,7 @@ public class CassandraTableKeyValueDatabase
   /** {@inheritDoc} */
   @Override
   public void removeValues(String table, String key) throws IOException {
-    String metaTableName = mTable.getTableName();
+    //String metaTableName = mTable.getTableName();
 
     LOG.info("Before delete:");
     logRowsForTable(table);

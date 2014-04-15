@@ -33,7 +33,6 @@ import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableSet;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.Path;
-import org.apache.hadoop.hbase.mapreduce.LoadIncrementalHFiles;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.zookeeper.KeeperException;
 import org.slf4j.Logger;
@@ -182,7 +181,7 @@ public final class CassandraKijiTable implements KijiTable {
   public static final class CassandraLayoutCapsule implements LayoutCapsule {
     private final KijiTableLayout mLayout;
     private final CassandraColumnNameTranslator mTranslator;
-    private final KijiTable mTable;
+    //private final KijiTable mTable;
 
     /**
      * Default constructor.
@@ -197,7 +196,7 @@ public final class CassandraKijiTable implements KijiTable {
         final KijiTable table) {
       mLayout = layout;
       mTranslator = translator;
-      mTable = table;
+      //mTable = table;
     }
 
     /**
@@ -755,20 +754,6 @@ public final class CassandraKijiTable implements KijiTable {
           "Found a KijiTable object that was not an instance of HBaseKijiTable.");
     }
     return (CassandraKijiTable) kijiTable;
-  }
-
-  /**
-   * Creates a new HFile loader.
-   *
-   * @param conf Configuration object for the HFile loader.
-   * @return the new HFile loader.
-   */
-  private static LoadIncrementalHFiles createHFileLoader(Configuration conf) {
-    try {
-      return new LoadIncrementalHFiles(conf); // throws Exception
-    } catch (Exception exn) {
-      throw new InternalKijiError(exn);
-    }
   }
 
   /**

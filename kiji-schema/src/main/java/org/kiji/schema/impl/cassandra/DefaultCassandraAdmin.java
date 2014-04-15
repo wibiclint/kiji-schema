@@ -23,9 +23,9 @@ import java.util.List;
 
 import com.datastax.driver.core.Cluster;
 import com.datastax.driver.core.Session;
-import com.google.common.base.Preconditions;
 
 import org.kiji.schema.CassandraKijiURI;
+import org.kiji.schema.KijiIOException;
 import org.kiji.schema.KijiURI;
 
 /**
@@ -49,10 +49,14 @@ public final class DefaultCassandraAdmin extends CassandraAdmin {
    * @return A CassandraAdmin for the given Kiji instance.
    */
   public static DefaultCassandraAdmin makeFromKijiURI(KijiURI kijiURI) {
-    Preconditions.checkArgument(kijiURI.isCassandra());
-    CassandraKijiURI cassandraKijiURI = (CassandraKijiURI) kijiURI;
+    CassandraKijiURI cassandraKijiURI;
+    if (kijiURI instanceof CassandraKijiURI) {
+       cassandraKijiURI = (CassandraKijiURI) kijiURI;
+    } else {
+      throw new KijiIOException("Need a Cassandra URI for a CassandraAdmin.");
+    }
     List<String> hosts = cassandraKijiURI.getCassandraNodes();
-    String[] hostStrings = hosts.toArray(new String[0]);
+    String[] hostStrings = hosts.toArray(new String[hosts.size()]);
     int port = cassandraKijiURI.getCassandraClientPort();
     Cluster cluster = Cluster
         .builder()

@@ -33,8 +33,6 @@ import org.slf4j.LoggerFactory;
 import org.kiji.annotations.ApiAudience;
 import org.kiji.schema.AtomicKijiPutter;
 import org.kiji.schema.EntityId;
-import org.kiji.schema.KijiCellEncoder;
-import org.kiji.schema.KijiColumnName;
 import org.kiji.schema.KijiIOException;
 import org.kiji.schema.impl.DefaultKijiCellEncoderFactory;
 import org.kiji.schema.impl.LayoutCapsule;
@@ -234,6 +232,7 @@ public final class CassandraAtomicKijiPutter implements AtomicKijiPutter {
     final State state = mState.get();
     Preconditions.checkState(state == State.OPEN,
         "Cannot checkAndCommit a transaction on an AtomicKijiPutter instance in state %s.", state);
+    /*
     final WriterLayoutCapsule capsule = getWriterLayoutCapsule();
     final KijiColumnName kijiColumnName = new KijiColumnName(family, qualifier);
     final byte[] encoded;
@@ -251,6 +250,7 @@ public final class CassandraAtomicKijiPutter implements AtomicKijiPutter {
     // CQL currently supports only check-and-set operations that set the same cell that they
     // check.  See https://issues.apache.org/jira/browse/CASSANDRA-5633 for more details.  Thrift
     // may support everything that we need.
+    */
 
     // TODO: Possibly suport checkAndCommit if cell to check and cell to set are the same.
 
@@ -294,10 +294,7 @@ public final class CassandraAtomicKijiPutter implements AtomicKijiPutter {
     final State state = mState.get();
     Preconditions.checkState(state == State.OPEN,
         "Cannot put cell to an AtomicKijiPutter instance in state %s.", state);
-    final WriterLayoutCapsule capsule = getWriterLayoutCapsule();
-
-    final KijiCellEncoder cellEncoder =
-        capsule.getCellEncoderProvider().getEncoder(family, qualifier);
+    //final WriterLayoutCapsule capsule = getWriterLayoutCapsule();
 
     Statement statement = mWriterCommon.getPutStatement(
         mWriterLayoutCapsule.getCellEncoderProvider(),

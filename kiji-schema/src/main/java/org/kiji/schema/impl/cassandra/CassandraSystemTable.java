@@ -278,7 +278,7 @@ public final class CassandraSystemTable implements KijiSystemTable {
   /** {@inheritDoc} */
   @Override
   public void putValue(String key, byte[] value) throws IOException {
-    LOG.info(String.format("Putting key, value = %s,%s", key, value));
+    //LOG.info(String.format("Putting key, value = %s,%s", key, value));
     final State state = mState.get();
     Preconditions.checkState(state == State.OPEN,
         "Cannot put value into SystemTable instance in state %s.", state);

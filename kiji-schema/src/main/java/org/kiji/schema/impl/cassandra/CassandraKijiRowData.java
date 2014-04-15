@@ -52,7 +52,6 @@ import org.kiji.schema.KijiPager;
 import org.kiji.schema.KijiRowData;
 import org.kiji.schema.KijiTableReaderBuilder;
 import org.kiji.schema.NoSuchColumnException;
-import org.kiji.schema.filter.KijiColumnFilter;
 import org.kiji.schema.impl.BoundColumnReaderSpec;
 import org.kiji.schema.impl.LayoutCapsule;
 import org.kiji.schema.layout.ColumnReaderSpec;
@@ -324,7 +323,7 @@ public final class CassandraKijiRowData implements KijiRowData {
     }
 
     // TODO: Do something with the filter for this data request.
-    KijiColumnFilter filter = columnRequest.getFilter();
+    //KijiColumnFilter filter = columnRequest.getFilter();
 
     long maxTimestamp = mDataRequest.getMaxTimestamp();
     if (timestamp < mDataRequest.getMinTimestamp() || timestamp >= maxTimestamp) {
@@ -777,7 +776,7 @@ public final class CassandraKijiRowData implements KijiRowData {
     // interface than that present in HBaseKijiRowData.
 
     /** The maximum number of versions requested. */
-    private final int mMaxVersions;
+    //private final int mMaxVersions;
 
     /** An iterator over all of the columns. */
     private Iterator<Map.Entry<String, NavigableMap<Long, byte[]>>> mQualifierIterator;
@@ -813,8 +812,8 @@ public final class CassandraKijiRowData implements KijiRowData {
         EntityId eId) throws IOException {
       mColumn = columnName;
       // Get info about the data request for this column.
-      KijiDataRequest.Column columnRequest = rowdata.mDataRequest.getRequestForColumn(mColumn);
-      mMaxVersions = columnRequest.getMaxVersions();
+      //KijiDataRequest.Column columnRequest = rowdata.mDataRequest.getRequestForColumn(mColumn);
+      //mMaxVersions = columnRequest.getMaxVersions();
       mNumVersions = 0;
       mDecoder = rowdata.getDecoder(columnName);
 

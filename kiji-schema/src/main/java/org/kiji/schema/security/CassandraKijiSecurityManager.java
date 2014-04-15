@@ -30,7 +30,6 @@ import com.google.common.collect.Sets;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hbase.security.access.AccessControllerProtocol;
 import org.apache.hadoop.hbase.security.access.Permission.Action;
-import org.apache.hadoop.hbase.security.access.UserPermission;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -549,11 +548,13 @@ public final class CassandraKijiSecurityManager implements KijiSecurityManager {
       byte[] hTableName,
       Action[] hActions) throws IOException {
     // Construct the HBase UserPermission to grant.
+    /*
     UserPermission hTablePermission = new UserPermission(
         hUser,
         hTableName,
         null,
         hActions);
+        */
 
     // Grant the permissions.
     LOG.debug(
@@ -587,11 +588,13 @@ public final class CassandraKijiSecurityManager implements KijiSecurityManager {
       byte[] hTableName,
       Action[] hActions) throws IOException {
     // Construct the HBase UserPermission to revoke.
+    /*
     UserPermission hTablePermission = new UserPermission(
         hUser,
         hTableName,
         null,
         hActions);
+        */
 
     // Revoke the permissions.
     LOG.debug("TODO: Update C* for: 'Revoking user permissions for user {} on table {} to HBase "

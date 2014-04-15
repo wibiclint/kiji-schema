@@ -151,8 +151,7 @@ public final class CassandraTableLayoutDatabase implements KijiTableLayoutDataba
     String queryText = String.format(
         "SELECT * FROM %s WHERE %s=? LIMIT 1",
         metaTableName,
-        QUALIFIER_TABLE,
-        QUALIFIER_TIME
+        QUALIFIER_TABLE
     );
     mPreparedStatementGetRows = mAdmin.getPreparedStatement(queryText);
   }
@@ -314,7 +313,7 @@ public final class CassandraTableLayoutDatabase implements KijiTableLayoutDataba
           String.format("Layout ID '%s' already exists", layoutId));
     }
 
-    String metaTableName = mTable.getTableName();
+    //String metaTableName = mTable.getTableName();
 
     Preconditions.checkNotNull(mPreparedStatementUpdateTableLayout);
     // TODO: This should do a "check-and-put" to match the HBase implementation.

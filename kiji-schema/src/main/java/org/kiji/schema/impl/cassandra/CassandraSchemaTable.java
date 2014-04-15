@@ -540,6 +540,7 @@ public final class CassandraSchemaTable implements KijiSchemaTable {
         avroEntry.getId(),
         new Date(timestamp),
         CassandraByteUtil.bytesToByteBuffer(entryBytes)));
+    Preconditions.checkNotNull(resultSet);
 
     // TODO: Anything here to flush the table or verify that this worked?
     //if (flush) { mSchemaIdTable.flushCommits(); }
@@ -549,6 +550,7 @@ public final class CassandraSchemaTable implements KijiSchemaTable {
             CassandraByteUtil.bytesToByteBuffer(avroEntry.getHash().bytes()),
             new Date(timestamp),
             CassandraByteUtil.bytesToByteBuffer(entryBytes)));
+    Preconditions.checkNotNull(hashResultSet);
 
     // TODO: Anything here to flush the table or verify that this worked?
     //if (flush) { mSchemaHashTable.flushCommits(); }
@@ -594,8 +596,6 @@ public final class CassandraSchemaTable implements KijiSchemaTable {
    * @throws java.io.IOException on I/O error.
    */
   private SchemaTableEntry loadFromHashTable(BytesKey schemaHash) throws IOException {
-    String tableName = mSchemaHashTable.getTableName();
-
     ByteBuffer tableKey = CassandraByteUtil.bytesToByteBuffer(schemaHash.getBytes());
 
     ResultSet resultSet = mSchemaHashTable

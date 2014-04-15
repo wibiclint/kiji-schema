@@ -60,21 +60,6 @@ public abstract class CassandraAdmin implements Closeable {
   private final CassandraStatementCache mStatementCache;
 
   /**
-   * Remove quotes around a nameWithQuotes, e.g., turn
-   *     "nameWithQuotes"
-   * into
-   *     nameWithQuotes.
-   * We need quotes for CQL statements, but not if we are doing direct queries with the DataStax
-   * Java driver.
-   *
-   * @param nameWithQuotes The nameWithQuotes with quotes.
-   * @return The nameWithQuotes without quotes.
-   */
-  private static String stripQuotes(String nameWithQuotes) {
-    return nameWithQuotes.replace("\"", "");
-  }
-
-  /**
    * Getter for open Session.
    *
    * @return The Session.
